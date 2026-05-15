@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Characters — AvatarPlatform</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <script src="https://unpkg.com/@rive-app/canvas@2.21.0/rive.js"></script>
+  <style>
+    .chars-hero {
+      text-align: center;
+      padding: 64px 24px 16px;
+    }
+    .chars-hero h1 {
+      font-size: 36px;
+      letter-spacing: -0.02em;
+      margin: 0 0 10px;
+    }
+    .chars-hero p {
+      margin: 0;
+      color: var(--text-dim);
+      font-size: 16px;
+    }
+
+    .char-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 24px;
+      padding: 40px 24px 80px;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+
+    .char-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      transition: border-color .2s, transform .2s, box-shadow .2s;
+    }
+    .char-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 32px rgba(124,106,245,.15);
+    }
+
+    /* Square Rive canvas area */
+    .char-preview {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      background: var(--bg-3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .char-preview canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+    .char-preview-fallback {
+      font-size: 72px;
+      line-height: 1;
+      user-select: none;
+    }
+    /* Subtle gradient overlay at the bottom of the preview */
+    .char-preview::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 48px;
+      background: linear-gradient(transparent, var(--bg-2));
+      pointer-events: none;
+    }
+
+    .char-info {
+      padding: 20px;
+    }
+    .char-name {
+      font-size: 19px;
+      font-weight: 700;
+      margin: 0 0 6px;
+      letter-spacing: -0.01em;
+    }
+    .char-desc {
+      color: var(--text-dim);
+      font-size: 14px;
+      line-height: 1.5;
+      margin: 0 0 18px;
+    }
+    .char-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+    }
+
+    /* Loading skeleton */
+    .char-skeleton {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+    }
+    .char-skeleton .skel-square {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      background: linear-gradient(90deg, var(--bg-3) 0%, var(--bg-2) 50%, var(--bg-3) 100%);
+      background-size: 200% 100%;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    .char-skeleton .skel-lines { padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+    .char-skeleton .skel-line {
+      height: 12px; border-radius: 6px;
+      background: linear-gradient(90deg, var(--bg-3) 0%, var(--bg-2) 50%, var(--bg-3) 100%);
+      background-size: 200% 100%;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    @keyframes pulse {
+      0%   { background-position:  200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    @media (max-width: 600px) {
+      .chars-hero h1 { font-size: 26px; }
+      .char-grid { grid-template-columns: 1fr 1fr; gap: 16px; padding: 24px 16px 60px; }
+    }
+    @media (max-width: 400px) {
+      .char-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Nav ─────────────────────────────────────────────────── -->
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark">A</span>
+        <span>AvatarPlatform</span>
+      </a>
+      <div class="nav-links">
+        <a class="nav-link" href="/pricing">Pricing</a>
+        <a class="nav-link active" href="/characters">Characters</a>
+      </div>
+      <div class="spacer"></div>
+      <div id="nav-cta" class="nav-links" style="gap:8px"></div>
+    </div>
+  </nav>
+
+  <!-- ── Hero ────────────────────────────────────────────────── -->
+  <div class="chars-hero">
+    <h1>Meet the characters</h1>
+    <p>Real-time lip sync, multilingual, fully embeddable. Pick the face that fits your brand.</p>
+  </div>
+
+  <!-- ── Grid ────────────────────────────────────────────────── -->
+  <div class="char-grid" id="char-grid">
+    <!-- skeletons rendered by JS while loading -->
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+  // ── Nav CTA: show Dashboard if logged in, else Login + Sign up ──
+  const navCta = document.getElementById('nav-cta');
+  if (Auth.loggedIn()) {
+    navCta.innerHTML = '<a class="btn btn-primary btn-sm" href="/dashboard">Dashboard →</a>';
+  } else {
+    navCta.innerHTML =
+      '<a class="nav-link" href="/login">Log in</a>' +
+      '<a class="btn btn-primary btn-sm" href="/signup">Get started</a>';
+  }
+
+  const FALLBACKS = ['🤖', '🧑', '👩', '🙂'];
+
+  // ── Render skeletons while fetching ─────────────────────────
+  function renderSkeletons(n) {
+    const grid = document.getElementById('char-grid');
+    grid.innerHTML = Array.from({ length: n }, () => `
+      <div class="char-skeleton">
+        <div class="skel-square"></div>
+        <div class="skel-lines">
+          <div class="skel-line" style="width:55%"></div>
+          <div class="skel-line" style="width:80%"></div>
+          <div class="skel-line" style="width:65%"></div>
+          <div class="skel-line" style="width:100%;height:36px;border-radius:8px;margin-top:4px"></div>
+        </div>
+      </div>`).join('');
+  }
+
+  // ── Main load ────────────────────────────────────────────────
+  renderSkeletons(4);
+
+  async function load() {
+    let characters;
+    try {
+      ({ characters } = await API.characters());
+    } catch (_) {
+      document.getElementById('char-grid').innerHTML =
+        '<p class="muted" style="grid-column:1/-1;padding:24px 0">Could not load characters — please refresh.</p>';
+      return;
+    }
+    renderCards(characters);
+  }
+
+  function renderCards(chars) {
+    const grid = document.getElementById('char-grid');
+    grid.innerHTML = '';
+
+    const ctaHref  = Auth.loggedIn() ? '/dashboard' : '/signup';
+    const ctaLabel = Auth.loggedIn() ? 'Use in dashboard →' : 'Get started free →';
+
+    chars.forEach((char, i) => {
+      // ── Card shell ────────────────────────────────────────────
+      const card = document.createElement('div');
+      card.className = 'char-card';
+
+      // ── Preview area ──────────────────────────────────────────
+      const preview = document.createElement('div');
+      preview.className = 'char-preview';
+
+      const canvas = document.createElement('canvas');
+      canvas.width  = 400;
+      canvas.height = 400;
+      preview.appendChild(canvas);
+      card.appendChild(preview);
+
+      // ── Info block ────────────────────────────────────────────
+      const info = document.createElement('div');
+      info.className = 'char-info';
+      info.innerHTML =
+        `<div class="char-name">${esc(char.name)}</div>` +
+        `<p class="char-desc">${esc(char.description)}</p>` +
+        `<a class="btn btn-primary char-btn" href="${esc(ctaHref)}">${esc(ctaLabel)}</a>`;
+      card.appendChild(info);
+
+      grid.appendChild(card);
+
+      // ── Rive autoplay preview ─────────────────────────────────
+      loadRive(canvas, char.rivePath, FALLBACKS[i % FALLBACKS.length], preview);
+    });
+  }
+
+  // Autoplay the Rive file for a living preview without connecting to
+  // Gemini Live. Falls back to an emoji if the .riv file is unavailable.
+  function loadRive(canvas, src, fallbackEmoji, container) {
+    if (typeof rive === 'undefined') {
+      showFallback(canvas, fallbackEmoji, container);
+      return;
+    }
+    try {
+      new rive.Rive({
+        src,
+        canvas,
+        autoplay: true,
+        onLoadError: () => showFallback(canvas, fallbackEmoji, container),
+      });
+    } catch (_) {
+      showFallback(canvas, fallbackEmoji, container);
+    }
+  }
+
+  function showFallback(canvas, emoji, container) {
+    canvas.remove();
+    const fb = document.createElement('div');
+    fb.className = 'char-preview-fallback';
+    fb.textContent = emoji;
+    container.appendChild(fb);
+  }
+
+  function esc(s) {
+    return String(s || '').replace(/[&<>"']/g,
+      c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  load();
+  </script>
+</body>
+</html>

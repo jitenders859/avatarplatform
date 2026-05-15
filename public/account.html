@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Account — AvatarPlatform</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <div class="container mt-md" style="max-width:600px">
+    <div class="page-header">
+      <div>
+        <a href="/dashboard" class="text-sm muted">← Back to dashboard</a>
+        <h1 class="page-title">Account settings</h1>
+      </div>
+    </div>
+
+    <!-- ── Profile ─────────────────────────────────────────── -->
+    <div class="card mb-md">
+      <h2 class="card-title mb-md">Profile</h2>
+      <div class="col gap-md">
+        <div class="field">
+          <label>Name</label>
+          <input class="input" id="f-name" placeholder="Your name" />
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input class="input" id="f-email" type="email" />
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn btn-primary" id="save-profile">Save profile</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Change password ─────────────────────────────────── -->
+    <div class="card mb-md">
+      <h2 class="card-title mb-md">Change password</h2>
+      <div class="col gap-md">
+        <div class="field">
+          <label>Current password</label>
+          <input class="input" id="f-current-pw" type="password" autocomplete="current-password" />
+        </div>
+        <div class="field">
+          <label>New password</label>
+          <input class="input" id="f-new-pw" type="password" autocomplete="new-password" />
+          <span class="help">Minimum 8 characters.</span>
+        </div>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn btn-primary" id="save-password">Update password</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Danger zone ─────────────────────────────────────── -->
+    <div class="card" style="border-color:rgba(239,68,68,.3)">
+      <h2 class="card-title mb-md" style="color:#fca5a5">Danger zone</h2>
+      <p class="muted text-sm" style="margin:0 0 16px">
+        Permanently delete your account and all data — chatbots, knowledge bases, and conversation history.
+        This cannot be undone.
+      </p>
+      <button class="btn btn-danger" id="delete-account">Delete my account</button>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+  Auth.requireLogin();
+  renderTopNav('account');
+
+  async function load() {
+    try {
+      const { user } = await API.me();
+      Auth.user = user;
+      document.getElementById('f-name').value  = user.name  || '';
+      document.getElementById('f-email').value = user.email || '';
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  document.getElementById('save-profile').addEventListener('click', async () => {
+    const btn = document.getElementById('save-profile');
+    btn.disabled = true;
+    try {
+      const { user } = await API.updateMe({
+        name:  document.getElementById('f-name').value.trim(),
+        email: document.getElementById('f-email').value.trim(),
+      });
+      Auth.user = user;
+      toast('Profile saved', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('save-password').addEventListener('click', async () => {
+    const currentPw = document.getElementById('f-current-pw').value;
+    const newPw     = document.getElementById('f-new-pw').value;
+    if (!currentPw || !newPw) return toast('Fill in both password fields', 'error');
+    const btn = document.getElementById('save-password');
+    btn.disabled = true;
+    try {
+      await API.updateMe({ currentPassword: currentPw, newPassword: newPw });
+      document.getElementById('f-current-pw').value = '';
+      document.getElementById('f-new-pw').value = '';
+      toast('Password updated', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('delete-account').addEventListener('click', async () => {
+    if (!confirm('Delete your account and ALL data permanently? This cannot be undone.')) return;
+    if (!confirm('Are you absolutely sure? All chatbots and knowledge bases will be gone.')) return;
+    try {
+      await API.deleteMe();
+      Auth.token = null;
+      Auth.user  = null;
+      location.href = '/';
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
+  load();
+  </script>
+</body>
+</html>

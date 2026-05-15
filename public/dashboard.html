@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dashboard — AvatarPlatform</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <div class="container mt-md">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Your chatbots</h1>
+        <p class="page-sub" id="plan-line">Loading plan…</p>
+      </div>
+      <button class="btn btn-primary" id="create-btn">+ New chatbot</button>
+    </div>
+
+    <div id="grid" class="grid grid-3"></div>
+    <div id="empty" class="empty" hidden>
+      <div class="empty-icon">🤖</div>
+      <div class="empty-title">No chatbots yet</div>
+      <p class="muted text-sm">Create your first chatbot to get started.</p>
+      <button class="btn btn-primary mt-md" id="empty-create">Create chatbot</button>
+    </div>
+  </div>
+
+  <!-- Create modal -->
+  <div class="modal-backdrop" id="create-modal" hidden>
+    <div class="modal">
+      <h2 style="font-size:18px;margin:0 0 4px">Create a chatbot</h2>
+      <p class="muted text-sm" style="margin:0 0 20px">You can change everything later.</p>
+      <form id="create-form" class="col gap-md">
+        <div class="field">
+          <label>Name</label>
+          <input class="input" id="new-name" required maxlength="60" placeholder="Support bot" autofocus />
+        </div>
+        <div class="field">
+          <label>Character</label>
+          <select class="select" id="new-character"></select>
+        </div>
+        <div id="create-error" class="text-sm" style="color:#fca5a5;display:none"></div>
+        <div class="row" style="justify-content:flex-end;margin-top:8px">
+          <button type="button" class="btn btn-ghost" id="create-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="create-submit">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+  Auth.requireLogin();
+  renderTopNav('dashboard');
+
+  const grid = document.getElementById('grid');
+  const emptyEl = document.getElementById('empty');
+  const planLine = document.getElementById('plan-line');
+
+  let characters = [];
+
+  async function load() {
+    try {
+      const [{ projects }, { characters: chars }, sub] = await Promise.all([
+        API.listProjects(), API.characters(), API.subscription().catch(() => null),
+      ]);
+      characters = chars;
+      const select = document.getElementById('new-character');
+      select.innerHTML = chars.map(c =>
+        `<option value="${c.id}">${c.name} — ${c.description}</option>`
+      ).join('');
+
+      if (sub) {
+        const plan = sub.plan;
+        planLine.innerHTML = `Plan: <span class="pill pill-info">${plan.name}</span> · <a href="/billing">Manage billing</a>`;
+      }
+
+      if (projects.length === 0) { emptyEl.hidden = false; grid.hidden = true; return; }
+
+      // Fetch lead counts in parallel
+      const leadCounts = await Promise.all(
+        projects.map(p => API.listLeads(p.id, { limit: 1 }).then(r => r.total).catch(() => 0))
+      );
+
+      grid.innerHTML = projects.map((p, i) => `
+        <div class="card" style="position:relative;transition:border-color .15s" onmouseover="this.style.borderColor='var(--border-strong)'" onmouseout="this.style.borderColor='var(--border)'">
+          <a href="/project?id=${p.id}" style="text-decoration:none;color:inherit;display:block">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+              <div>
+                <div style="font-weight:600;font-size:15px">${escape(p.name)}</div>
+                <div class="muted text-sm mt-sm">${charName(p.characterId)} · /e/${p.publicId}</div>
+              </div>
+              <span class="pill pill-info">${p.widgetPosition || 'bottom-right'}</span>
+            </div>
+          </a>
+          <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px">
+            ${leadCounts[i] > 0 ? `<a href="/project?id=${p.id}#leads" class="pill pill-success" style="text-decoration:none;font-size:11px">📋 ${leadCounts[i]} lead${leadCounts[i] === 1 ? '' : 's'}</a>` : ''}
+            <span style="flex:1"></span>
+            <button class="btn btn-sm btn-ghost" onclick="duplicate('${p.id}', event)">⎘ Duplicate</button>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  function charName(id) {
+    const c = characters.find(c => c.id === id);
+    return c ? c.name : id;
+  }
+
+  function escape(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  window.duplicate = async (id, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      await API.duplicateProject(id);
+      toast('Chatbot duplicated', 'success');
+      load();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+
+  // Create modal
+  const modal = document.getElementById('create-modal');
+  function openModal() { modal.hidden = false; document.getElementById('new-name').focus(); }
+  function closeModal() { modal.hidden = true; document.getElementById('create-form').reset(); document.getElementById('create-error').style.display='none'; }
+  document.getElementById('create-btn').addEventListener('click', openModal);
+  document.getElementById('empty-create').addEventListener('click', openModal);
+  document.getElementById('create-cancel').addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+
+  document.getElementById('create-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('create-submit');
+    const err = document.getElementById('create-error');
+    err.style.display = 'none';
+    btn.disabled = true;
+    try {
+      const { project } = await API.createProject({
+        name: document.getElementById('new-name').value.trim(),
+        characterId: document.getElementById('new-character').value,
+      });
+      location.href = `/project?id=${project.id}`;
+    } catch (e2) {
+      err.textContent = e2.message;
+      err.style.display = 'block';
+      btn.disabled = false;
+      if (/limit/i.test(e2.message)) {
+        err.innerHTML += ' <a href="/billing">Upgrade</a>';
+      }
+    }
+  });
+
+  load();
+  </script>
+</body>
+</html>

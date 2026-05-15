@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Analytics — AvatarPlatform</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <div class="container mt-md">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Analytics</h1>
+        <p class="page-sub">Last 30 days, across all your chatbots</p>
+      </div>
+    </div>
+
+    <div class="grid grid-4 mb-lg" id="totals"></div>
+
+    <div class="card mb-lg">
+      <div class="card-header">
+        <h2 class="card-title">Messages — last 30 days</h2>
+        <span class="muted text-sm" id="chart-total"></span>
+      </div>
+      <div id="chart" style="display:flex;align-items:flex-end;gap:3px;height:180px;padding:8px 0"></div>
+      <div class="row" style="justify-content:space-between;margin-top:6px">
+        <span class="muted text-sm" id="chart-from"></span>
+        <span class="muted text-sm" id="chart-to"></span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header"><h2 class="card-title">By chatbot</h2></div>
+      <div id="byproject"></div>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+  Auth.requireLogin();
+  renderTopNav('analytics');
+
+  async function load() {
+    try {
+      const data = await API.analytics();
+      renderTotals(data.totals);
+      renderChart(data.daily);
+      renderProjects(data.byProject);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function renderTotals(t) {
+    const items = [
+      { label: 'Chatbots', value: t.projects },
+      { label: 'Sources', value: t.files },
+      { label: 'Sessions', value: t.sessions },
+      { label: 'Messages', value: t.messages },
+    ];
+    document.getElementById('totals').innerHTML = items.map(i => `
+      <div class="card">
+        <div class="muted text-sm">${i.label}</div>
+        <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em;margin-top:4px">${i.value}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderChart(daily) {
+    const max = Math.max(1, ...daily.map(d => d.messages));
+    document.getElementById('chart-total').textContent =
+      `${daily.reduce((s, d) => s + d.messages, 0)} messages`;
+    document.getElementById('chart-from').textContent = daily[0]?.date || '';
+    document.getElementById('chart-to').textContent   = daily[daily.length - 1]?.date || '';
+    document.getElementById('chart').innerHTML = daily.map(d => {
+      const pct = (d.messages / max) * 100;
+      return `<div title="${d.date}: ${d.messages} messages" style="flex:1;display:flex;align-items:flex-end;height:100%;cursor:default">
+        <div style="width:100%;height:${pct}%;min-height:${d.messages > 0 ? '2px' : '0'};background:linear-gradient(180deg,var(--accent-2),var(--accent));border-radius:3px 3px 0 0;transition:opacity .15s" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1"></div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderProjects(rows) {
+    if (rows.length === 0) {
+      document.getElementById('byproject').innerHTML =
+        '<div class="empty"><div class="empty-icon">📊</div><div class="empty-title">No data yet</div><p class="muted text-sm">Once visitors chat with your bots, stats will appear here.</p></div>';
+      return;
+    }
+    document.getElementById('byproject').innerHTML = `
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>
+          <th style="text-align:left;padding:8px 0;font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em">Chatbot</th>
+          <th style="text-align:right;padding:8px 0;font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em">Sessions</th>
+          <th style="text-align:right;padding:8px 0;font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em">Messages</th>
+          <th style="text-align:right;padding:8px 0;font-size:12px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em">Files</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r => `
+            <tr style="border-top:1px solid var(--border)">
+              <td style="padding:12px 0"><a href="/project?id=${r.id}">${escape(r.name)}</a></td>
+              <td style="text-align:right">${r.sessions}</td>
+              <td style="text-align:right">${r.messages}</td>
+              <td style="text-align:right">${r.files}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>`;
+  }
+
+  function escape(s) { return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+  load();
+  </script>
+</body>
+</html>

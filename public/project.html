@@ -1,0 +1,1057 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Project — AvatarPlatform</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+</head>
+<body>
+  <div class="container mt-md">
+    <div class="page-header">
+      <div>
+        <a href="/dashboard" class="text-sm muted">← Back to chatbots</a>
+        <h1 class="page-title" id="title">Loading…</h1>
+        <p class="page-sub" id="public-id"></p>
+      </div>
+      <div class="row">
+        <button class="btn btn-danger" id="delete-btn">Delete</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" data-tab="settings">Settings</button>
+      <button class="tab" data-tab="knowledge">Knowledge</button>
+      <button class="tab" data-tab="capture">Capture</button>
+      <button class="tab" data-tab="widget">Widget</button>
+      <button class="tab" data-tab="preview">Preview</button>
+      <button class="tab" data-tab="analytics">Analytics</button>
+      <button class="tab" data-tab="embed">Embed</button>
+      <button class="tab" data-tab="conversations">Conversations</button>
+      <button class="tab" data-tab="leads" id="leads-tab">Leads</button>
+    </div>
+
+    <!-- ── Settings tab ───────────────────────────────────── -->
+    <section class="tab-panel" id="panel-settings">
+      <div class="card">
+        <h2 class="card-title mb-md">Basic info</h2>
+        <div class="col gap-md">
+          <div class="field">
+            <label>Name</label>
+            <input class="input" id="f-name" />
+          </div>
+          <div class="field">
+            <label>Welcome message</label>
+            <input class="input" id="f-welcome" placeholder="Hi! Ask me anything." />
+            <span class="help">First thing visitors hear when the widget loads.</span>
+          </div>
+          <div class="field">
+            <label>System prompt</label>
+            <textarea class="textarea" id="f-prompt" rows="6"></textarea>
+            <span class="help">The AI's persona and rules. Knowledge-base content is appended automatically at runtime.</span>
+          </div>
+          <div class="grid grid-2">
+            <div class="field">
+              <label>Character</label>
+              <select class="select" id="f-character"></select>
+            </div>
+            <div class="field">
+              <label>Voice</label>
+              <select class="select" id="f-voice"></select>
+            </div>
+          </div>
+          <div class="field">
+            <label>Webhook URL</label>
+            <input class="input" id="f-webhook-url" type="url" placeholder="https://yoursite.com/webhooks/avatar" />
+            <span class="help">We'll POST each visitor message here in real time.</span>
+          </div>
+          <div class="field" id="f-webhook-secret-row" hidden>
+            <label>Webhook secret</label>
+            <div class="row" style="gap:8px">
+              <input class="input" id="f-webhook-secret" readonly style="font-family:monospace;font-size:12px;flex:1" />
+              <button class="btn btn-ghost btn-sm" id="copy-secret-btn">Copy</button>
+            </div>
+            <span class="help">Verify requests with HMAC-SHA256 using this secret and the <code>X-Avatar-Signature</code> header.</span>
+          </div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn-primary" id="save-settings">Save changes</button>
+            <button class="btn btn-ghost" id="test-webhook-btn" hidden>Send test event</button>
+          </div>
+          <div id="webhook-test-result" class="muted text-sm" style="display:none"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Knowledge tab ──────────────────────────────────── -->
+    <section class="tab-panel" id="panel-knowledge" hidden>
+      <div class="grid grid-2 mb-md">
+        <div class="card">
+          <h3 class="card-title mb-md">Upload files</h3>
+          <p class="muted text-sm">PDF · DOCX · TXT · MD · CSV · JSON · HTML · Images · Audio · Video</p>
+          <input type="file" id="file-input" multiple style="display:none" />
+          <button class="btn btn-primary mt-md" id="upload-btn">Choose files</button>
+        </div>
+        <div class="card">
+          <h3 class="card-title mb-md">Add a website</h3>
+          <p class="muted text-sm">Paste a URL — we'll fetch, clean, and index the page.</p>
+          <div class="row mt-md">
+            <input class="input" id="url-input" placeholder="https://example.com/docs" style="flex:1" />
+            <button class="btn btn-primary" id="url-btn">Add</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">Sources</h3>
+          <span class="muted text-sm" id="files-count"></span>
+          <button class="btn btn-sm btn-ghost" id="reindex-btn" style="margin-left:auto" title="Re-embed all sources with the current model">↺ Re-index</button>
+        </div>
+        <div id="files-list"></div>
+      </div>
+    </section>
+
+    <!-- ── Conversations tab ──────────────────────────────── -->
+    <section class="tab-panel" id="panel-conversations" hidden>
+      <div class="grid grid-2" style="gap:16px;align-items:start">
+        <!-- Session list -->
+        <div class="card" style="min-height:400px">
+          <div class="card-header">
+            <h3 class="card-title">Sessions</h3>
+            <span class="muted text-sm" id="sessions-count"></span>
+            <button class="btn btn-sm btn-ghost" id="export-csv-btn" style="margin-left:auto">↓ Export CSV</button>
+          </div>
+          <div id="sessions-list"></div>
+        </div>
+        <!-- Transcript viewer -->
+        <div class="card" style="min-height:400px">
+          <h3 class="card-title mb-md" id="transcript-title">Select a session</h3>
+          <div id="transcript-body" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Widget customization tab ───────────────────────── -->
+    <section class="tab-panel" id="panel-widget" hidden>
+      <div class="card">
+        <h2 class="card-title mb-md">Widget appearance</h2>
+        <div class="grid grid-2">
+          <div class="field">
+            <label>Position</label>
+            <select class="select" id="f-position">
+              <option value="bottom-right">Bottom right (default)</option>
+              <option value="bottom-left">Bottom left</option>
+              <option value="inline">Inline (full iframe)</option>
+            </select>
+            <span class="help">Where the widget appears on host sites.</span>
+          </div>
+          <div class="field">
+            <label>Start state</label>
+            <select class="select" id="f-startopen">
+              <option value="false">Minimized (visitor clicks to open)</option>
+              <option value="true">Open by default</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Text direction</label>
+            <select class="select" id="f-direction">
+              <option value="auto">Auto (detect from language)</option>
+              <option value="ltr">Left-to-right</option>
+              <option value="rtl">Right-to-left (Arabic, Hebrew…)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Theme color</label>
+            <input class="input" type="color" id="f-theme" style="height:42px;padding:4px;cursor:pointer" />
+            <span class="help">Primary color for buttons and gradients.</span>
+          </div>
+          <div class="field">
+            <label>Show source cards</label>
+            <select class="select" id="f-sources">
+              <option value="true">Yes — cite the docs / URLs used</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Show "Powered by" branding</label>
+            <select class="select" id="f-branding">
+              <option value="true">Yes</option>
+              <option value="false">No (paid plans)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Horizontal offset (px)</label>
+            <input class="input" type="number" id="f-offset-x" min="0" max="100" value="0" />
+            <span class="help">Distance from the left/right edge. Applies to floating widget.</span>
+          </div>
+          <div class="field">
+            <label>Vertical offset (px)</label>
+            <input class="input" type="number" id="f-offset-y" min="0" max="100" value="0" />
+            <span class="help">Distance from the bottom edge.</span>
+          </div>
+        </div>
+        <div class="row mt-md" style="justify-content:flex-end">
+          <button class="btn btn-primary" id="save-widget">Save changes</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Preview tab ───────────────────────────────────── -->
+    <section class="tab-panel" id="panel-preview" hidden>
+      <div class="card">
+        <h2 class="card-title mb-md">Test your chatbot</h2>
+        <p class="muted text-sm mb-md">This iframe loads the live public widget — exactly as visitors will see it.</p>
+        <iframe id="preview-frame" style="width:100%;height:640px;border:1px solid var(--border);border-radius:12px;background:var(--bg-2)"></iframe>
+      </div>
+    </section>
+
+    <!-- ── Analytics tab ────────────────────────────────────── -->
+    <section class="tab-panel" id="panel-analytics" hidden>
+      <div class="grid grid-4 mb-md" id="pa-totals"></div>
+      <div class="card mb-md">
+        <div class="card-header">
+          <h3 class="card-title">Messages — last 30 days</h3>
+          <span class="muted text-sm" id="pa-chart-total"></span>
+        </div>
+        <div id="pa-chart" style="display:flex;align-items:flex-end;gap:3px;height:160px;padding:8px 0"></div>
+        <div class="row" style="justify-content:space-between;margin-top:6px">
+          <span class="muted text-sm" id="pa-chart-from"></span>
+          <span class="muted text-sm" id="pa-chart-to"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="card-title mb-md">Recent questions</h3>
+        <div id="pa-questions"></div>
+      </div>
+    </section>
+
+    <!-- ── Embed tab ─────────────────────────────────────── -->
+    <section class="tab-panel" id="panel-embed" hidden>
+      <div class="card mb-md">
+        <h2 class="card-title mb-md">Drop-in script tag</h2>
+        <p class="muted text-sm">Paste this anywhere on your site. Floating widget, no extra setup.</p>
+        <div class="code mt-md" id="snippet-script"></div>
+      </div>
+      <div class="card mb-md">
+        <h2 class="card-title mb-md">Direct iframe</h2>
+        <p class="muted text-sm">Or embed directly as an iframe.</p>
+        <div class="code mt-md" id="snippet-iframe"></div>
+      </div>
+      <div class="card">
+        <h2 class="card-title mb-md">Public link</h2>
+        <p class="muted text-sm">Share the chatbot directly without embedding.</p>
+        <div class="code mt-md" id="snippet-link"></div>
+      </div>
+    </section>
+
+    <!-- ── Capture tab ────────────────────────────────────── -->
+    <section class="tab-panel" id="panel-capture" hidden>
+      <div class="card mb-md">
+        <div style="display:flex;align-items:flex-start;gap:16px">
+          <div style="font-size:36px">🎯</div>
+          <div>
+            <h3 class="card-title" style="margin-bottom:4px">Lead Capture</h3>
+            <p class="muted text-sm" style="margin:0">Define the information your AI should collect during conversations. The AI naturally asks for these details and tags them with <code style="font-size:11px">[[CAPTURE:key=value]]</code> syntax, which the widget extracts invisibly.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-md">
+        <div class="card-header">
+          <h3 class="card-title">Quick templates</h3>
+        </div>
+        <div class="row" style="flex-wrap:wrap;gap:8px;padding-top:4px">
+          <button class="btn btn-ghost btn-sm" onclick="applyTemplate('callback')">📞 Callback request</button>
+          <button class="btn btn-ghost btn-sm" onclick="applyTemplate('appointment')">📅 Appointment booking</button>
+          <button class="btn btn-ghost btn-sm" onclick="applyTemplate('property')">🏠 Property viewing</button>
+          <button class="btn btn-ghost btn-sm" onclick="applyTemplate('consultation')">💼 Consultation intake</button>
+          <button class="btn btn-ghost btn-sm" onclick="applyTemplate('sales')">💰 Sales lead</button>
+        </div>
+      </div>
+
+      <div class="card mb-md">
+        <div class="card-header">
+          <h3 class="card-title">Fields</h3>
+          <span class="muted text-sm" id="capture-count"></span>
+          <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openFieldForm()">+ Add field</button>
+        </div>
+        <div id="capture-list"></div>
+      </div>
+
+      <!-- Add / edit field form -->
+      <div class="card" id="capture-form-card" hidden>
+        <h3 class="card-title mb-md" id="capture-form-title">Add field</h3>
+        <div class="col gap-md">
+          <div class="grid grid-2">
+            <div class="field">
+              <label>Label <span class="muted text-sm">(shown to visitors)</span></label>
+              <input class="input" id="cf-label" placeholder="Full name" />
+            </div>
+            <div class="field">
+              <label>Key <span class="muted text-sm">(identifier in data)</span></label>
+              <input class="input" id="cf-key" placeholder="full_name" />
+            </div>
+          </div>
+          <div class="grid grid-2">
+            <div class="field">
+              <label>Type</label>
+              <select class="select" id="cf-type">
+                <option value="text">Text</option>
+                <option value="email">Email</option>
+                <option value="phone">Phone</option>
+                <option value="number">Number</option>
+                <option value="date">Date</option>
+                <option value="time">Time</option>
+                <option value="select">Multiple choice</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Required</label>
+              <select class="select" id="cf-required">
+                <option value="true">Yes — must be collected</option>
+                <option value="false">No — optional</option>
+              </select>
+            </div>
+          </div>
+          <div class="field" id="cf-options-row" hidden>
+            <label>Options <span class="muted text-sm">(one per line)</span></label>
+            <textarea class="textarea" id="cf-options" rows="4" placeholder="Option A&#10;Option B&#10;Option C"></textarea>
+          </div>
+          <div id="capture-form-error" class="text-sm" style="color:#fca5a5;display:none"></div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn-primary" id="cf-save-btn" onclick="saveField()">Save field</button>
+            <button class="btn btn-ghost" onclick="closeFieldForm()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Leads tab ──────────────────────────────────────── -->
+    <section class="tab-panel" id="panel-leads" hidden>
+      <div class="card mb-md" style="padding:12px 20px">
+        <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+          <span class="muted text-sm" style="margin-right:4px">Filter:</span>
+          <button class="btn btn-sm btn-primary" id="leads-filter-all" onclick="setLeadsFilter('all')">All</button>
+          <button class="btn btn-sm btn-ghost" id="leads-filter-complete" onclick="setLeadsFilter('complete')">Complete</button>
+          <button class="btn btn-sm btn-ghost" id="leads-filter-incomplete" onclick="setLeadsFilter('incomplete')">Incomplete</button>
+          <span style="flex:1"></span>
+          <span class="muted text-sm" id="leads-count"></span>
+          <button class="btn btn-sm btn-ghost" id="leads-export-btn" onclick="exportLeadsCsv()">↓ Export CSV</button>
+        </div>
+      </div>
+
+      <div class="grid" style="grid-template-columns:1fr 340px;gap:16px;align-items:start">
+        <div class="card" style="min-height:400px;overflow-x:auto">
+          <div id="leads-table-wrap"></div>
+          <div class="row" style="justify-content:space-between;align-items:center;padding-top:12px;border-top:1px solid var(--border);margin-top:8px" id="leads-pagination" hidden>
+            <button class="btn btn-ghost btn-sm" id="leads-prev" onclick="leadsPrev()">← Prev</button>
+            <span class="muted text-sm" id="leads-page-info"></span>
+            <button class="btn btn-ghost btn-sm" id="leads-next" onclick="leadsNext()">Next →</button>
+          </div>
+        </div>
+        <div class="card" style="min-height:400px" id="lead-detail-card">
+          <div class="muted text-sm" style="padding:20px 0;text-align:center">Select a lead to view details</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+  Auth.requireLogin();
+  renderTopNav('dashboard');
+
+  const params = new URLSearchParams(location.search);
+  const projectId = params.get('id');
+  if (!projectId) location.href = '/dashboard';
+
+  let project = null;
+  let characters = [];
+
+  // 30 Gemini Live voices
+  const VOICES = ['Puck','Charon','Kore','Fenrir','Aoede','Leda','Orus','Zephyr','Achernar','Achird','Algenib','Algieba','Alnilam','Autonoe','Callirrhoe','Despina','Enceladus','Erinome','Gacrux','Iapetus','Laomedeia','Pulcherrima','Rasalgethi','Sadachbia','Sadaltager','Schedar','Sulafat','Umbriel','Vindemiatrix','Zubenelgenubi'];
+
+  // Tab switching
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      document.querySelectorAll('.tab-panel').forEach(p => p.hidden = true);
+      document.getElementById('panel-' + t.dataset.tab).hidden = false;
+      if (t.dataset.tab === 'preview') {
+        document.getElementById('preview-frame').src = `/e/${project.publicId}?_=${Date.now()}`;
+      }
+      if (t.dataset.tab === 'knowledge') loadFiles();
+      if (t.dataset.tab === 'analytics') loadProjectAnalytics();
+      if (t.dataset.tab === 'conversations') loadSessions();
+      if (t.dataset.tab === 'capture') loadCaptureFields();
+      if (t.dataset.tab === 'leads') loadLeads();
+    });
+  });
+
+  async function load() {
+    try {
+      const [{ project: p }, { characters: chars }] = await Promise.all([
+        API.getProject(projectId), API.characters(),
+      ]);
+      project = p; characters = chars;
+
+      document.getElementById('title').textContent = p.name;
+      document.getElementById('public-id').textContent = `Public ID: ${p.publicId}`;
+      document.getElementById('f-name').value = p.name;
+      document.getElementById('f-welcome').value = p.welcomeMessage || '';
+      document.getElementById('f-prompt').value = p.systemPrompt || '';
+
+      const charSel = document.getElementById('f-character');
+      charSel.innerHTML = chars.map(c =>
+        `<option value="${c.id}" ${c.id === p.characterId ? 'selected' : ''}>${c.name} — ${c.description}</option>`
+      ).join('');
+
+      const voiceSel = document.getElementById('f-voice');
+      voiceSel.innerHTML = VOICES.map(v =>
+        `<option value="${v}" ${v === p.voice ? 'selected' : ''}>${v}</option>`
+      ).join('');
+
+      // Widget tab
+      document.getElementById('f-position').value  = p.widgetPosition || 'bottom-right';
+      document.getElementById('f-startopen').value = String(!!p.widgetStartOpen);
+      document.getElementById('f-direction').value = p.textDirection || 'auto';
+      document.getElementById('f-theme').value     = p.themeColor || '#7c6af5';
+      document.getElementById('f-sources').value   = String(p.showSourceCards !== false);
+      document.getElementById('f-branding').value  = String(p.showBranding !== false);
+      document.getElementById('f-offset-x').value  = p.widgetOffsetX ?? 0;
+      document.getElementById('f-offset-y').value  = p.widgetOffsetY ?? 0;
+
+      // Settings tab: webhook
+      document.getElementById('f-webhook-url').value = p.webhookUrl || '';
+      if (p.webhookSecret) {
+        document.getElementById('f-webhook-secret').value = p.webhookSecret;
+        document.getElementById('f-webhook-secret-row').hidden = false;
+        document.getElementById('test-webhook-btn').hidden = !p.webhookUrl;
+      }
+
+      // Embed snippets
+      const origin = location.origin;
+      const link = `${origin}/e/${p.publicId}`;
+      document.getElementById('snippet-script').textContent =
+        `<script src="${origin}/js/embed-loader.js" data-bot="${p.publicId}" defer></` + `script>`;
+      document.getElementById('snippet-iframe').textContent =
+        `<iframe src="${link}" allow="microphone" style="width:100%;height:600px;border:0"></iframe>`;
+      document.getElementById('snippet-link').textContent = link;
+      [...document.querySelectorAll('.code')].forEach(addCopyButton);
+    } catch (e) {
+      toast(e.message, 'error');
+    }
+  }
+
+  function addCopyButton(el) {
+    const btn = document.createElement('button');
+    btn.className = 'code-copy';
+    btn.textContent = 'Copy';
+    btn.onclick = () => {
+      navigator.clipboard.writeText(el.textContent.trim());
+      btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy', 1500);
+    };
+    el.appendChild(btn);
+  }
+
+  // ── Save settings ──
+  document.getElementById('save-settings').addEventListener('click', async () => {
+    try {
+      const patch = {
+        name: document.getElementById('f-name').value.trim(),
+        welcomeMessage: document.getElementById('f-welcome').value,
+        systemPrompt: document.getElementById('f-prompt').value,
+        characterId: document.getElementById('f-character').value,
+        voice: document.getElementById('f-voice').value,
+        webhookUrl: document.getElementById('f-webhook-url').value.trim() || null,
+      };
+      const { project: p } = await API.updateProject(projectId, patch);
+      project = p;
+      document.getElementById('title').textContent = p.name;
+      document.getElementById('test-webhook-btn').hidden = !p.webhookUrl;
+      toast('Saved', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
+  // ── Webhook helpers ──
+  document.getElementById('copy-secret-btn').addEventListener('click', () => {
+    const val = document.getElementById('f-webhook-secret').value;
+    navigator.clipboard.writeText(val);
+    const btn = document.getElementById('copy-secret-btn');
+    btn.textContent = 'Copied'; setTimeout(() => btn.textContent = 'Copy', 1500);
+  });
+
+  document.getElementById('test-webhook-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('test-webhook-btn');
+    const result = document.getElementById('webhook-test-result');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    result.style.display = 'none';
+    try {
+      const { ok, status, statusText, error } = await API.testWebhook(projectId);
+      result.textContent = ok
+        ? `✓ Received ${status} ${statusText}`
+        : `✗ ${error || `HTTP ${status} ${statusText}`}`;
+      result.style.display = 'block';
+    } catch (e) { toast(e.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = 'Send test event'; }
+  });
+
+  // ── Save widget ──
+  document.getElementById('save-widget').addEventListener('click', async () => {
+    try {
+      const patch = {
+        widgetPosition:  document.getElementById('f-position').value,
+        widgetStartOpen: document.getElementById('f-startopen').value === 'true',
+        textDirection:   document.getElementById('f-direction').value,
+        themeColor:      document.getElementById('f-theme').value,
+        showSourceCards: document.getElementById('f-sources').value === 'true',
+        showBranding:    document.getElementById('f-branding').value === 'true',
+        widgetOffsetX:   parseInt(document.getElementById('f-offset-x').value, 10) || 0,
+        widgetOffsetY:   parseInt(document.getElementById('f-offset-y').value, 10) || 0,
+      };
+      const { project: p } = await API.updateProject(projectId, patch);
+      project = p;
+      toast('Widget settings saved', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
+  // ── Delete ──
+  document.getElementById('delete-btn').addEventListener('click', async () => {
+    if (!confirm(`Delete "${project.name}"? This removes all uploaded files and chat history.`)) return;
+    try { await API.deleteProject(projectId); location.href = '/dashboard'; }
+    catch (e) { toast(e.message, 'error'); }
+  });
+
+  // ── Knowledge tab: files + per-file status polling ──
+  const filePollers = new Map(); // fileId → intervalId
+
+  function stopPoller(fileId) {
+    if (filePollers.has(fileId)) {
+      clearInterval(filePollers.get(fileId));
+      filePollers.delete(fileId);
+    }
+  }
+
+  function startPoller(fileId) {
+    if (filePollers.has(fileId)) return;
+    const started = Date.now();
+    const id = setInterval(async () => {
+      const elapsed = Date.now() - started;
+      if (elapsed > 120000) {
+        stopPoller(fileId);
+        const badge = document.querySelector(`[data-file-id="${fileId}"] .status-badge`);
+        if (badge) badge.innerHTML = '<span class="pill">Still processing…</span>';
+        return;
+      }
+      try {
+        const { status, chunkCount, error } = await API.fileStatus(projectId, fileId);
+        const badge = document.querySelector(`[data-file-id="${fileId}"] .status-badge`);
+        if (badge) badge.innerHTML = statusBadge(status, chunkCount, error);
+        if (status === 'ready' || status === 'failed') stopPoller(fileId);
+      } catch (_) {}
+    }, 2000);
+    filePollers.set(fileId, id);
+  }
+
+  function statusBadge(status, chunkCount, error) {
+    if (status === 'pending')    return '<span class="pill pill-warn">Pending</span>';
+    if (status === 'processing') return '<span class="pill pill-info" style="display:inline-flex;align-items:center;gap:5px"><span class="spin" style="display:inline-block;width:10px;height:10px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite"></span>Processing…</span>';
+    if (status === 'ready')      return `<span class="pill pill-success">✓ ${chunkCount} chunk${chunkCount === 1 ? '' : 's'}</span>`;
+    if (status === 'failed')     return `<span class="pill pill-danger" title="${escape(error || 'Processing failed')}">Failed</span>`;
+    return `<span class="pill">${escape(status)}</span>`;
+  }
+
+  async function loadFiles() {
+    try {
+      const { files } = await API.listFiles(projectId);
+      renderFiles(files);
+      for (const f of files) {
+        if (f.status === 'pending' || f.status === 'processing') startPoller(f.id);
+        else stopPoller(f.id);
+      }
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function renderFiles(files) {
+    const root = document.getElementById('files-list');
+    document.getElementById('files-count').textContent = `${files.length} source${files.length === 1 ? '' : 's'}`;
+    if (files.length === 0) {
+      root.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><div class="empty-title">No sources yet</div><p class="muted text-sm">Upload a file or add a URL above.</p></div>';
+      return;
+    }
+    root.innerHTML = files.map(f => {
+      const icon = ({ pdf:'📄', docx:'📝', text:'📃', audio:'🔊', video:'🎬', image:'🖼️', url:'🔗' })[f.kind] || '📎';
+      const name = f.kind === 'url' && f.title ? f.title : f.originalName;
+      const sub  = f.kind === 'url' ? (f.sourceUrl || '') : (`${(f.size / 1024).toFixed(0)} KB · ${f.kind}`);
+      return `
+        <div data-file-id="${f.id}" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+          <div style="font-size:22px">${icon}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escape(name)}</div>
+            <div class="muted text-sm" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escape(sub)}${f.error ? ` — <span style="color:#fca5a5">${escape(f.error)}</span>` : ''}</div>
+          </div>
+          <span class="status-badge">${statusBadge(f.status, f.chunkCount, f.error)}</span>
+          <button class="btn btn-sm btn-ghost" onclick="reproc('${f.id}')">↻</button>
+          <button class="btn btn-sm btn-danger" onclick="del('${f.id}')">×</button>
+        </div>`;
+    }).join('');
+  }
+
+  window.reproc = async (id) => { stopPoller(id); await API.reprocessFile(projectId, id); loadFiles(); };
+  window.del    = async (id) => { if (!confirm('Delete this source?')) return; stopPoller(id); await API.deleteFile(projectId, id); loadFiles(); };
+
+  document.getElementById('upload-btn').addEventListener('click', () => document.getElementById('file-input').click());
+  document.getElementById('file-input').addEventListener('change', async (e) => {
+    const fd = new FormData();
+    for (const f of e.target.files) fd.append('files', f);
+    try { await API.uploadFiles(projectId, fd); toast('Uploaded — processing…', 'success'); loadFiles(); }
+    catch (err) { toast(err.message, 'error'); }
+    e.target.value = '';
+  });
+
+  document.getElementById('url-btn').addEventListener('click', addUrl);
+  document.getElementById('url-input').addEventListener('keydown', e => { if (e.key === 'Enter') addUrl(); });
+  async function addUrl() {
+    const input = document.getElementById('url-input');
+    const url = input.value.trim();
+    if (!url) return;
+    try {
+      await API.addUrl(projectId, url);
+      input.value = '';
+      toast('URL added — fetching…', 'success');
+      loadFiles();
+    } catch (err) { toast(err.message, 'error'); }
+  }
+
+  // ── Reindex ──
+  document.getElementById('reindex-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('reindex-btn');
+    if (!confirm('Re-embed all sources using the current model? This may take a few minutes.')) return;
+    btn.disabled = true;
+    btn.textContent = '↺ Re-indexing…';
+    try {
+      const { reindexed, failed } = await API.reindexProject(projectId);
+      toast(`Re-indexed ${reindexed} source${reindexed === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`, failed ? 'error' : 'success');
+      loadFiles();
+    } catch (e) { toast(e.message, 'error'); }
+    finally { btn.disabled = false; btn.textContent = '↺ Re-index'; }
+  });
+
+  // ── Conversations tab ──
+  let allSessions = [];
+
+  async function loadSessions() {
+    const listEl = document.getElementById('sessions-list');
+    listEl.innerHTML = '<div class="muted text-sm" style="padding:12px 0">Loading…</div>';
+    try {
+      const { sessions } = await API.listSessions(projectId);
+      allSessions = sessions;
+      document.getElementById('sessions-count').textContent = `${sessions.length} session${sessions.length === 1 ? '' : 's'}`;
+      if (sessions.length === 0) {
+        listEl.innerHTML = '<div class="empty"><div class="empty-icon">💬</div><div class="empty-title">No conversations yet</div><p class="muted text-sm">Sessions appear here after visitors chat with your bot.</p></div>';
+        return;
+      }
+      listEl.innerHTML = sessions.map((s, i) => `
+        <div class="session-row" onclick="loadTranscript('${s.id}')" style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border);cursor:pointer">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:500">${new Date(s.createdAt).toLocaleString()}</div>
+            <div class="muted text-sm">${s.messageCount} message${s.messageCount === 1 ? '' : 's'}</div>
+          </div>
+          <span style="color:var(--text-dim);font-size:12px">→</span>
+        </div>`).join('');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  window.loadTranscript = async (sessionId) => {
+    const title = document.getElementById('transcript-title');
+    const body  = document.getElementById('transcript-body');
+    title.textContent = 'Loading…';
+    body.innerHTML = '';
+    try {
+      const { session, messages } = await API.getSession(projectId, sessionId);
+      title.textContent = new Date(session.createdAt).toLocaleString();
+      if (messages.length === 0) {
+        body.innerHTML = '<p class="muted text-sm">No messages in this session.</p>';
+        return;
+      }
+      body.innerHTML = messages.map(m => `
+        <div style="display:flex;flex-direction:column;gap:2px;align-items:${m.role === 'user' ? 'flex-end' : 'flex-start'}">
+          <div style="font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em">${escape(m.role)}</div>
+          <div style="max-width:85%;padding:8px 12px;border-radius:12px;font-size:13px;line-height:1.5;background:${m.role === 'user' ? 'var(--accent)' : 'var(--bg-3)'};color:${m.role === 'user' ? '#fff' : 'var(--text)'}">${escape(m.content)}</div>
+          <div style="font-size:10px;color:var(--text-dim)">${new Date(m.createdAt).toLocaleTimeString()}</div>
+        </div>`).join('');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  document.getElementById('export-csv-btn').addEventListener('click', () => {
+    if (allSessions.length === 0) return toast('No sessions to export', 'error');
+    const rows = [['session_id', 'started_at', 'message_count']];
+    for (const s of allSessions) {
+      rows.push([s.id, new Date(s.createdAt).toISOString(), s.messageCount]);
+    }
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `sessions-${projectId}.csv`;
+    a.click();
+  });
+
+  // ── Project analytics tab ──
+  async function loadProjectAnalytics() {
+    document.getElementById('pa-totals').innerHTML = '<div class="muted text-sm" style="grid-column:1/-1;padding:8px 0">Loading…</div>';
+    try {
+      const { totals, daily, topQuestions } = await API.projectAnalytics(projectId);
+
+      document.getElementById('pa-totals').innerHTML = [
+        { label: 'Sessions', value: totals.sessions },
+        { label: 'Messages', value: totals.messages },
+        { label: 'Sources',  value: totals.files },
+        { label: 'Avg turns / session', value: totals.avgSessionLength },
+      ].map(i => `<div class="card"><div class="muted text-sm">${i.label}</div><div style="font-size:28px;font-weight:700;letter-spacing:-0.02em;margin-top:4px">${i.value}</div></div>`).join('');
+
+      const max = Math.max(1, ...daily.map(d => d.messages));
+      document.getElementById('pa-chart-total').textContent = `${daily.reduce((s, d) => s + d.messages, 0)} messages`;
+      document.getElementById('pa-chart-from').textContent = daily[0]?.date || '';
+      document.getElementById('pa-chart-to').textContent   = daily[daily.length - 1]?.date || '';
+      document.getElementById('pa-chart').innerHTML = daily.map(d => {
+        const pct = (d.messages / max) * 100;
+        return `<div title="${d.date}: ${d.messages} msg, ${d.sessions} sessions" style="flex:1;display:flex;align-items:flex-end;height:100%;cursor:default">
+          <div style="width:100%;height:${pct}%;min-height:${d.messages > 0 ? '2px' : '0'};background:linear-gradient(180deg,var(--accent-2),var(--accent));border-radius:3px 3px 0 0;transition:opacity .15s" onmouseover="this.style.opacity=0.8" onmouseout="this.style.opacity=1"></div>
+        </div>`;
+      }).join('');
+
+      const qEl = document.getElementById('pa-questions');
+      if (topQuestions.length === 0) {
+        qEl.innerHTML = '<p class="muted text-sm">No questions recorded yet.</p>';
+      } else {
+        qEl.innerHTML = topQuestions.map(q => `
+          <div style="display:flex;align-items:baseline;justify-content:space-between;gap:16px;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div style="font-size:13px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(q.text)}</div>
+            <div class="muted text-sm" style="white-space:nowrap;flex-shrink:0">${new Date(q.createdAt).toLocaleDateString()}</div>
+          </div>`).join('');
+      }
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function escape(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  }
+
+  // ── Capture tab ─────────────────────────────────────────────
+  const CAPTURE_TEMPLATES = {
+    callback: { name: 'Callback request', fields: [
+      { label: 'Full name', key: 'full_name', type: 'text', required: true, options: null },
+      { label: 'Phone number', key: 'phone', type: 'phone', required: true, options: null },
+      { label: 'Best time to call', key: 'call_time', type: 'select', required: false, options: ['Morning', 'Afternoon', 'Evening'] },
+    ]},
+    appointment: { name: 'Appointment booking', fields: [
+      { label: 'Full name', key: 'full_name', type: 'text', required: true, options: null },
+      { label: 'Email', key: 'email', type: 'email', required: true, options: null },
+      { label: 'Phone', key: 'phone', type: 'phone', required: false, options: null },
+      { label: 'Preferred date', key: 'preferred_date', type: 'date', required: true, options: null },
+      { label: 'Preferred time', key: 'preferred_time', type: 'time', required: false, options: null },
+    ]},
+    property: { name: 'Property viewing', fields: [
+      { label: 'Full name', key: 'full_name', type: 'text', required: true, options: null },
+      { label: 'Email', key: 'email', type: 'email', required: true, options: null },
+      { label: 'Phone', key: 'phone', type: 'phone', required: false, options: null },
+      { label: 'Budget range', key: 'budget', type: 'select', required: false, options: ['Under $200k', '$200k–$400k', '$400k–$600k', 'Over $600k'] },
+      { label: 'Viewing date', key: 'viewing_date', type: 'date', required: false, options: null },
+    ]},
+    consultation: { name: 'Consultation intake', fields: [
+      { label: 'Full name', key: 'full_name', type: 'text', required: true, options: null },
+      { label: 'Email', key: 'email', type: 'email', required: true, options: null },
+      { label: 'Phone', key: 'phone', type: 'phone', required: false, options: null },
+      { label: 'Company', key: 'company', type: 'text', required: false, options: null },
+      { label: 'Main challenge', key: 'challenge', type: 'text', required: false, options: null },
+    ]},
+    sales: { name: 'Sales lead', fields: [
+      { label: 'Full name', key: 'full_name', type: 'text', required: true, options: null },
+      { label: 'Email', key: 'email', type: 'email', required: true, options: null },
+      { label: 'Company', key: 'company', type: 'text', required: false, options: null },
+      { label: 'Budget', key: 'budget', type: 'number', required: false, options: null },
+      { label: 'Timeline', key: 'timeline', type: 'select', required: false, options: ['Immediately', '1–3 months', '3–6 months', '6+ months'] },
+    ]},
+  };
+
+  const TYPE_ICON = { text:'Aa', email:'@', phone:'☎', number:'#', date:'📅', time:'⏰', select:'▾' };
+  let captureFields = [];
+  let editingFieldId = null;
+
+  async function loadCaptureFields() {
+    try {
+      const { fields } = await API.listCaptureFields(projectId);
+      captureFields = fields;
+      renderCaptureFields();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function renderCaptureFields() {
+    const list = document.getElementById('capture-list');
+    document.getElementById('capture-count').textContent = `${captureFields.length} field${captureFields.length === 1 ? '' : 's'}`;
+    if (captureFields.length === 0) {
+      list.innerHTML = '<div class="empty" style="padding:24px 0"><div class="empty-icon">🎯</div><div class="empty-title">No fields yet</div><p class="muted text-sm">Add fields above or pick a template to get started.</p></div>';
+      return;
+    }
+    list.innerHTML = captureFields.map((f, i) => `
+      <div data-field-id="${f.id}" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+        <span style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;background:var(--bg-3);border-radius:6px;font-size:12px;font-weight:600;flex-shrink:0">${TYPE_ICON[f.type] || '?'}</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:500;font-size:14px">${escape(f.label)} ${f.required ? '<span class="pill pill-warn" style="font-size:10px;padding:1px 6px">required</span>' : ''}</div>
+          <div class="muted text-sm">key: <code style="font-size:11px">${escape(f.key)}</code> · type: ${f.type}${f.options ? ' · ' + f.options.length + ' options' : ''}</div>
+        </div>
+        <div class="row" style="gap:4px;flex-shrink:0">
+          <button class="btn btn-sm btn-ghost" onclick="moveCaptureField('${f.id}', -1)" ${i === 0 ? 'disabled' : ''} title="Move up">↑</button>
+          <button class="btn btn-sm btn-ghost" onclick="moveCaptureField('${f.id}', 1)" ${i === captureFields.length - 1 ? 'disabled' : ''} title="Move down">↓</button>
+          <button class="btn btn-sm btn-ghost" onclick="openFieldForm('${f.id}')">Edit</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteField('${f.id}')">×</button>
+        </div>
+      </div>`).join('');
+  }
+
+  document.getElementById('cf-type').addEventListener('change', () => {
+    document.getElementById('cf-options-row').hidden = document.getElementById('cf-type').value !== 'select';
+  });
+
+  document.getElementById('cf-label').addEventListener('input', () => {
+    if (editingFieldId) return; // don't auto-derive when editing
+    const label = document.getElementById('cf-label').value;
+    document.getElementById('cf-key').value = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+  });
+
+  window.openFieldForm = (fieldId) => {
+    editingFieldId = fieldId || null;
+    const formCard = document.getElementById('capture-form-card');
+    const f = fieldId ? captureFields.find(x => x.id === fieldId) : null;
+    document.getElementById('capture-form-title').textContent = f ? 'Edit field' : 'Add field';
+    document.getElementById('cf-label').value = f ? f.label : '';
+    document.getElementById('cf-key').value = f ? f.key : '';
+    document.getElementById('cf-type').value = f ? f.type : 'text';
+    document.getElementById('cf-required').value = f ? String(f.required) : 'true';
+    document.getElementById('cf-options-row').hidden = (f ? f.type : 'text') !== 'select';
+    document.getElementById('cf-options').value = f?.options ? f.options.join('\n') : '';
+    document.getElementById('capture-form-error').style.display = 'none';
+    formCard.hidden = false;
+    formCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('cf-label').focus();
+  };
+
+  window.closeFieldForm = () => {
+    document.getElementById('capture-form-card').hidden = true;
+    editingFieldId = null;
+  };
+
+  window.saveField = async () => {
+    const label = document.getElementById('cf-label').value.trim();
+    const key   = document.getElementById('cf-key').value.trim();
+    const type  = document.getElementById('cf-type').value;
+    const required = document.getElementById('cf-required').value === 'true';
+    const optText = document.getElementById('cf-options').value;
+    const options = type === 'select' ? optText.split('\n').map(s => s.trim()).filter(Boolean) : null;
+    const errEl = document.getElementById('capture-form-error');
+    errEl.style.display = 'none';
+
+    const btn = document.getElementById('cf-save-btn');
+    btn.disabled = true;
+    try {
+      const data = { label, key, type, required, ...(options !== null ? { options } : {}) };
+      if (editingFieldId) {
+        await API.updateCaptureField(projectId, editingFieldId, data);
+      } else {
+        await API.createCaptureField(projectId, data);
+      }
+      closeFieldForm();
+      await loadCaptureFields();
+      toast(editingFieldId ? 'Field updated' : 'Field added', 'success');
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+    } finally { btn.disabled = false; }
+  };
+
+  window.deleteField = async (fieldId) => {
+    if (!confirm('Delete this capture field? Existing lead data using this key is not affected.')) return;
+    try {
+      await API.deleteCaptureField(projectId, fieldId);
+      await loadCaptureFields();
+      toast('Field deleted', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.moveCaptureField = async (fieldId, direction) => {
+    const idx = captureFields.findIndex(f => f.id === fieldId);
+    const newIdx = idx + direction;
+    if (newIdx < 0 || newIdx >= captureFields.length) return;
+    const ids = captureFields.map(f => f.id);
+    ids.splice(idx, 1);
+    ids.splice(newIdx, 0, fieldId);
+    try {
+      const { fields } = await API.reorderCaptureFields(projectId, ids);
+      captureFields = fields;
+      renderCaptureFields();
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.applyTemplate = async (name) => {
+    const tpl = CAPTURE_TEMPLATES[name];
+    if (!tpl) return;
+    if (captureFields.length > 0 && !confirm(`This will add ${tpl.fields.length} fields from the "${tpl.name}" template. Continue?`)) return;
+    try {
+      for (let i = 0; i < tpl.fields.length; i++) {
+        const f = tpl.fields[i];
+        const exists = captureFields.find(x => x.key === f.key);
+        if (!exists) {
+          await API.createCaptureField(projectId, { ...f, order: captureFields.length + i });
+        }
+      }
+      await loadCaptureFields();
+      toast(`"${tpl.name}" template applied`, 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  // ── Leads tab ────────────────────────────────────────────────
+  let leadsFilter = 'all';
+  let leadsPage = 1;
+  let leadsTotal = 0;
+  const LEADS_PAGE_SIZE = 20;
+  let allLeadsData = [];
+
+  function setLeadsFilter(f) {
+    leadsFilter = f;
+    leadsPage = 1;
+    ['all', 'complete', 'incomplete'].forEach(x => {
+      const btn = document.getElementById(`leads-filter-${x}`);
+      if (btn) btn.className = `btn btn-sm ${x === f ? 'btn-primary' : 'btn-ghost'}`;
+    });
+    loadLeads();
+  }
+
+  async function loadLeads() {
+    const wrap = document.getElementById('leads-table-wrap');
+    wrap.innerHTML = '<div class="muted text-sm" style="padding:12px 0">Loading…</div>';
+    try {
+      const complete = leadsFilter === 'all' ? 'all' : leadsFilter === 'complete' ? 'true' : 'false';
+      const { leads, total } = await API.listLeads(projectId, { complete, page: leadsPage, limit: LEADS_PAGE_SIZE });
+      allLeadsData = leads;
+      leadsTotal = total;
+
+      // Update tab badge
+      const tabBtn = document.getElementById('leads-tab');
+      if (leadsFilter === 'all' && tabBtn) tabBtn.textContent = `Leads${total > 0 ? ' · ' + total : ''}`;
+
+      document.getElementById('leads-count').textContent = `${total} total`;
+
+      if (leads.length === 0) {
+        wrap.innerHTML = '<div class="empty" style="padding:32px 0"><div class="empty-icon">📋</div><div class="empty-title">No leads yet</div><p class="muted text-sm">Leads appear here once visitors provide their details during a chat.</p></div>';
+        document.getElementById('leads-pagination').hidden = true;
+        return;
+      }
+
+      // Build dynamic column headers from all field labels in first result
+      const fieldLabels = leads[0]?.fieldLabels || {};
+      const keys = Object.keys(fieldLabels);
+
+      wrap.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:13px">
+          <thead>
+            <tr style="border-bottom:2px solid var(--border)">
+              <th style="text-align:left;padding:8px 6px;font-weight:600;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em">Date</th>
+              ${keys.map(k => `<th style="text-align:left;padding:8px 6px;font-weight:600;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em">${escape(fieldLabels[k])}</th>`).join('')}
+              <th style="text-align:left;padding:8px 6px;font-weight:600;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${leads.map(l => `
+              <tr onclick="openLeadDetail('${l.id}')" style="cursor:pointer;border-bottom:1px solid var(--border)" onmouseover="this.style.background='var(--bg-3)'" onmouseout="this.style.background=''">
+                <td style="padding:9px 6px;color:var(--text-dim)">${new Date(l.createdAt).toLocaleDateString()}</td>
+                ${keys.map(k => `<td style="padding:9px 6px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(l.data?.[k] || '—')}</td>`).join('')}
+                <td style="padding:9px 6px"><span class="pill ${l.complete ? 'pill-success' : 'pill-warn'}">${l.complete ? '✓ Complete' : 'Partial'}</span></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>`;
+
+      const pagEl = document.getElementById('leads-pagination');
+      const totalPages = Math.ceil(total / LEADS_PAGE_SIZE);
+      if (totalPages > 1) {
+        pagEl.hidden = false;
+        document.getElementById('leads-page-info').textContent = `Page ${leadsPage} of ${totalPages}`;
+        document.getElementById('leads-prev').disabled = leadsPage <= 1;
+        document.getElementById('leads-next').disabled = leadsPage >= totalPages;
+      } else {
+        pagEl.hidden = true;
+      }
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  window.leadsPrev = () => { if (leadsPage > 1) { leadsPage--; loadLeads(); } };
+  window.leadsNext = () => { leadsPage++; loadLeads(); };
+
+  window.openLeadDetail = async (leadId) => {
+    const card = document.getElementById('lead-detail-card');
+    card.innerHTML = '<div class="muted text-sm" style="padding:16px 0;text-align:center">Loading…</div>';
+    try {
+      const { lead, messages } = await API.getLead(projectId, leadId);
+      const fieldLabels = lead.fieldLabels || {};
+      const entries = Object.entries(lead.data || {});
+
+      card.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <h3 style="font-size:15px;font-weight:600;margin:0">${new Date(lead.createdAt).toLocaleString()}</h3>
+          <span class="pill ${lead.complete ? 'pill-success' : 'pill-warn'}">${lead.complete ? '✓ Complete' : 'Partial'}</span>
+        </div>
+        <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px">
+          ${entries.length === 0
+            ? '<div class="muted text-sm" style="padding:12px 16px">No data captured</div>'
+            : entries.map(([k, v]) => `
+                <div style="display:flex;gap:12px;padding:9px 14px;border-bottom:1px solid var(--border)">
+                  <div class="muted text-sm" style="flex:0 0 120px;font-size:11px;text-transform:uppercase;letter-spacing:.04em;padding-top:1px">${escape(fieldLabels[k] || k)}</div>
+                  <div style="font-size:13px;font-weight:500;flex:1">${escape(v)}</div>
+                </div>`).join('')}
+        </div>
+        <div style="font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);margin-bottom:8px">Conversation (${messages.length} messages)</div>
+        <div style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto">
+          ${messages.length === 0
+            ? '<p class="muted text-sm">No transcript.</p>'
+            : messages.map(m => `
+                <div style="display:flex;flex-direction:column;align-items:${m.role === 'user' ? 'flex-end' : 'flex-start'};gap:2px">
+                  <div style="font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.04em">${escape(m.role)}</div>
+                  <div style="max-width:90%;padding:6px 10px;border-radius:10px;font-size:12px;line-height:1.45;background:${m.role === 'user' ? 'var(--accent)' : 'var(--bg-3)'};color:${m.role === 'user' ? '#fff' : 'var(--text)'}">${escape(m.content)}</div>
+                </div>`).join('')}
+        </div>`;
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.exportLeadsCsv = async () => {
+    if (allLeadsData.length === 0) return toast('No leads to export', 'error');
+    const fieldLabels = allLeadsData[0]?.fieldLabels || {};
+    const keys = Object.keys(fieldLabels);
+    const headers = ['id', 'date', ...keys.map(k => fieldLabels[k]), 'complete'];
+    const rows = [headers, ...allLeadsData.map(l => [
+      l.id,
+      new Date(l.createdAt).toISOString(),
+      ...keys.map(k => l.data?.[k] || ''),
+      l.complete ? 'yes' : 'no',
+    ])];
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `leads-${projectId}.csv`;
+    a.click();
+  };
+
+  // Auto-open Leads tab if URL has #leads hash
+  if (location.hash === '#leads') {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.hidden = true);
+    const lt = document.querySelector('[data-tab="leads"]');
+    if (lt) { lt.classList.add('active'); document.getElementById('panel-leads').hidden = false; }
+  }
+
+  load();
+  </script>
+</body>
+</html>

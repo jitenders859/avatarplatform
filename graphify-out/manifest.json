@@ -1,0 +1,130 @@
+{
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/server.js": {
+    "mtime": 1778367647.0,
+    "hash": "1428dbaaf80b6a5c5eabaa2002bd4702"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/db.js": {
+    "mtime": 1778367399.0,
+    "hash": "0a0641d2df50f1f52d5b52d1749de33d"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/plans.js": {
+    "mtime": 1778367412.0,
+    "hash": "fab3460f04a760cb501fed29e1a394ab"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/middleware/auth.js": {
+    "mtime": 1778281361.0,
+    "hash": "723853775f79fd9bc23b07e560b18f63"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/routes/files.js": {
+    "mtime": 1778367563.0,
+    "hash": "419311824b801dcfaa3eb4792c5271e6"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/routes/auth.js": {
+    "mtime": 1778281449.0,
+    "hash": "89c331acdb23bce4c5206aa1676b59d8"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/routes/embed.js": {
+    "mtime": 1778367583.0,
+    "hash": "3876e0cb9ace3991dcdce0bda6bd1022"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/routes/billing.js": {
+    "mtime": 1778367637.0,
+    "hash": "4bae3369826ea69e26cfeadd63f4602a"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/routes/projects.js": {
+    "mtime": 1778367529.0,
+    "hash": "2ffb95c853b4eedf7c0fa10098ba37b4"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/routes/analytics.js": {
+    "mtime": 1778367595.0,
+    "hash": "2d5cdf3e61c12c24c86232869a0cd09c"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/services/chunk.js": {
+    "mtime": 1778281385.0,
+    "hash": "fea9105a7200a173f6e944c6a597b794"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/services/embed.js": {
+    "mtime": 1778281376.0,
+    "hash": "39df32c16bf730a9a06c6db9c82dda4d"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/services/vector.js": {
+    "mtime": 1778281426.0,
+    "hash": "a124286ad982f6690c303d44e91c6661"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/services/stripe.js": {
+    "mtime": 1778367418.0,
+    "hash": "5b51b1f0761dee9e0806263cdd637a28"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/services/extract.js": {
+    "mtime": 1778281416.0,
+    "hash": "c5a2dea8d7d659ba12a218c8db7f6f66"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/services/usage.js": {
+    "mtime": 1778367480.0,
+    "hash": "7db76b724fa80e5439a5a02de3cdba3f"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/services/url.js": {
+    "mtime": 1778367439.0,
+    "hash": "e47f2dec001c1c8f5a5892413e33b9bd"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/backend/services/process.js": {
+    "mtime": 1778367460.0,
+    "hash": "6ad7bc80f206fe5b2aa9325ced6d4a7d"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/lipsync-sdk.js": {
+    "mtime": 1778281803.0,
+    "hash": "07c494209b4dc45d0591f886ab7b1774"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/js/embed-loader.js": {
+    "mtime": 1778367820.0,
+    "hash": "7b03d85582056ee98e56303d0fd58ab5"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/js/api.js": {
+    "mtime": 1778367898.0,
+    "hash": "a07b3bc6c6949dac453dac69e49f2054"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/README.md": {
+    "mtime": 1778368347.0,
+    "hash": "b452c0276490bd9ef18bca60d0b0b3fb"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/index.html": {
+    "mtime": 1778368081.0,
+    "hash": "3be78faa0fe89f13c4553179b4a17e9e"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/pricing.html": {
+    "mtime": 1778368247.0,
+    "hash": "6807715ac9832d2cd64bf38e38aa3ba3"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/billing.html": {
+    "mtime": 1778368213.0,
+    "hash": "3a6d072c5da02b03c5436e1c4d99b507"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/login.html": {
+    "mtime": 1778368091.0,
+    "hash": "cabab4cc646af0b71f553e30083d4ef7"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/dashboard.html": {
+    "mtime": 1778368123.0,
+    "hash": "30f64588efc86978a6a295c9f072c30b"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/analytics.html": {
+    "mtime": 1778368234.0,
+    "hash": "6a759f1bb9d549136b8b70f0f49bd23a"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/project.html": {
+    "mtime": 1778368185.0,
+    "hash": "14042600a8e3b2628f307dbaa3a91d69"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/embed.html": {
+    "mtime": 1778367745.0,
+    "hash": "7a2c38e909d3e382e50dc6ed8d40977d"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/signup.html": {
+    "mtime": 1778368100.0,
+    "hash": "43cceeb60458bf551a897cd800fee8e0"
+  },
+  "/Users/uhkjjkhjh/Downloads/avatar-platform 2/public/assets/characters/README.md": {
+    "mtime": 1778281810.0,
+    "hash": "87e0019ed4be56858b9b7dc47cde75da"
+  }
+}

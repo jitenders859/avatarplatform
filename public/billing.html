@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Billing — AvatarPlatform</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <div class="container mt-md">
+    <div class="page-header">
+      <div>
+        <h1 class="page-title">Billing & usage</h1>
+        <p class="page-sub">Manage your subscription and see what you've used this month</p>
+      </div>
+      <button class="btn btn-ghost" id="portal-btn" hidden>Manage billing →</button>
+    </div>
+
+    <div class="card mb-lg">
+      <div class="card-header">
+        <h2 class="card-title">Current plan</h2>
+        <span id="plan-pill" class="pill pill-info">Loading…</span>
+      </div>
+      <div id="usage-bars" class="col gap-md"></div>
+    </div>
+
+    <h2 style="font-size:18px;margin:0 0 16px">Plans</h2>
+    <div class="grid grid-4" id="plans-grid"></div>
+    <p class="muted text-sm text-center mt-lg" id="stripe-note"></p>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+  Auth.requireLogin();
+  renderTopNav('billing');
+
+  // Status from Stripe redirect
+  const status = new URLSearchParams(location.search).get('status');
+  if (status === 'success')   toast('Subscription activated!', 'success');
+  if (status === 'cancelled') toast('Checkout cancelled', 'error');
+
+  let currentPlanId = 'free';
+
+  async function load() {
+    try {
+      const [usage, { plans, stripeEnabled }, sub] = await Promise.all([
+        API.usage(), API.plans(), API.subscription(),
+      ]);
+      currentPlanId = usage.plan.id;
+
+      document.getElementById('plan-pill').textContent = usage.plan.name;
+      document.getElementById('stripe-note').innerHTML = stripeEnabled
+        ? `Powered by Stripe · Period: <strong>${usage.period}</strong>`
+        : `<span class="pill pill-warn">Demo mode</span> — Stripe is not configured on this server. Contact the admin to enable paid plans.`;
+
+      // Show portal button if user has a Stripe customer (i.e., they've subscribed before)
+      if (sub && sub.subscription) {
+        document.getElementById('portal-btn').hidden = false;
+      }
+
+      renderUsage(usage);
+      renderPlans(plans, stripeEnabled);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function renderUsage(u) {
+    const c = u.counters, l = u.limits;
+    const items = [
+      { label: 'Chatbots',           current: c.projects,        limit: l.projects,             unit: '' },
+      { label: 'Files (across all)', current: c.files,           limit: l.filesPerProject,      unit: '' },
+      { label: 'Storage',            current: c.storageMb,       limit: l.storageMb,            unit: ' MB' },
+      { label: 'URL sources',        current: c.urlSources,      limit: l.urlSources,           unit: '' },
+      { label: 'Messages this month',current: c.messages,        limit: l.monthlyMessages,      unit: '' },
+      { label: 'Embedding chars',    current: c.embeddingChars,  limit: l.monthlyEmbeddingChars,unit: '' },
+    ];
+    document.getElementById('usage-bars').innerHTML = items.map(i => {
+      const pct = Math.min(100, Math.round((i.current / Math.max(1, i.limit)) * 100));
+      const danger = pct >= 90 ? 'background:#ef4444' : pct >= 70 ? 'background:#f59e0b' : 'background:linear-gradient(90deg,var(--accent),var(--accent-2))';
+      return `
+        <div>
+          <div class="row" style="justify-content:space-between;margin-bottom:6px">
+            <span class="text-sm">${i.label}</span>
+            <span class="muted text-sm">${formatNum(i.current)}${i.unit} / ${formatNum(i.limit)}${i.unit}</span>
+          </div>
+          <div style="height:8px;background:var(--bg-3);border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;${danger};transition:width .4s"></div>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  function formatNum(n) {
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
+    return String(n);
+  }
+
+  function renderPlans(plans, stripeEnabled) {
+    document.getElementById('plans-grid').innerHTML = plans.map(p => {
+      const isCurrent = p.id === currentPlanId;
+      const cta = isCurrent
+        ? '<button class="btn btn-ghost" disabled style="width:100%">Current plan</button>'
+        : (p.id === 'free'
+            ? '<button class="btn btn-ghost" disabled style="width:100%">Free tier</button>'
+            : (p.hasStripe && stripeEnabled
+                ? `<button class="btn btn-primary" style="width:100%" onclick="checkout('${p.id}')">Upgrade →</button>`
+                : '<button class="btn btn-ghost" disabled style="width:100%">Not configured</button>'));
+      return `
+        <div class="card" style="position:relative;${p.popular ? 'border-color:var(--accent)' : ''}">
+          ${p.popular ? '<span class="pill pill-info" style="position:absolute;top:-10px;left:20px">Most popular</span>' : ''}
+          <h3 style="margin:0 0 4px;font-size:18px">${p.name}</h3>
+          <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em">$${p.priceMonthly}<span class="muted text-sm" style="font-weight:400">/mo</span></div>
+          <p class="muted text-sm" style="margin:6px 0 16px">${p.description}</p>
+          <ul style="list-style:none;padding:0;margin:0 0 20px;font-size:13px">
+            ${p.features.map(f => `<li style="padding:4px 0">✓ ${f}</li>`).join('')}
+          </ul>
+          ${cta}
+        </div>`;
+    }).join('');
+  }
+
+  window.checkout = async (planId) => {
+    try {
+      const { url } = await API.createCheckout(planId);
+      location.href = url;
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  document.getElementById('portal-btn').addEventListener('click', async () => {
+    try { const { url } = await API.createPortalSession(); location.href = url; }
+    catch (e) { toast(e.message, 'error'); }
+  });
+
+  load();
+  </script>
+</body>
+</html>

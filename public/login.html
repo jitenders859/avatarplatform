@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Log in — AvatarPlatform</title>
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <div style="min-height:100vh;display:grid;place-items:center;padding:24px">
+    <div class="card" style="width:100%;max-width:400px">
+      <a class="brand" href="/" style="margin-bottom:24px;justify-content:center">
+        <span class="brand-mark">A</span>
+        <span>AvatarPlatform</span>
+      </a>
+      <h1 style="font-size:22px;margin:0 0 4px;text-align:center">Welcome back</h1>
+      <p class="muted text-sm text-center" style="margin:0 0 24px">Log in to manage your chatbots</p>
+
+      <form id="login-form" class="col gap-md">
+        <div class="field">
+          <label>Email</label>
+          <input class="input" type="email" id="email" required autofocus autocomplete="email" />
+        </div>
+        <div class="field">
+          <label style="display:flex;justify-content:space-between;align-items:center">
+            Password
+            <a href="/forgot-password" class="text-sm muted" style="font-weight:400">Forgot password?</a>
+          </label>
+          <input class="input" type="password" id="password" required autocomplete="current-password" />
+        </div>
+        <div id="error" class="text-sm" style="color:#fca5a5;display:none"></div>
+        <button class="btn btn-primary btn-lg" type="submit" id="submit">Log in</button>
+      </form>
+
+      <p class="muted text-sm text-center" style="margin-top:20px">
+        Don't have an account? <a href="/signup">Sign up</a>
+      </p>
+    </div>
+  </div>
+
+  <script src="/js/api.js"></script>
+  <script>
+  if (Auth.loggedIn()) location.href = '/dashboard';
+
+  document.getElementById('login-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submit');
+    const err = document.getElementById('error');
+    err.style.display = 'none';
+    btn.disabled = true; btn.textContent = 'Logging in…';
+    try {
+      const res = await API.login(
+        document.getElementById('email').value.trim(),
+        document.getElementById('password').value,
+      );
+      Auth.token = res.token;
+      Auth.user = res.user;
+      location.href = '/dashboard';
+    } catch (e2) {
+      err.textContent = e2.message;
+      err.style.display = 'block';
+      btn.disabled = false; btn.textContent = 'Log in';
+    }
+  });
+  </script>
+</body>
+</html>
