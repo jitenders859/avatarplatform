@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Prefetching &amp; Advanced Control — AvatarPlatform Docs</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">Prefetching &amp; Advanced Control</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link active" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>SDK Introduction</div>
+        <h1>Prefetching &amp; Advanced Control</h1>
+        <p class="docs-lead">The <code>AvatarPlatform</code> global namespace exposes methods for preloading configuration, asking questions asynchronously, and controlling the widget state from your own JavaScript.</p>
+
+        <h2>AvatarPlatform.preload()</h2>
+        <p>Pre-fetch a bot's configuration before the widget renders. Call this as early as possible — on page load or after the user hovers over a "Chat" button — to eliminate the initial config-fetch latency when the panel first opens.</p>
+        <pre><code class="language-javascript">// Warm the browser cache immediately on page load
+AvatarPlatform.preload('YOUR_BOT_ID');
+
+// Or await the config if you need to inspect it
+const config = await AvatarPlatform.preload('YOUR_BOT_ID');
+console.log(config.project.name);       // "My Support Bot"
+console.log(config.character.rivePath); // "/assets/characters/character_1.riv"</code></pre>
+
+        <h3>Signature</h3>
+        <pre><code class="language-typescript">AvatarPlatform.preload(botId: string): Promise&lt;{
+  project: ProjectConfig;
+  character: { id: string; name: string; rivePath: string };
+  captureFields: CaptureField[];
+  apiKey: string;
+  model: string;
+}&gt;</code></pre>
+        <p><code>preload()</code> calls <code>GET /embed/:publicId/config</code> and caches the response in the browser. Subsequent calls for the same <code>botId</code> return the cached value without a network request.</p>
+
+        <h2>AvatarPlatform.ask()</h2>
+        <p>Send a question to the agent and get back a text answer with source citations. This uses the async REST endpoint — no voice, no WebSocket, no widget required. Perfect for search bars, FAQ flows, and in-page tooltips.</p>
+        <pre><code class="language-javascript">const result = await AvatarPlatform.ask('YOUR_BOT_ID', 'How do I cancel my subscription?');
+
+console.log(result.answer);
+// → "To cancel your subscription, go to Settings → Billing → Cancel plan..."
+
+console.log(result.sources);
+// → [{ title: "Billing FAQ", url: null, snippet: "Subscriptions can be cancelled..." }]
+
+console.log(result.sessionId);
+// → "550e8400-e29b-41d4-a716-446655440000"</code></pre>
+
+        <h3>Continuing a conversation</h3>
+        <p>Pass the <code>sessionId</code> back on follow-up questions to maintain context:</p>
+        <pre><code class="language-javascript">const first = await AvatarPlatform.ask('YOUR_BOT_ID', 'What is your refund policy?');
+const followUp = await AvatarPlatform.ask('YOUR_BOT_ID', 'How long does it take?', first.sessionId);
+// The second call has context from the first answer.</code></pre>
+
+        <h3>Signature</h3>
+        <pre><code class="language-typescript">AvatarPlatform.ask(
+  botId: string,
+  question: string,
+  sessionId?: string
+): Promise&lt;{
+  answer: string;
+  sources: { title: string; url: string | null; snippet: string }[];
+  sessionId: string;
+}&gt;</code></pre>
+
+        <div class="callout callout-info">
+          <span class="callout-icon">ℹ️</span>
+          <div class="callout-body"><p><code>ask()</code> calls <code>POST /embed/:publicId/ask</code>. The endpoint embeds the question, performs a pgvector similarity search, calls Gemini REST (<code>gemini-2.0-flash</code>), and returns a complete answer. It is not streaming — the full answer is returned in one response.</p></div>
+        </div>
+
+        <h2>Controlling the widget</h2>
+        <p>You can open, close, hide, and show the widget launcher from any JavaScript on the page. The widget listens for custom events dispatched on <code>document</code>.</p>
+
+        <h3>Open and close</h3>
+        <pre><code class="language-javascript">// Open the chat panel
+document.dispatchEvent(new CustomEvent('ap:open', { detail: { botId: 'YOUR_BOT_ID' } }));
+
+// Close the chat panel (launcher remains visible)
+document.dispatchEvent(new CustomEvent('ap:close', { detail: { botId: 'YOUR_BOT_ID' } }));</code></pre>
+
+        <h3>Hide and show the launcher</h3>
+        <pre><code class="language-javascript">// Completely hide the widget (useful on checkout pages, full-screen modals)
+document.dispatchEvent(new CustomEvent('ap:hide', { detail: { botId: 'YOUR_BOT_ID' } }));
+
+// Bring it back
+document.dispatchEvent(new CustomEvent('ap:show', { detail: { botId: 'YOUR_BOT_ID' } }));</code></pre>
+
+        <h3>React hook shorthand</h3>
+        <p>If you're using the React SDK, the <code>useAvatarPlatform</code> hook wraps these events for you:</p>
+        <pre><code class="language-tsx">import { useAvatarPlatform } from '@avatar-platform/react';
+
+function NavBar() {
+  const { open, close, hide, show } = useAvatarPlatform('YOUR_BOT_ID');
+
+  return (
+    &lt;nav&gt;
+      &lt;button onClick={open}&gt;Chat with us&lt;/button&gt;
+      &lt;button onClick={hide}&gt;Hide widget&lt;/button&gt;
+    &lt;/nav&gt;
+  );
+}</code></pre>
+
+        <h2>Listening for events</h2>
+        <p>The widget emits events on <code>document</code> so you can react to user actions:</p>
+        <pre><code class="language-javascript">// Fired when the user opens the panel
+document.addEventListener('ap:opened', (e) => {
+  console.log('Widget opened for bot:', e.detail.botId);
+});
+
+// Fired when a message is sent by the user
+document.addEventListener('ap:message', (e) => {
+  const { botId, sessionId, role, text } = e.detail;
+  // Send to your own analytics
+  analytics.track('chat_message', { botId, role });
+});
+
+// Fired when the agent responds
+document.addEventListener('ap:response', (e) => {
+  const { botId, sessionId, answer, sources } = e.detail;
+});</code></pre>
+
+        <h2>Combining preload + ask</h2>
+        <p>A common pattern for FAQ widgets: preload on hover, ask on click, show the answer inline — no widget needed:</p>
+        <pre><code class="language-javascript">const BOT_ID = 'YOUR_BOT_ID';
+
+// Preload on hover so ask() is instant
+document.getElementById('faq-btn').addEventListener('mouseenter', () => {
+  AvatarPlatform.preload(BOT_ID);
+});
+
+// Ask on click, render answer inline
+document.getElementById('faq-btn').addEventListener('click', async () => {
+  const query = document.getElementById('faq-input').value;
+  const result = await AvatarPlatform.ask(BOT_ID, query);
+  document.getElementById('faq-answer').textContent = result.answer;
+});</code></pre>
+
+        <div class="callout callout-tip">
+          <span class="callout-icon">✅</span>
+          <div class="callout-body"><p>See the <a href="/docs/troubleshooting">Troubleshooting</a> guide if <code>AvatarPlatform</code> is undefined — it means the SDK script tag hasn't loaded yet.</p></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

@@ -686,6 +686,181 @@
   }
 
   // ═══════════════════════════════════════════════════════
+  //  CHARACTER BEHAVIOR CONTROLLER
+  //  Expression/idle animation layer. Runs alongside lip-sync.
+  //  Drives blink, eye dart, head, breathing, emotions via Rive.
+  //
+  //  Input name defaults (override via opts.inputMap or named opts):
+  //    Blink, EyeX, EyeY, HeadTilt, HeadNod, Breathe, Smile, BrowRaise
+  //
+  //  How to add a gesture:
+  //    1. Map a key in opts.inputMap.
+  //    2. Call _setNumber(key, value) or _fireTrigger(key).
+  //    3. Wrap in _canGesture() + _markGesture(cooldownMs).
+  // ═══════════════════════════════════════════════════════
+  class CharacterBehaviorController {
+    constructor(inputs, opts = {}) {
+      this._inputs = inputs || {};
+      this._map = {
+        blink: 'Blink', eyeX: 'EyeX', eyeY: 'EyeY',
+        headTilt: 'HeadTilt', headNod: 'HeadNod', breathe: 'Breathe',
+        smile: 'Smile', brows: 'BrowRaise',
+        ...(opts.inputMap || {}),
+      };
+      if (opts.blinkInput)    this._map.blink    = opts.blinkInput;
+      if (opts.eyeXInput)     this._map.eyeX     = opts.eyeXInput;
+      if (opts.eyeYInput)     this._map.eyeY     = opts.eyeYInput;
+      if (opts.headTiltInput) this._map.headTilt = opts.headTiltInput;
+      if (opts.headNodInput)  this._map.headNod  = opts.headNodInput;
+      if (opts.breatheInput)  this._map.breathe  = opts.breatheInput;
+      if (opts.smileInput)    this._map.smile    = opts.smileInput;
+      if (opts.browsInput)    this._map.brows    = opts.browsInput;
+
+      this._idleIntensity    = opts.idleIntensity    ?? 1.0;
+      this._gestureIntensity = opts.gestureIntensity ?? 1.0;
+
+      this._state   = 'idle';
+      this._running = false;
+      this._raf     = null;
+      this._lastMs  = 0;
+      this._breathPhase    = 0;
+      this._idleNoisePhase = 0;
+      this._nextBlinkMs  = 0;
+      this._nextDartMs   = 0;
+      this._gestureCooldownMs = 0;
+    }
+
+    start() {
+      if (this._running) return;
+      this._running = true;
+      this._lastMs = performance.now();
+      this._nextBlinkMs = performance.now() + this._blinkInterval();
+      this._nextDartMs  = performance.now() + 3000 + Math.random() * 4000;
+      this._tick();
+    }
+
+    stop() {
+      this._running = false;
+      if (this._raf) { cancelAnimationFrame(this._raf); this._raf = null; }
+    }
+
+    setState(state) {
+      this._state = state;
+    }
+
+    reactToEmotion(text) {
+      if (!text) return;
+      const t = text.toLowerCase();
+      if (/\b(wow|incredible|really|oh my|fascinating|remarkable)\b/.test(t)) { this._triggerBrows(); return; }
+      if (/\b(great|excellent|wonderful|amazing|love|thanks|glad|happy|awesome|perfect)\b/.test(t)) { this._triggerSmile(); return; }
+      if (/\b(sorry|unfortunately|problem|issue|error|fail|mistake|wrong|trouble)\b/.test(t)) { this._triggerEmpathy(); }
+      if (/\?/.test(text)) { this._triggerThinkingLook(); }
+    }
+
+    _tick() {
+      if (!this._running) return;
+      const now = performance.now();
+      const dt  = Math.min(now - this._lastMs, 100);
+      this._lastMs = now;
+      this._updateBreathe(dt);
+      this._updateBlink(now);
+      this._updateEyeDart(now);
+      this._updateIdleHead(dt);
+      if (this._state === 'listening') this._applyListeningPose(now);
+      if (this._state === 'thinking')  this._applyThinkingPose(now);
+      this._raf = requestAnimationFrame(() => this._tick());
+    }
+
+    _updateBreathe(dt) {
+      if (this._state !== 'idle' && this._state !== 'listening') return;
+      this._breathPhase += dt * 0.0028;
+      this._setNumber('breathe', (Math.sin(this._breathPhase) * 0.5 + 0.5) * 30 * this._idleIntensity);
+    }
+
+    _updateBlink(now) {
+      if (now < this._nextBlinkMs) return;
+      this._fireTrigger('blink');
+      if (Math.random() < 0.12) setTimeout(() => this._fireTrigger('blink'), 180);
+      this._nextBlinkMs = now + this._blinkInterval();
+    }
+
+    _blinkInterval() { return (this._state === 'idle' ? 3000 : 4500) + Math.random() * 3000; }
+
+    _updateEyeDart(now) {
+      if (this._state === 'thinking') return;
+      if (now < this._nextDartMs) return;
+      const x = (Math.random() - 0.5) * 22, y = (Math.random() - 0.5) * 12;
+      this._setNumber('eyeX', x * this._idleIntensity);
+      this._setNumber('eyeY', y * this._idleIntensity);
+      setTimeout(() => { this._setNumber('eyeX', 0); this._setNumber('eyeY', 0); }, 380 + Math.random() * 250);
+      this._nextDartMs = now + 3000 + Math.random() * 5000;
+    }
+
+    _updateIdleHead(dt) {
+      if (this._state !== 'idle') return;
+      this._idleNoisePhase += dt * 0.0009;
+      this._setNumber('headTilt', Math.sin(this._idleNoisePhase * 0.7) * 5  * this._idleIntensity);
+      this._setNumber('headNod',  Math.sin(this._idleNoisePhase * 0.5) * 3  * this._idleIntensity);
+    }
+
+    _applyListeningPose(now) {
+      this._setNumber('headTilt', (Math.sin(now * 0.0006) * 2 + 4) * this._idleIntensity);
+    }
+
+    _applyThinkingPose(now) {
+      const d = Math.sin(now * 0.0009) * 4;
+      this._setNumber('eyeX', 14 + d);
+      this._setNumber('eyeY', -16 + d * 0.5);
+    }
+
+    _triggerSmile() {
+      if (!this._canGesture()) return;
+      this._setNumber('smile', 80 * this._gestureIntensity);
+      setTimeout(() => this._setNumber('smile', 0), 1400);
+      this._markGesture(2000);
+    }
+
+    _triggerBrows() {
+      if (!this._canGesture()) return;
+      this._setNumber('brows', 65 * this._gestureIntensity);
+      setTimeout(() => this._setNumber('brows', 0), 550);
+      this._markGesture(900);
+    }
+
+    _triggerEmpathy() {
+      if (!this._canGesture()) return;
+      this._setNumber('headTilt', 10 * this._gestureIntensity);
+      setTimeout(() => this._setNumber('headTilt', 0), 1200);
+      this._markGesture(2500);
+    }
+
+    _triggerThinkingLook() {
+      if (!this._canGesture()) return;
+      this._setNumber('eyeX', 18 * this._gestureIntensity);
+      this._setNumber('eyeY', -13 * this._gestureIntensity);
+      setTimeout(() => { this._setNumber('eyeX', 0); this._setNumber('eyeY', 0); }, 700);
+      this._markGesture(1200);
+    }
+
+    _canGesture()            { return performance.now() >= this._gestureCooldownMs; }
+    _markGesture(cooldownMs) { this._gestureCooldownMs = performance.now() + cooldownMs; }
+
+    _setNumber(key, value) {
+      const inp = this._inputs[this._map[key]];
+      if (!inp) return;
+      if (typeof inp.fire === 'function' && typeof inp.value === 'undefined') return;
+      inp.value = Math.max(-100, Math.min(100, value));
+    }
+
+    _fireTrigger(key) {
+      const inp = this._inputs[this._map[key]];
+      if (!inp) return;
+      if (typeof inp.fire === 'function') inp.fire();
+      else if ('value' in inp) inp.value = true;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
   //  LIPSYNCAVATAR CLASS
   // ═══════════════════════════════════════════════════════
   class LipsyncAvatar {
@@ -746,6 +921,15 @@
         visemeMaxValue: RIVE_ACTIVE_MAX_VALUE,
         visemePeakRatio: 0.88,
         visemeOverlapMs: 35,
+        // Hybrid lip-sync params
+        anticipationMs: 40,      // pre-roll mouth N ms before phoneme starts
+        minVisemeMs: 50,         // minimum hold per viseme (prevents flutter on fast consonants)
+        smoothingMs: 70,         // not used by timed-ramp but exposed for downstream controllers
+        mouthDelayMs: 0,         // positive = delay anchor (audio arrives late); negative = advance
+        amplitudeSensitivity: 1.0,
+        // Character behavior controller
+        enableBehavior: false,
+        behaviorConfig: {},
       }, opts);
 
       this._opts.visemeMinValue = Math.max(1, Math.min(99, Number(this._opts.visemeMinValue) || RIVE_ACTIVE_MIN_VALUE));
@@ -791,6 +975,7 @@
       this._outputTranscriptBuf = '';
       this._inputTranscriptBuf  = '';
       this._outputMsgEl         = null;
+      this._behaviorCtrl        = null;
 
       // Defer UI build until DOM is parsed. This prevents the common
       // "container not found" error when the <script> tag runs before
@@ -1115,6 +1300,15 @@ When answering, speak naturally and conversationally — do not read the knowled
             }
             this._startLerpLoop();
             this._setAzureViseme(0, { immediate: true });
+
+            // Build behavior controller once inputs are known
+            if (this._opts.enableBehavior) {
+              this._behaviorCtrl = new CharacterBehaviorController(
+                this._riveInputs,
+                this._opts.behaviorConfig || {}
+              );
+              this._behaviorCtrl.start();
+            }
           },
           onLoadError: (e) => {
             const span = this._el.placeholder.querySelector('span');
@@ -1284,10 +1478,16 @@ When answering, speak naturally and conversationally — do not read the knowled
         : 0;
       const base = Math.max(queueEndMs, audioOffsetMs);
 
+      const ant    = this._opts.anticipationMs || 0;
+      const minMs  = this._opts.minVisemeMs    || 0;
       for (const e of entries) {
+        // Enforce minimum hold on non-silence visemes
+        if (minMs > 0 && e.azId !== 0 && e.durationMs < minMs) e.durationMs = minMs;
+        // Anticipation: mouth starts ant ms before the scheduled phoneme.
+        // Math.max(base, ...) prevents pushing entries before the current audio position.
         this._schedQueue.push({
           ...e,
-          startMs: base + e.startMs,
+          startMs: Math.max(base, base + e.startMs - ant),
           endMs:   base + e.startMs + e.durationMs,
         });
       }
@@ -1330,7 +1530,26 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._setVisemeWeights(values);
         }
       } else {
-        this._setAzureViseme(0);
+        // Queue empty — drive jaw from amplitude when audio is still audible.
+        // This covers the gap between first audio chunk and first transcript arriving.
+        const vol = Object.values(this._fftBands).reduce((a, b) => a + b, 0) / 5;
+        const ampSens = this._opts.amplitudeSensitivity || 1.0;
+        const audioIsPlaying = this._audioStart > 0 &&
+          this._audioCtx && this._audioCtx.currentTime < this._nextPlayAt + 0.1;
+        if (vol > 0.0002 && audioIsPlaying) {
+          const jawAmp = clamp01(vol / 0.014 * ampSens);
+          const jawValue = Math.round(
+            this._opts.visemeMinValue +
+            (this._opts.visemeMaxValue - this._opts.visemeMinValue) * jawAmp
+          );
+          if (jawValue > this._opts.visemeMinValue) {
+            this._setVisemeWeights({ 1: jawValue }); // az viseme 1 = aa (wide open)
+          } else {
+            this._setAzureViseme(0);
+          }
+        } else {
+          this._setAzureViseme(0);
+        }
       }
 
       this._schedRaf = requestAnimationFrame(() => this._driveSchedule());
@@ -1408,6 +1627,7 @@ When answering, speak naturally and conversationally — do not read the knowled
           if (this._el.voiceSelect) this._el.voiceSelect.disabled = true;
           this._startFFT();
           this._addMsg('Session started', 'system');
+          if (this._behaviorCtrl) this._behaviorCtrl.setState('idle');
           this._fire('onConnected');
           return;
         }
@@ -1422,6 +1642,7 @@ When answering, speak naturally and conversationally — do not read the knowled
               this._setStatus('Speaking…', 'speaking');
               this._el.canvasWrap.classList.add('lsa-speaking');
               this._el.canvasWrap.classList.remove('lsa-listening');
+              if (this._behaviorCtrl) this._behaviorCtrl.setState('speaking');
               this._fire('onSpeaking');
             }
             if (part.text) this._addMsg(part.text, 'model');
@@ -1433,6 +1654,7 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._outputTranscriptBuf += delta;
           // Schedule visemes from the delta only (cumulative would re-queue duplicates)
           this._scheduleFromText(delta);
+          if (this._behaviorCtrl) this._behaviorCtrl.reactToEmotion(delta);
           // Update SDK's internal transcript display with the full accumulated text
           if (this._el.transcript) {
             if (!this._outputMsgEl) {
@@ -1459,15 +1681,19 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._outputTranscriptBuf = '';
           this._inputTranscriptBuf  = '';
           this._outputMsgEl         = null;
+          if (this._behaviorCtrl) this._behaviorCtrl.setState('listening');
           setTimeout(() => {
             this._schedQueue = [];
+            this._audioStart = 0;
             this._setAzureViseme(0, { immediate: true });
+            if (this._behaviorCtrl) this._behaviorCtrl.setState('idle');
           }, 400);
         }
 
         if (content.interrupted) {
           this._nextPlayAt = this._audioCtx.currentTime;
           this._schedQueue = [];
+          this._audioStart  = 0;
           this._setAzureViseme(0, { immediate: true });
           this._setStatus('Interrupted', 'listening');
           this._el.canvasWrap.classList.add('lsa-listening');
@@ -1475,6 +1701,7 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._outputTranscriptBuf = '';
           this._inputTranscriptBuf  = '';
           this._outputMsgEl         = null;
+          if (this._behaviorCtrl) this._behaviorCtrl.setState('listening');
         }
       };
 
@@ -1511,6 +1738,7 @@ When answering, speak naturally and conversationally — do not read the knowled
     _stopSession() {
       this._stopMicNow();
       this._schedQueue = [];
+      this._audioStart = 0;
       if (this._ws) { try { this._ws.close(); } catch(_) {} this._ws = null; }
     }
 
@@ -1532,7 +1760,9 @@ When answering, speak naturally and conversationally — do not read the knowled
       if (this._nextPlayAt < now + 0.01) this._nextPlayAt = now + 0.01;
 
       if (this._audioStart <= 0) {
-        this._audioStart = this._nextPlayAt;
+        // mouthDelayMs: positive = delay anchor (mouth waits for late audio);
+        // negative = advance anchor (mouth leads the audio).
+        this._audioStart = this._nextPlayAt + (this._opts.mouthDelayMs / 1000);
         if (!this._schedRaf) this._driveSchedule();
       }
 
@@ -1622,6 +1852,7 @@ When answering, speak naturally and conversationally — do not read the knowled
         this._el.canvasWrap.classList.add('lsa-listening');
         this._el.canvasWrap.classList.remove('lsa-speaking');
         this._setStatus('Listening…', 'listening');
+        if (this._behaviorCtrl) this._behaviorCtrl.setState('listening');
         this._fire('onListening');
       } catch(e) {
         this._showError(`Mic error: ${e.message}`);
@@ -1684,3 +1915,66 @@ When answering, speak naturally and conversationally — do not read the knowled
 
   return LipsyncAvatar;
 }));
+
+// ── AvatarPlatform async namespace ────────────────────────────
+// Exposed as window.AvatarPlatform for headless usage independent
+// of the LipsyncAvatar class (no Rive, no WebSocket required).
+(function () {
+  'use strict';
+
+  const AP = window.AvatarPlatform = window.AvatarPlatform || {};
+
+  // Resolve the server origin from the script tag's own src URL.
+  // Falls back to window.location.origin when called from a module context.
+  function _origin() {
+    if (typeof document !== 'undefined') {
+      const scripts = document.querySelectorAll('script[src]');
+      for (let i = scripts.length - 1; i >= 0; i--) {
+        const src = scripts[i].getAttribute('src') || '';
+        if (src.includes('lipsync-sdk')) {
+          try { return new URL(src, window.location.href).origin; } catch (_) {}
+        }
+      }
+    }
+    return (typeof window !== 'undefined' ? window.location.origin : '');
+  }
+
+  // Cache for preloaded configs  keyed by botId.
+  const _configCache = new Map();
+
+  /**
+   * AvatarPlatform.preload(botId)
+   * Pre-fetches the bot configuration and caches it in the browser.
+   * Call early (on page load, on hover) to eliminate first-open latency.
+   */
+  AP.preload = function preload(botId) {
+    if (_configCache.has(botId)) return Promise.resolve(_configCache.get(botId));
+    const url = _origin() + '/embed/' + encodeURIComponent(botId) + '/config';
+    return fetch(url)
+      .then(function (r) {
+        if (!r.ok) throw new Error('AvatarPlatform.preload: ' + r.status);
+        return r.json();
+      })
+      .then(function (cfg) {
+        _configCache.set(botId, cfg);
+        return cfg;
+      });
+  };
+
+  /**
+   * AvatarPlatform.ask(botId, question, sessionId?)
+   * Send a question and get back { answer, sources, sessionId }.
+   * Does not require voice, WebSocket, or the widget to be visible.
+   */
+  AP.ask = function ask(botId, question, sessionId) {
+    const url = _origin() + '/embed/' + encodeURIComponent(botId) + '/ask';
+    return fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: question, sessionId: sessionId || undefined }),
+    }).then(function (r) {
+      if (!r.ok) return r.json().then(function (e) { throw new Error(e.error || 'AvatarPlatform.ask: ' + r.status); });
+      return r.json();
+    });
+  };
+}());

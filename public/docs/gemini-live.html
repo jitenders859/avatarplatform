@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gemini Live API Avatar — AvatarPlatform Docs</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">Gemini Live API Avatar</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link active" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>SDK Introduction</div>
+        <h1>Gemini Live API Avatar</h1>
+        <p class="docs-lead">The default voice engine. Gemini Live opens a persistent WebSocket directly from the browser to Google's Generative Language service, giving you sub-300ms speech-to-speech latency with full lip sync.</p>
+
+        <h2>How the WebSocket works</h2>
+        <p>Unlike traditional REST-based TTS pipelines, Gemini Live maintains a <em>bidirectional</em> streaming connection between the browser and the Gemini service:</p>
+        <ol>
+          <li>The SDK opens a WebSocket to <code>wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent</code></li>
+          <li>A <code>BidiGenerateContentSetup</code> message configures the model, voice, system prompt, and knowledge context</li>
+          <li>The user's microphone audio is captured at 16 kHz PCM, chunked into 100ms frames, and streamed as <code>BidiGenerateContentRealtimeInput</code> messages</li>
+          <li>Gemini returns <code>BidiGenerateContentServerContent</code> messages containing 24 kHz PCM audio chunks</li>
+          <li>Audio chunks are queued into the Web Audio API's destination node for seamless playback</li>
+          <li>In parallel, the FFT analyser reads amplitude data at 50 Hz and the phoneme scheduler drives the Rive lip-sync inputs</li>
+        </ol>
+
+        <pre><code class="language-text">Browser mic (16kHz PCM)
+    │
+    ▼
+WebSocket ──────────────────────► Gemini Live
+                                       │
+    ◄──────────────────────────── PCM audio (24kHz)
+    │
+    ├─ Web Audio API → speaker
+    └─ FFT analyser → lip-sync controller → Rive inputs</code></pre>
+
+        <h2>PUBLIC_GEMINI_API_KEY requirement</h2>
+        <p>Because the WebSocket is opened directly from the browser, the Gemini API key is exposed to the client. You should use a <strong>separate, restricted key</strong> for this purpose:</p>
+        <pre><code class="language-bash"># .env
+PUBLIC_GEMINI_API_KEY=AIza...  # browser-safe key (set quotas + referrer restrictions)
+GEMINI_API_KEY=AIza...         # server-side key for embeddings and async /ask</code></pre>
+        <p>The server returns <code>PUBLIC_GEMINI_API_KEY</code> (falling back to <code>GEMINI_API_KEY</code>) in the <code>GET /embed/:publicId/config</code> response. The embed widget uses this key to authenticate the WebSocket.</p>
+        <div class="callout callout-warn">
+          <span class="callout-icon">⚠️</span>
+          <div class="callout-body"><p><strong>In production:</strong> Create a separate API key in Google AI Studio and restrict it to the <code>generativelanguage.googleapis.com</code> service with HTTP referrer restrictions matching your embed domains.</p></div>
+        </div>
+
+        <h2>Audio pipeline</h2>
+        <h3>Input (microphone → Gemini)</h3>
+        <ul>
+          <li>Sample rate: <strong>16 kHz</strong>, mono, 16-bit PCM</li>
+          <li>Chunk size: ~100ms frames (1600 samples)</li>
+          <li>Captured via <code>getUserMedia</code> → <code>AudioWorkletNode</code> or <code>ScriptProcessorNode</code></li>
+          <li>Resampled from the device's native sample rate if needed</li>
+        </ul>
+
+        <h3>Output (Gemini → speaker + lip sync)</h3>
+        <ul>
+          <li>Sample rate: <strong>24 kHz</strong>, mono, 16-bit PCM</li>
+          <li>Decoded via <code>AudioContext.decodeAudioData</code> or directly buffered into an <code>AudioBufferSourceNode</code></li>
+          <li>Scheduled at <code>audioContext.currentTime + bufferOffset</code> to prevent gaps</li>
+          <li>Simultaneously fed to an <code>AnalyserNode</code> (FFT size 512) for amplitude data</li>
+        </ul>
+
+        <h2>Viseme → Rive animation pipeline</h2>
+        <p>The lip-sync controller operates in two modes simultaneously:</p>
+
+        <h3>Amplitude mode (always active)</h3>
+        <p>Every 20ms (50 Hz), the analyser reads 512 frequency bins. The RMS amplitude of the speech band (200–3400 Hz) controls a continuous mouth-open value, providing smooth movement even between phoneme transitions.</p>
+
+        <h3>Phoneme schedule mode (overlaid)</h3>
+        <p>The SDK estimates phoneme timing from the audio using a scheduler that fires at <code>PHONEMES_PER_SEC = 13.5</code> phonemes per second. Each phoneme maps to one of 23 Azure-style viseme IDs, which in turn map to one of 23 Rive number inputs (inputs 100–122).</p>
+        <pre><code class="language-text">Audio timing
+    │
+    ▼
+Phoneme scheduler
+    │ fires 13.5x/sec
+    ▼
+Azure viseme ID (0–22)
+    │
+    ▼
+Rive input number (100–122)
+    │
+    ▼
+Rive state machine → character mouth pose</code></pre>
+
+        <h2>Supported languages</h2>
+        <p>Gemini Live auto-detects the speaker's language. The following are confirmed to produce accurate lip sync:</p>
+        <table class="props-table">
+          <thead><tr><th>Language</th><th>Code</th><th>RTL</th></tr></thead>
+          <tbody>
+            <tr><td>English</td><td>en</td><td>No</td></tr>
+            <tr><td>Spanish</td><td>es</td><td>No</td></tr>
+            <tr><td>French</td><td>fr</td><td>No</td></tr>
+            <tr><td>German</td><td>de</td><td>No</td></tr>
+            <tr><td>Portuguese</td><td>pt</td><td>No</td></tr>
+            <tr><td>Japanese</td><td>ja</td><td>No</td></tr>
+            <tr><td>Korean</td><td>ko</td><td>No</td></tr>
+            <tr><td>Chinese (Mandarin)</td><td>zh</td><td>No</td></tr>
+            <tr><td>Arabic</td><td>ar</td><td>Yes ✓</td></tr>
+            <tr><td>Hebrew</td><td>he</td><td>Yes ✓</td></tr>
+            <tr><td>Persian</td><td>fa</td><td>Yes ✓</td></tr>
+            <tr><td>Urdu</td><td>ur</td><td>Yes ✓</td></tr>
+          </tbody>
+        </table>
+        <p>RTL languages are fully supported — the widget panel and text direction flip automatically based on the detected script.</p>
+
+        <h2>Model configuration</h2>
+        <p>The default model is <code>gemini-3.1-flash-live-preview</code>. You can override it by setting the model in your project system prompt or by changing <code>DEFAULT_MODEL</code> in <code>lipsync-sdk.js</code>.</p>
+        <pre><code class="language-javascript">// In lipsync-sdk.js
+const DEFAULT_MODEL = 'gemini-3.1-flash-live-preview';
+
+// Available models (check Google AI Studio for latest list)
+// gemini-3.1-flash-live-preview  — lowest latency, recommended
+// gemini-3.0-flash-live-preview  — previous generation</code></pre>
+
+        <div class="callout callout-tip">
+          <span class="callout-icon">💡</span>
+          <div class="callout-body"><p>See <a href="/docs/natural-lipsync">Natural Lip Sync</a> for details on how to tune the viseme timing, overlap, and amplitude sensitivity.</p></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

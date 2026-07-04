@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Contact — AvatarPlatform</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <style>
+    .contact-page {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 72px 24px 100px;
+    }
+    .contact-eyebrow {
+      font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .contact-title {
+      font-size: 42px; font-weight: 800;
+      letter-spacing: -0.03em; line-height: 1.1;
+      margin: 0 0 14px;
+      background: linear-gradient(170deg, #fff 40%, #b6bbcc 100%);
+      -webkit-background-clip: text; background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .contact-grid {
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 60px;
+      align-items: start;
+      margin-top: 56px;
+    }
+    @media (max-width: 820px) {
+      .contact-grid { grid-template-columns: 1fr; gap: 40px; }
+    }
+    .contact-sub {
+      font-size: 16px; color: var(--text-2);
+      line-height: 1.65; margin: 0 0 40px;
+      -webkit-text-fill-color: var(--text-2);
+    }
+    .contact-info-block {
+      display: flex; align-items: flex-start; gap: 16px;
+      padding: 20px;
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      margin-bottom: 12px;
+    }
+    .contact-info-icon {
+      width: 40px; height: 40px;
+      border-radius: 12px;
+      background: rgba(124,106,245,0.1);
+      border: 1px solid rgba(124,106,245,0.2);
+      display: grid; place-items: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .contact-info-label {
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-dim);
+      margin-bottom: 4px;
+    }
+    .contact-info-value {
+      font-size: 14px; font-weight: 500;
+      color: var(--text);
+    }
+    .contact-info-value a { color: var(--text); text-decoration: none; }
+    .contact-info-value a:hover { text-decoration: underline; color: var(--accent-2); }
+    .contact-async {
+      margin-top: 28px;
+      padding: 20px;
+      background: rgba(124,106,245,0.07);
+      border: 1px solid rgba(124,106,245,0.15);
+      border-radius: 14px;
+    }
+    .contact-async-label {
+      font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 8px;
+    }
+    .contact-async p {
+      font-size: 13.5px; color: var(--text-2);
+      line-height: 1.6; margin: 0;
+    }
+    .cal-header {
+      font-size: 22px; font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 8px;
+    }
+    .cal-sub {
+      font-size: 14px; color: var(--text-2);
+      line-height: 1.6; margin: 0 0 28px;
+    }
+    .cal-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 32px;
+    }
+    #cal-embed {
+      min-height: 500px;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .cal-placeholder {
+      min-height: 480px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      gap: 16px;
+      background: rgba(255,255,255,0.02);
+      border: 2px dashed rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 40px;
+    }
+    .cal-placeholder-icon { font-size: 48px; }
+    .cal-placeholder h3 {
+      font-size: 18px; font-weight: 700;
+      margin: 0;
+    }
+    .cal-placeholder p {
+      font-size: 14px; color: var(--text-dim);
+      max-width: 320px; margin: 0; line-height: 1.6;
+    }
+    .cal-placeholder a.btn { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <!-- NAVBAR -->
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark">AP</span>
+        <span>AvatarPlatform</span>
+      </a>
+      <div class="spacer"></div>
+      <div class="nav-links">
+        <a class="nav-link" href="/docs">Docs</a>
+        <a class="nav-link" href="/pricing">Pricing</a>
+        <a class="nav-link" href="/characters">Characters</a>
+        <a class="nav-link active" href="/contact">Contact</a>
+        <a class="nav-link" href="/login">Log in</a>
+      </div>
+      <a class="btn btn-primary btn-sm" href="/signup">Get started free</a>
+    </div>
+  </nav>
+
+  <div class="contact-page">
+    <p class="contact-eyebrow">Get in touch</p>
+    <h1 class="contact-title">Let's talk</h1>
+
+    <div class="contact-grid">
+      <!-- LEFT: info -->
+      <div>
+        <p class="contact-sub">Book a free 30-minute setup call. We'll help you get your first agent live — from knowledge base to embedded widget.</p>
+
+        <div class="contact-info-block">
+          <div class="contact-info-icon">📧</div>
+          <div>
+            <p class="contact-info-label">Email</p>
+            <p class="contact-info-value"><a href="mailto:support@avatarplatform.ai">support@avatarplatform.ai</a></p>
+          </div>
+        </div>
+
+        <div class="contact-info-block">
+          <div class="contact-info-icon">𝕏</div>
+          <div>
+            <p class="contact-info-label">Twitter / X</p>
+            <p class="contact-info-value"><a href="#" target="_blank" rel="noopener">@avatarplatform</a></p>
+          </div>
+        </div>
+
+        <div class="contact-info-block">
+          <div class="contact-info-icon">💬</div>
+          <div>
+            <p class="contact-info-label">Discord</p>
+            <p class="contact-info-value"><a href="#" target="_blank" rel="noopener">discord.gg/avatarplatform</a></p>
+          </div>
+        </div>
+
+        <div class="contact-async">
+          <p class="contact-async-label">Prefer async?</p>
+          <p>Browse the <a href="/docs" style="color:var(--accent-2)">documentation</a> for self-serve setup guides, or email us and we'll respond within one business day.</p>
+        </div>
+      </div>
+
+      <!-- RIGHT: cal.com booking -->
+      <div>
+        <h2 class="cal-header">Book a 30-minute call</h2>
+        <p class="cal-sub">Pick a time that works for you. We'll send a confirmation with a video call link.</p>
+        <div class="cal-card">
+          <div id="cal-embed">
+            <!-- Cal.com embed loads here -->
+            <div class="cal-placeholder" id="cal-fallback">
+              <div class="cal-placeholder-icon">📅</div>
+              <h3>Book a setup call</h3>
+              <p>Configure your cal.com username in the page source to enable inline booking.</p>
+              <a class="btn btn-primary" href="https://cal.com" target="_blank" rel="noopener">Open cal.com →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer style="border-top:1px solid var(--border);padding:32px 24px;text-align:center">
+    <p style="font-size:12px;color:var(--text-dim);margin:0">
+      <a href="/" style="color:var(--text-dim)">AvatarPlatform</a> ·
+      <a href="/terms" style="color:var(--text-dim)">Terms</a> ·
+      <a href="/contact" style="color:var(--text-dim)">Contact</a> ·
+      <a href="/docs" style="color:var(--text-dim)">Docs</a>
+    </p>
+  </footer>
+
+  <script type="text/javascript">
+    // Replace YOUR_CAL_USERNAME with your actual cal.com username.
+    // Example: if your booking link is cal.com/jane/30min, set CAL_USERNAME = 'jane'
+    const CAL_USERNAME = 'YOUR_CAL_USERNAME';
+
+    if (CAL_USERNAME && CAL_USERNAME !== 'YOUR_CAL_USERNAME') {
+      // Hide fallback
+      document.getElementById('cal-fallback').style.display = 'none';
+
+      // Load cal.com embed
+      (function (C, A, L) {
+        let p = function (a, ar) { a.q.push(ar); };
+        let d = C.document;
+        C.Cal = C.Cal || function () {
+          let cal = C.Cal; let ar = arguments;
+          if (!cal.loaded) {
+            cal.ns = {}; cal.q = cal.q || [];
+            d.head.appendChild(d.createElement('script')).src = A;
+            cal.loaded = true;
+          }
+          if (ar[0] === L) {
+            const api = function () { p(api, arguments); };
+            const namespace = ar[1];
+            api.q = api.q || [];
+            typeof namespace === 'string' ? (cal.ns[namespace] = api) && p(api, ar) : p(cal, ar);
+            return;
+          }
+          p(cal, ar);
+        };
+      })(window, 'https://app.cal.com/embed/embed.js', 'init');
+
+      Cal('init', { origin: 'https://cal.com' });
+
+      Cal('inline', {
+        elementOrSelector: '#cal-embed',
+        calLink: CAL_USERNAME + '/30min',
+        layout: 'month_view',
+      });
+
+      Cal('ui', {
+        theme: 'dark',
+        styles: { branding: { brandColor: '#7c6af5' } },
+        hideEventTypeDetails: false,
+        layout: 'month_view',
+      });
+    }
+  </script>
+</body>
+</html>

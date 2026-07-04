@@ -7,17 +7,20 @@ const router = express.Router();
 
 const ALLOWED_TYPES = ['text', 'email', 'phone', 'number', 'date', 'time', 'select'];
 
-function ownsProject(req, res, next) {
-  const p = db.findOne('projects', x => x.id === req.params.projectId && x.userId === req.user.id);
-  if (!p) return res.status(404).json({ error: 'Project not found' });
-  req.project = p;
-  next();
+async function ownsProject(req, res, next) {
+  try {
+    const p = await db.findOne('projects', { id: req.params.projectId, userId: req.user.id });
+    if (!p) return res.status(404).json({ error: 'Project not found' });
+    req.project = p;
+    next();
+  } catch (e) {
+    next(e);
+  }
 }
 
 // GET /api/projects/:projectId/capture
-router.get('/:projectId/capture', authRequired, ownsProject, (req, res) => {
-  const fields = db.findAll('captureFields', f => f.projectId === req.project.id)
-    .sort((a, b) => a.order - b.order);
+router.get('/:projectId/capture', authRequired, ownsProject, async (req, res) => {
+  const fields = await db.findAll('captureFields', { projectId: req.project.id }, { orderBy: 'order', order: 'asc' });
   res.json({ fields });
 });
 
@@ -27,11 +30,10 @@ router.post('/:projectId/capture/reorder', authRequired, ownsProject, async (req
   if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids array required' });
 
   for (let i = 0; i < ids.length; i++) {
-    const field = db.findOne('captureFields', f => f.id === ids[i] && f.projectId === req.project.id);
+    const field = await db.findOne('captureFields', { id: ids[i], projectId: req.project.id });
     if (field) await db.update('captureFields', field.id, { order: i });
   }
-  const fields = db.findAll('captureFields', f => f.projectId === req.project.id)
-    .sort((a, b) => a.order - b.order);
+  const fields = await db.findAll('captureFields', { projectId: req.project.id }, { orderBy: 'order', order: 'asc' });
   res.json({ fields });
 });
 
@@ -52,11 +54,11 @@ router.post('/:projectId/capture', authRequired, ownsProject, async (req, res) =
     return res.status(400).json({ error: 'options array required for type=select' });
   }
 
-  const duplicate = db.findOne('captureFields', f => f.projectId === req.project.id && f.key === key);
+  const duplicate = await db.findOne('captureFields', { projectId: req.project.id, key });
   if (duplicate) return res.status(409).json({ error: `key "${key}" already exists in this project` });
 
-  const existing = db.findAll('captureFields', f => f.projectId === req.project.id);
-  const field = {
+  const existing = await db.findAll('captureFields', { projectId: req.project.id });
+  const field = await db.insert('captureFields', {
     id: uuid(),
     projectId: req.project.id,
     label: String(label).trim(),
@@ -66,14 +68,13 @@ router.post('/:projectId/capture', authRequired, ownsProject, async (req, res) =
     required: required !== false,
     order: order != null ? order : existing.length,
     createdAt: Date.now(),
-  };
-  await db.insert('captureFields', field);
+  });
   res.json({ field });
 });
 
 // PATCH /api/projects/:projectId/capture/:fieldId
 router.patch('/:projectId/capture/:fieldId', authRequired, ownsProject, async (req, res) => {
-  const field = db.findOne('captureFields', f => f.id === req.params.fieldId && f.projectId === req.project.id);
+  const field = await db.findOne('captureFields', { id: req.params.fieldId, projectId: req.project.id });
   if (!field) return res.status(404).json({ error: 'Capture field not found' });
 
   const { label, type, options, required, order } = req.body || {};
@@ -109,9 +110,9 @@ router.patch('/:projectId/capture/:fieldId', authRequired, ownsProject, async (r
 
 // DELETE /api/projects/:projectId/capture/:fieldId
 router.delete('/:projectId/capture/:fieldId', authRequired, ownsProject, async (req, res) => {
-  const field = db.findOne('captureFields', f => f.id === req.params.fieldId && f.projectId === req.project.id);
+  const field = await db.findOne('captureFields', { id: req.params.fieldId, projectId: req.project.id });
   if (!field) return res.status(404).json({ error: 'Capture field not found' });
-  await db.remove('captureFields', f => f.id === field.id);
+  await db.remove('captureFields', { id: field.id });
   res.json({ ok: true });
 });
 

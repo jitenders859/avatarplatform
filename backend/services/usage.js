@@ -1,94 +1,99 @@
 /**
  * Usage tracking + plan-limit checks.
  *
- * Granularity: one usage row per user per calendar month.
- * Counters: messages, embeddingChars, projects (live), files (live), storageMb (live).
- *
- * "Live" counters are computed from current state (project/file rows) rather
- * than incremented — keeps things consistent if data is deleted.
- *
- * "Cumulative" counters (messages, embeddingChars) are incremented on use
- * and reset at the start of each month via getCurrentUsage() lazily checking
- * the period.
+ * All functions are async (Postgres-backed).
+ * "Live" counters (projects, files, storage, urlSources) are computed
+ * with a single SQL aggregate query rather than scanning all rows in memory.
+ * "Cumulative" counters (messages, embeddingChars) use SQL UPSERT with
+ * atomic increments to avoid race conditions.
  */
 const db = require('../db');
 const { getPlan } = require('../plans');
 
 function periodKey(d = new Date()) {
-  // YYYY-MM key, e.g. "2026-05"
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-function getOrCreateUsage(userId) {
-  const period = periodKey();
-  let row = db.findOne('usage', u => u.userId === userId && u.period === period);
-  if (row) return row;
-  row = {
-    id: `${userId}:${period}`,
-    userId,
-    period,
-    messages: 0,
-    embeddingChars: 0,
-    createdAt: Date.now(),
-  };
-  // sync write so the row exists for subsequent updates
-  const all = db.readTable('usage');
-  all.push(row);
-  db.writeTable('usage', all);
-  return row;
-}
-
-function userPlanId(userId) {
-  const sub = db.findOne('subscriptions', s => s.userId === userId && s.status === 'active');
+async function userPlanId(userId) {
+  const sub = await db.findOne('subscriptions', { userId, status: 'active' });
   return sub ? sub.planId : 'free';
 }
 
-function getUsageSnapshot(userId) {
-  const planId = userPlanId(userId);
+async function trackMessage(userId) {
+  if (!userId) return;
+  const period = periodKey();
+  const id = `${userId}:${period}`;
+  const now = Date.now();
+  await db.query(
+    `INSERT INTO usage (id, user_id, period, messages, embedding_chars, created_at, updated_at)
+     VALUES ($1, $2, $3, 1, 0, $4, $4)
+     ON CONFLICT (id) DO UPDATE SET messages = usage.messages + 1, updated_at = $4`,
+    [id, userId, period, now]
+  );
+}
+
+async function trackEmbeddingChars(userId, count) {
+  if (!userId || !count) return;
+  const period = periodKey();
+  const id = `${userId}:${period}`;
+  const now = Date.now();
+  await db.query(
+    `INSERT INTO usage (id, user_id, period, messages, embedding_chars, created_at, updated_at)
+     VALUES ($1, $2, $3, 0, $4, $5, $5)
+     ON CONFLICT (id) DO UPDATE SET embedding_chars = usage.embedding_chars + $4, updated_at = $5`,
+    [id, userId, period, count, now]
+  );
+}
+
+async function getOrCreateUsage(userId) {
+  const period = periodKey();
+  const id = `${userId}:${period}`;
+  await db.query(
+    `INSERT INTO usage (id, user_id, period, messages, embedding_chars, created_at)
+     VALUES ($1, $2, $3, 0, 0, $4)
+     ON CONFLICT (id) DO NOTHING`,
+    [id, userId, period, Date.now()]
+  );
+  return db.findOne('usage', { id });
+}
+
+async function getUsageSnapshot(userId) {
+  const [planId, usage, stats] = await Promise.all([
+    userPlanId(userId),
+    getOrCreateUsage(userId),
+    db.queryOne(
+      `SELECT
+         COUNT(DISTINCT p.id)                                      AS projects,
+         COUNT(DISTINCT f.id)                                      AS files,
+         COALESCE(SUM(f.size), 0)                                  AS storage_bytes,
+         COUNT(DISTINCT f.id) FILTER (WHERE f.kind = 'url')        AS url_sources
+       FROM projects p
+       LEFT JOIN files f ON f.project_id = p.id
+       WHERE p.user_id = $1`,
+      [userId]
+    ),
+  ]);
+
   const plan = getPlan(planId);
-  const usage = getOrCreateUsage(userId);
-
-  const projects = db.findAll('projects', p => p.userId === userId).length;
-  const files = db.findAll('files', f => f.userId === userId).length;
-  const storageBytes = db.findAll('files', f => f.userId === userId)
-    .reduce((sum, f) => sum + (f.size || 0), 0);
-  const storageMb = +(storageBytes / 1024 / 1024).toFixed(2);
-
-  const urlSources = db.findAll('files', f => f.userId === userId && f.kind === 'url').length;
+  const storageMb = +((Number(stats.storageBytes) || 0) / 1024 / 1024).toFixed(2);
 
   return {
     plan,
     period: usage.period,
     counters: {
-      projects,
-      files,
+      projects:       Number(stats.projects)   || 0,
+      files:          Number(stats.files)      || 0,
       storageMb,
-      urlSources,
-      messages: usage.messages,
-      embeddingChars: usage.embeddingChars,
+      urlSources:     Number(stats.urlSources) || 0,
+      messages:       usage.messages           || 0,
+      embeddingChars: usage.embeddingChars     || 0,
     },
     limits: plan.limits,
   };
 }
 
-async function trackMessage(userId) {
-  if (!userId) return;
-  const usage = getOrCreateUsage(userId);
-  await db.update('usage', usage.id, { messages: (usage.messages || 0) + 1 });
-}
-
-async function trackEmbeddingChars(userId, count) {
-  if (!userId || !count) return;
-  const usage = getOrCreateUsage(userId);
-  await db.update('usage', usage.id, { embeddingChars: (usage.embeddingChars || 0) + count });
-}
-
-/**
- * Check if `userId` can perform action `kind` with given `delta`.
- * Returns { ok: true } or { ok: false, reason, limit, current }.
- */
-function checkLimit(userId, kind, delta = 1) {
-  const snap = getUsageSnapshot(userId);
+async function checkLimit(userId, kind, delta = 1) {
+  const snap = await getUsageSnapshot(userId);
   const c = snap.counters;
   const l = snap.limits;
   switch (kind) {
@@ -97,8 +102,6 @@ function checkLimit(userId, kind, delta = 1) {
       break;
     case 'file':
       if (c.files + delta > l.filesPerProject) return fail('file', l.filesPerProject, c.files);
-      // (note: limit field is "filesPerProject" but we use it here as a global cap;
-      // a stricter version would check files per individual project. Good enough for v1.)
       break;
     case 'storageMb':
       if (c.storageMb + delta > l.storageMb) return fail('storage', l.storageMb + ' MB', c.storageMb + ' MB');
@@ -124,10 +127,4 @@ function fail(name, limit, current) {
   };
 }
 
-module.exports = {
-  userPlanId,
-  getUsageSnapshot,
-  trackMessage,
-  trackEmbeddingChars,
-  checkLimit,
-};
+module.exports = { userPlanId, getUsageSnapshot, trackMessage, trackEmbeddingChars, checkLimit };

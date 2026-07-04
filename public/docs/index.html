@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Introduction — AvatarPlatform Docs</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <!-- Mobile bar -->
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">Introduction</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <!-- SIDEBAR -->
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link active" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <!-- CONTENT -->
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>Getting Started</div>
+        <h1>Introduction</h1>
+        <p class="docs-lead">AvatarPlatform lets you deploy AI talking agents — animated Rive characters powered by Gemini Live, backed by your own knowledge base — on any website with a single script tag.</p>
+
+        <h2>What is AvatarPlatform?</h2>
+        <p>AvatarPlatform is a SaaS platform for building and hosting embeddable AI chatbots with animated talking characters. It combines three technologies:</p>
+        <ul>
+          <li><strong>Rive</strong> — real-time animated characters with frame-perfect lip sync driven by a state machine</li>
+          <li><strong>Gemini Live</strong> — Google's real-time voice AI, streamed directly from the browser via WebSocket</li>
+          <li><strong>RAG (Retrieval-Augmented Generation)</strong> — your PDFs, URLs, and documents are chunked, embedded with <code>gemini-embedding-exp-03-07</code>, and stored in pgvector for semantic search</li>
+        </ul>
+        <p>Visitors can talk to your agent by voice or text in 30+ languages. The agent searches your knowledge base for every question, cites its sources, and speaks with full lip sync.</p>
+
+        <h2>Prerequisites</h2>
+        <ul>
+          <li><strong>Node.js 18+</strong> — the server uses ES2022 syntax and the native <code>fetch</code> API</li>
+          <li><strong>Supabase account</strong> — free tier works; you need a project with the <code>vector</code> extension enabled</li>
+          <li><strong>Google Gemini API key</strong> — used for embeddings and Gemini Live voice chat (<a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener">get one here</a>)</li>
+          <li><strong>Stripe account</strong> (optional) — for billing. The platform runs in demo mode without it</li>
+        </ul>
+
+        <h2>Quick start</h2>
+        <ol class="step-list">
+          <li>
+            <div>
+              <strong>Clone and install</strong>
+              <p>Clone the repository and install Node.js dependencies.</p>
+              <pre><code class="language-bash">git clone https://github.com/your-org/avatar-platform.git
+cd avatar-platform
+npm install</code></pre>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Configure environment</strong>
+              <p>Copy <code>.env.example</code> to <code>.env</code> and fill in the required values.</p>
+              <pre><code class="language-bash">cp .env.example .env</code></pre>
+              <p>Minimum required variables:</p>
+              <pre><code class="language-bash">DATABASE_URL=postgresql://postgres:[password]@db.[ref].supabase.co:5432/postgres
+GEMINI_API_KEY=your-gemini-api-key
+JWT_SECRET=a-long-random-string</code></pre>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Run the database schema</strong>
+              <p>Open your Supabase project → <strong>SQL Editor</strong> and paste the entire contents of <code>supabase/schema.sql</code>. This creates all 10 tables and the pgvector HNSW index.</p>
+              <div class="callout callout-info">
+                <span class="callout-icon">ℹ️</span>
+                <div class="callout-body"><p>The <code>vector</code> extension must be enabled. Supabase enables it by default; for self-hosted Postgres run <code>CREATE EXTENSION IF NOT EXISTS vector;</code> first.</p></div>
+              </div>
+            </div>
+          </li>
+          <li>
+            <div>
+              <strong>Start the server</strong>
+              <pre><code class="language-bash">npm start
+# → AvatarPlatform running at http://localhost:8080</code></pre>
+              <p>Open <a href="http://localhost:8080">http://localhost:8080</a>, create an account, and build your first agent.</p>
+            </div>
+          </li>
+        </ol>
+
+        <h2>First embed</h2>
+        <p>Once you've created a project in the dashboard, copy your Bot ID from the <strong>Embed</strong> tab and drop this script tag anywhere on your site:</p>
+        <pre><code class="language-html">&lt;!-- Paste before &lt;/body&gt; --&gt;
+&lt;script
+  src="https://your-deployment.com/lipsync-sdk.js"
+  data-public-id="YOUR_BOT_ID"
+  data-position="bottom-right"
+  data-theme="#6366f1"
+  data-size="md"
+&gt;&lt;/script&gt;</code></pre>
+        <p>That's all. No bundler, no build step, no authentication required. The widget loads, fetches its configuration, and the agent is live.</p>
+
+        <h2>Architecture overview</h2>
+        <pre><code class="language-text">Browser (visitor)
+  │
+  ├─ lipsync-sdk.js (embed widget)
+  │     ├─ GET  /embed/:publicId/config        ← widget settings, character, capture fields
+  │     ├─ POST /embed/:publicId/retrieve      ← semantic RAG search (REST)
+  │     ├─ POST /embed/:publicId/ask           ← async Q&amp;A (no voice)
+  │     ├─ POST /embed/:publicId/log           ← session + message logging
+  │     └─ WebSocket → Gemini Live API         ← real-time voice (direct from browser)
+  │
+Node.js / Express server
+  │
+  ├─ /api/auth/*                               ← JWT auth (register, login, reset)
+  ├─ /api/projects/*                           ← project CRUD, sessions, leads
+  ├─ /api/projects/:id/files                   ← file upload + URL ingestion
+  ├─ /api/billing/*                            ← Stripe checkout, portal, webhook
+  └─ /api/analytics/*                          ← usage charts
+  │
+Supabase / Postgres
+  ├─ users, projects, sessions, messages
+  ├─ files, chunks (vector(768) + HNSW index)
+  ├─ leads, capture_fields
+  ├─ subscriptions, usage
+  └─ pgvector &lt;=&gt; cosine distance search
+
+External services
+  ├─ Gemini Embedding API  ← document + query embeddings
+  ├─ Gemini Live API       ← real-time voice streaming (WebSocket)
+  ├─ Gemini REST API       ← async /ask endpoint
+  └─ Stripe                ← subscription billing</code></pre>
+
+        <h2>Environment variables</h2>
+        <table class="props-table">
+          <thead><tr><th>Variable</th><th>Required</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><span class="prop-name">DATABASE_URL</span></td><td>Yes</td><td>Postgres connection string (Supabase or self-hosted)</td></tr>
+            <tr><td><span class="prop-name">GEMINI_API_KEY</span></td><td>Yes</td><td>Server-side Gemini key for embeddings and async /ask</td></tr>
+            <tr><td><span class="prop-name">JWT_SECRET</span></td><td>Yes</td><td>Random string for signing JWT tokens. Change before deploying.</td></tr>
+            <tr><td><span class="prop-name">PUBLIC_GEMINI_API_KEY</span></td><td>Recommended</td><td>Browser-safe Gemini key for Gemini Live WebSocket. Falls back to GEMINI_API_KEY.</td></tr>
+            <tr><td><span class="prop-name">PORT</span></td><td>No</td><td>Server port. Defaults to <code>8080</code>.</td></tr>
+            <tr><td><span class="prop-name">EMBEDDING_MODEL</span></td><td>No</td><td>Gemini embedding model. Default: <code>gemini-embedding-exp-03-07</code></td></tr>
+            <tr><td><span class="prop-name">EMBEDDING_DIMENSIONS</span></td><td>No</td><td>Output dimension. Default: <code>768</code>. Match to schema.</td></tr>
+            <tr><td><span class="prop-name">STRIPE_SECRET_KEY</span></td><td>No</td><td>Stripe secret key. Billing is disabled if unset.</td></tr>
+            <tr><td><span class="prop-name">STRIPE_WEBHOOK_SECRET</span></td><td>No</td><td>Stripe webhook signing secret for <code>POST /api/billing/webhook</code></td></tr>
+          </tbody>
+        </table>
+
+        <div class="callout callout-tip">
+          <span class="callout-icon">✅</span>
+          <div class="callout-body"><p><strong>Next step:</strong> Integrate the widget into a React app. See the <a href="/docs/react-sdk">React SDK</a> docs.</p></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() {
+      sidebar.classList.toggle('open');
+      overlay.classList.toggle('open');
+    }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

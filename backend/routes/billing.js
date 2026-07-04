@@ -6,12 +6,12 @@
  * server.js BEFORE the global JSON parser.
  */
 const express = require('express');
-const { v4: uuid } = require('uuid');
 const db = require('../db');
 const { authRequired } = require('../middleware/auth');
 const { PLANS, getPlan, planByStripePriceId } = require('../plans');
 const { getStripe, isConfigured } = require('../services/stripe');
 const { getUsageSnapshot, userPlanId } = require('../services/usage');
+const logger = require('../logger').child({ module: 'billing' });
 
 const router = express.Router();
 
@@ -33,10 +33,10 @@ router.get('/plans', (_req, res) => {
 });
 
 // ── Authenticated: subscription + usage ───────────────────────
-router.get('/subscription', authRequired, (req, res) => {
-  const planId = userPlanId(req.user.id);
+router.get('/subscription', authRequired, async (req, res) => {
+  const planId = await userPlanId(req.user.id);
   const plan = getPlan(planId);
-  const sub = db.findOne('subscriptions', s => s.userId === req.user.id && s.status === 'active');
+  const sub = await db.findOne('subscriptions', { userId: req.user.id, status: 'active' });
   res.json({
     plan: { id: plan.id, name: plan.name, priceMonthly: plan.priceMonthly },
     subscription: sub ? {
@@ -48,8 +48,8 @@ router.get('/subscription', authRequired, (req, res) => {
   });
 });
 
-router.get('/usage', authRequired, (req, res) => {
-  res.json(getUsageSnapshot(req.user.id));
+router.get('/usage', authRequired, async (req, res) => {
+  res.json(await getUsageSnapshot(req.user.id));
 });
 
 // ── Stripe Checkout session ───────────────────────────────────
@@ -62,8 +62,7 @@ router.post('/create-checkout-session', authRequired, async (req, res) => {
   if (!plan || plan.id === 'free') return res.status(400).json({ error: 'Invalid plan' });
   if (!plan.stripePriceId) return res.status(400).json({ error: `No Stripe price configured for plan "${plan.id}"` });
 
-  // Find or create the Stripe customer for this user
-  const user = db.findOne('users', u => u.id === req.user.id);
+  const user = await db.findOne('users', { id: req.user.id });
   if (!user) return res.status(404).json({ error: 'User not found' });
 
   let customerId = user.stripeCustomerId;
@@ -82,7 +81,7 @@ router.post('/create-checkout-session', authRequired, async (req, res) => {
     customer: customerId,
     line_items: [{ price: plan.stripePriceId, quantity: 1 }],
     success_url: `${origin}/billing?status=success`,
-    cancel_url: `${origin}/billing?status=cancelled`,
+    cancel_url:  `${origin}/billing?status=cancelled`,
     metadata: { userId: user.id, planId: plan.id },
     subscription_data: { metadata: { userId: user.id, planId: plan.id } },
     allow_promotion_codes: true,
@@ -96,7 +95,7 @@ router.post('/create-portal-session', authRequired, async (req, res) => {
   const stripe = getStripe();
   if (!stripe) return res.status(503).json({ error: 'Billing is not configured.' });
 
-  const user = db.findOne('users', u => u.id === req.user.id);
+  const user = await db.findOne('users', { id: req.user.id });
   if (!user || !user.stripeCustomerId) {
     return res.status(400).json({ error: 'No Stripe customer for this user yet — start a checkout first.' });
   }
@@ -117,7 +116,7 @@ async function webhookHandler(req, res) {
   const sig = req.headers['stripe-signature'];
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   if (!secret) {
-    console.warn('[billing/webhook] STRIPE_WEBHOOK_SECRET missing — refusing event');
+    logger.warn('STRIPE_WEBHOOK_SECRET missing — refusing event');
     return res.status(500).end();
   }
 
@@ -125,7 +124,7 @@ async function webhookHandler(req, res) {
   try {
     event = stripe.webhooks.constructEvent(req.body, sig, secret);
   } catch (err) {
-    console.error('[billing/webhook] signature verify failed:', err.message);
+    logger.error({ err: err.message }, 'webhook signature verify failed');
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
@@ -141,7 +140,7 @@ async function webhookHandler(req, res) {
         break;
     }
   } catch (e) {
-    console.error('[billing/webhook] handler error:', e);
+    logger.error({ err: e }, 'webhook handler error');
     return res.status(500).end();
   }
 
@@ -152,7 +151,6 @@ async function syncSubscriptionFromEvent(event, stripe) {
   const obj = event.data.object;
   let subscription = obj;
 
-  // checkout.session.completed → fetch the actual subscription
   if (event.type === 'checkout.session.completed') {
     if (!obj.subscription) return;
     subscription = await stripe.subscriptions.retrieve(obj.subscription);
@@ -161,7 +159,7 @@ async function syncSubscriptionFromEvent(event, stripe) {
   const userId = subscription.metadata?.userId
     || (event.type === 'checkout.session.completed' ? obj.metadata?.userId : null);
   if (!userId) {
-    console.warn('[billing/webhook] no userId in subscription metadata; skipping');
+    logger.warn({ subscriptionId: subscription.id }, 'no userId in subscription metadata; skipping');
     return;
   }
 
@@ -169,8 +167,8 @@ async function syncSubscriptionFromEvent(event, stripe) {
   const plan = planByStripePriceId(priceId);
   const planId = plan ? plan.id : (subscription.metadata?.planId || 'starter');
 
-  // Mark prior active subs for this user as inactive
-  await db.remove('subscriptions', s => s.userId === userId && s.status === 'active');
+  // Remove old active subscription for this user, then insert fresh row
+  await db.remove('subscriptions', { userId, status: 'active' });
 
   await db.insert('subscriptions', {
     id: subscription.id,
@@ -183,15 +181,13 @@ async function syncSubscriptionFromEvent(event, stripe) {
     cancelAtPeriodEnd: !!subscription.cancel_at_period_end,
     createdAt: Date.now(),
   });
-  console.log(`[billing] synced subscription ${subscription.id} for user ${userId} → plan ${planId}`);
+  logger.info({ subscriptionId: subscription.id, userId, planId }, 'synced subscription');
 }
 
 async function markSubscriptionCancelled(event) {
   const sub = event.data.object;
-  const row = db.findOne('subscriptions', s => s.id === sub.id);
-  if (row) {
-    await db.update('subscriptions', row.id, { status: 'cancelled' });
-  }
+  const row = await db.findOne('subscriptions', { id: sub.id });
+  if (row) await db.update('subscriptions', row.id, { status: 'cancelled' });
 }
 
 module.exports = { router, webhookHandler };

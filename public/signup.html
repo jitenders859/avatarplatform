@@ -18,8 +18,12 @@
 
       <form id="signup-form" class="col gap-md">
         <div class="field">
+          <label>Name</label>
+          <input class="input" type="text" id="name" required autofocus autocomplete="name" />
+        </div>
+        <div class="field">
           <label>Email</label>
-          <input class="input" type="email" id="email" required autofocus autocomplete="email" />
+          <input class="input" type="email" id="email" required autocomplete="email" />
         </div>
         <div class="field">
           <label>Password</label>
@@ -48,6 +52,7 @@
     btn.disabled = true; btn.textContent = 'Creating…';
     try {
       const res = await API.signup(
+        document.getElementById('name').value.trim(),
         document.getElementById('email').value.trim(),
         document.getElementById('password').value,
       );

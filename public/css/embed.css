@@ -2,6 +2,9 @@
    Two layout modes:
      [data-position="bottom-right" | "bottom-left"]   floating
      body.mode-inline                                  full-bleed inside iframe
+
+   Avatar sizing controlled by --avatar-size CSS custom property
+   set from JS based on project.avatarSize (small/medium/large/xlarge).
 */
 
 :root {
@@ -16,6 +19,8 @@
   --user-bg: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
   --bot-bg: rgba(255,255,255,0.04);
   --shadow-lg: 0 24px 60px rgba(0,0,0,0.45), 0 4px 16px rgba(0,0,0,0.35);
+  --avatar-size: 160px;
+  --launcher-size: 72px;
 }
 
 * { box-sizing: border-box; }
@@ -70,7 +75,8 @@ body.mode-inline .launcher { display: none; }
 /* ── Launcher (FAB) ────────────────────────────────────────── */
 .launcher {
   position: relative;
-  width: 64px; height: 64px;
+  width: var(--launcher-size, 72px);
+  height: var(--launcher-size, 72px);
   border-radius: 50%;
   border: none;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
@@ -80,9 +86,30 @@ body.mode-inline .launcher { display: none; }
   box-shadow: var(--shadow-lg);
   display: grid; place-items: center;
   transition: transform .2s ease, box-shadow .2s ease;
+  overflow: hidden;
+  padding: 0;
 }
 .launcher:hover { transform: scale(1.05); }
 .launcher:active { transform: scale(0.95); }
+
+/* Rive avatar slot — fills the launcher circle */
+.launcher-avatar-slot {
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+}
+.launcher-avatar-slot:empty { display: none; }
+
+/* When launcher has a Rive canvas, show it; hide gradient background */
+.launcher.has-avatar:not(:empty) { background: var(--bg-3); }
+
+/* Fallback emoji — hidden once Rive canvas arrives */
+.launcher-fallback {
+  font-size: 26px;
+  pointer-events: none;
+  transition: opacity .2s;
+}
+
 .launcher-pulse {
   position: absolute; inset: -4px;
   border-radius: 50%;
@@ -104,6 +131,7 @@ body.mode-inline .launcher { display: none; }
   display: grid; place-items: center;
   padding: 0 6px;
   border: 2px solid var(--bg);
+  z-index: 2;
 }
 
 /* Hide launcher when panel is open; hide panel when closed */
@@ -132,34 +160,17 @@ body.mode-inline .launcher { display: none; }
   to   { opacity: 1; transform: scale(1)   translateY(0); }
 }
 
-/* RTL: panels on bottom-right look natural; on bottom-left adjust origin */
-
 /* ── Header ────────────────────────────────────────────────── */
 .header {
   display: flex; align-items: center; gap: 12px;
-  padding: 12px 14px;
+  padding: 12px 16px;
   background: var(--bg-2);
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
-/* Drag handle — only applied when setupDrag() adds the .draggable class */
 .widget-root.draggable .header {
   cursor: grab;
   user-select: none;
-}
-.header-avatar {
-  width: 44px; height: 44px;
-  border-radius: 50%;
-  background: var(--bg-3);
-  overflow: hidden;
-  flex-shrink: 0;
-  position: relative;
-}
-.avatar-canvas-wrap {
-  width: 100%; height: 100%;
-  display: grid; place-items: center;
-}
-#avatar-canvas {
-  width: 100%; height: 100%;
 }
 .header-text { flex: 1; min-width: 0; }
 .header-name {
@@ -215,7 +226,7 @@ body.mode-inline .launcher { display: none; }
   opacity: 0;
   transform: translateY(6px);
   transition: opacity .25s ease, transform .25s ease;
-  white-space: normal;     /* ← paragraph rendering uses <p>/<br>, not preformatted */
+  white-space: normal;
 }
 .msg.visible { opacity: 1; transform: none; }
 .msg p { margin: 0; }
@@ -235,9 +246,7 @@ body.mode-inline .launcher { display: none; }
   border-bottom-left-radius: 4px;
 }
 .msg.interim { opacity: .65; font-style: italic; }
-.msg.welcome { /* no special look — same as a normal bot message */ }
 
-/* RTL flips alignment + corner radius */
 [dir="rtl"] .msg.user { align-self: flex-start; border-radius: 14px 14px 14px 4px; }
 [dir="rtl"] .msg.bot  { align-self: flex-end;   border-radius: 14px 14px 4px 14px; }
 [dir="rtl"] .body { text-align: right; }
@@ -272,12 +281,54 @@ body.mode-inline .launcher { display: none; }
   flex: 1;
 }
 
+/* ── Avatar Row ────────────────────────────────────────────── */
+.avatar-row {
+  flex-shrink: 0;
+  height: var(--avatar-size, 160px);
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;    /* default: right */
+  background: linear-gradient(to top, var(--bg-2) 0%, transparent 100%);
+  position: relative;
+  overflow: visible;
+  pointer-events: none;
+}
+
+/* Left position variant */
+.panel[data-avatar-pos="left"] .avatar-row {
+  justify-content: flex-start;
+}
+
+.avatar-stage {
+  width: var(--avatar-size, 160px);
+  height: var(--avatar-size, 160px);
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px 12px 0 0;
+}
+
+/* The Rive canvas reparented here */
+.avatar-stage canvas {
+  width: 100% !important;
+  height: 100% !important;
+  display: block;
+}
+
+/* Fade-in when Rive loads */
+@keyframes avatarFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.avatar-stage canvas { animation: avatarFadeIn .4s ease; }
+
 /* ── Composer ──────────────────────────────────────────────── */
 .composer {
   padding: 10px 12px;
   background: var(--bg-2);
   border-top: 1px solid var(--border);
   display: flex; align-items: flex-end; gap: 8px;
+  flex-shrink: 0;
 }
 .composer textarea {
   flex: 1;
@@ -328,6 +379,7 @@ body.mode-inline .launcher { display: none; }
   border-top: 1px solid var(--border);
   letter-spacing: .04em;
   text-transform: uppercase;
+  flex-shrink: 0;
 }
 
 /* ── Mobile ───────────────────────────────────────────────── */
@@ -339,5 +391,9 @@ body.mode-inline .launcher { display: none; }
   .panel {
     width: auto; height: 70vh;
     max-height: calc(100vh - 24px);
+  }
+  /* Compact avatar on mobile if enabled */
+  .panel[data-compact-mobile="1"] {
+    --avatar-size: 80px;
   }
 }

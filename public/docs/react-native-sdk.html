@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>React Native SDK — AvatarPlatform Docs</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">React Native SDK</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link active" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>Libraries</div>
+        <h1>React Native SDK</h1>
+        <p class="docs-lead">Embed the AvatarPlatform talking agent in your iOS and Android app using a WebView-based component. Works with Expo (managed and bare) and bare React Native.</p>
+
+        <h2>Installation</h2>
+        <pre><code class="language-bash">npm install @avatar-platform/react-native react-native-webview
+# or
+expo install @avatar-platform/react-native react-native-webview</code></pre>
+
+        <div class="callout callout-info">
+          <span class="callout-icon">ℹ️</span>
+          <div class="callout-body"><p>The SDK depends on <code>react-native-webview</code> for rendering the Rive character and Gemini Live audio. Expo Go does not include <code>react-native-webview</code> — use a development build or bare workflow.</p></div>
+        </div>
+
+        <h2>How it works</h2>
+        <p>The React Native SDK embeds a <code>WebView</code> that points to the same <code>/embed/:publicId</code> page used by the web widget. Rive runs inside the WebView using its HTML5 canvas renderer, and audio is handled by the browser engine inside the WebView.</p>
+        <p>This approach means:</p>
+        <ul>
+          <li>No native modules to link beyond <code>react-native-webview</code></li>
+          <li>The character, lip sync, and Gemini Live features are identical to the web</li>
+          <li>Rive animations run at 60fps on modern iOS and Android devices</li>
+          <li>Microphone access is requested via the WebView's built-in permission system</li>
+        </ul>
+
+        <h2>Basic usage</h2>
+        <pre><code class="language-tsx">import { AvatarWidget } from '@avatar-platform/react-native';
+
+export default function HomeScreen() {
+  return (
+    &lt;View style={{ flex: 1 }}&gt;
+      &lt;YourContent /&gt;
+
+      {/* Floating overlay widget */}
+      &lt;AvatarWidget
+        botId="YOUR_BOT_ID"
+        serverUrl="https://your-deployment.com"
+        position="bottom-right"
+        theme="#6366f1"
+      /&gt;
+    &lt;/View&gt;
+  );
+}</code></pre>
+
+        <h3>Props</h3>
+        <table class="props-table">
+          <thead><tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="prop-name">botId</span></td>
+              <td><span class="prop-type">string</span></td>
+              <td>—</td>
+              <td><strong>Required.</strong> The public ID of your project.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">serverUrl</span></td>
+              <td><span class="prop-type">string</span></td>
+              <td>—</td>
+              <td><strong>Required.</strong> Base URL of your AvatarPlatform deployment (no trailing slash).</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">position</span></td>
+              <td><span class="prop-type">'bottom-right' | 'bottom-left'</span></td>
+              <td><span class="prop-default">'bottom-right'</span></td>
+              <td>Corner where the launcher button appears.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">theme</span></td>
+              <td><span class="prop-type">string</span></td>
+              <td><span class="prop-default">'#7c6af5'</span></td>
+              <td>Accent colour passed to the embed widget.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">startOpen</span></td>
+              <td><span class="prop-type">boolean</span></td>
+              <td><span class="prop-default">false</span></td>
+              <td>Open the panel on mount.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">style</span></td>
+              <td><span class="prop-type">ViewStyle</span></td>
+              <td>—</td>
+              <td>Additional styles for the container <code>View</code>. Defaults to <code>position: 'absolute'</code> over the screen.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>Platform notes</h2>
+        <h3>iOS</h3>
+        <ul>
+          <li>Add <code>NSMicrophoneUsageDescription</code> to your <code>Info.plist</code> — the WebView will request mic access for Gemini Live voice chat.</li>
+          <li>In Expo, add the <code>expo-permissions</code> plugin or set <code>infoPlist.NSMicrophoneUsageDescription</code> in <code>app.json</code>.</li>
+          <li>Requires iOS 14+ for WebRTC support inside WKWebView.</li>
+        </ul>
+        <pre><code class="language-xml">&lt;!-- iOS Info.plist --&gt;
+&lt;key&gt;NSMicrophoneUsageDescription&lt;/key&gt;
+&lt;string&gt;The AI assistant needs your microphone to respond by voice.&lt;/string&gt;</code></pre>
+
+        <h3>Android</h3>
+        <ul>
+          <li>Add the <code>RECORD_AUDIO</code> permission to <code>AndroidManifest.xml</code>.</li>
+          <li>The WebView uses <code>android.webkit.PermissionRequest</code> to surface the mic prompt to the user.</li>
+          <li>Requires Android 7.0+ (API 24).</li>
+        </ul>
+        <pre><code class="language-xml">&lt;!-- android/app/src/main/AndroidManifest.xml --&gt;
+&lt;uses-permission android:name="android.permission.RECORD_AUDIO" /&gt;
+&lt;uses-permission android:name="android.permission.INTERNET" /&gt;</code></pre>
+
+        <h2>Async Q&amp;A (no WebView)</h2>
+        <p>For headless integrations — asking questions without showing the animated character — use the async API directly:</p>
+        <pre><code class="language-tsx">import { askAvatar } from '@avatar-platform/react-native';
+
+const result = await askAvatar({
+  serverUrl: 'https://your-deployment.com',
+  botId: 'YOUR_BOT_ID',
+  question: 'What payment methods do you accept?',
+});
+
+console.log(result.answer);  // text answer
+console.log(result.sources); // source citations</code></pre>
+
+        <p>This calls <code>POST /embed/:publicId/ask</code> over HTTPS — no WebView, no audio, no Rive. Useful for search bars, chatbots, and in-app FAQ flows.</p>
+
+        <div class="callout callout-warn">
+          <span class="callout-icon">⚠️</span>
+          <div class="callout-body"><p><strong>Expo Go limitation:</strong> The full <code>AvatarWidget</code> component (with Rive + audio) requires a custom dev client or production build. The <code>askAvatar</code> async helper works in Expo Go since it only uses <code>fetch</code>.</p></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

@@ -127,7 +127,7 @@
   // Create modal
   const modal = document.getElementById('create-modal');
   function openModal() { modal.hidden = false; document.getElementById('new-name').focus(); }
-  function closeModal() { modal.hidden = true; document.getElementById('create-form').reset(); document.getElementById('create-error').style.display='none'; }
+  function closeModal() { modal.hidden = true; document.getElementById('create-form').reset(); document.getElementById('create-error').style.display='none'; document.getElementById('create-submit').disabled = false; }
   document.getElementById('create-btn').addEventListener('click', openModal);
   document.getElementById('empty-create').addEventListener('click', openModal);
   document.getElementById('create-cancel').addEventListener('click', closeModal);

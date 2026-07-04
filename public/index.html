@@ -3,82 +3,667 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>AvatarPlatform — Build AI talking-character chatbots</title>
+  <title>AvatarPlatform — AI Talking Agents for any website</title>
+  <meta name="description" content="Host AI agents with animated Rive characters. Embed with one script tag. Customize looks, voice, and knowledge. Works async." />
   <link rel="stylesheet" href="/css/app.css" />
+  <style>
+    /* ── Hero ──────────────────────────────────────────────────── */
+    .lp-hero {
+      padding: 90px 24px 70px;
+      background: #0a0a0f;
+      position: relative;
+      overflow: hidden;
+    }
+    .lp-hero::before {
+      content: '';
+      position: absolute;
+      top: -280px; left: 50%; transform: translateX(-50%);
+      width: 900px; height: 900px;
+      background: radial-gradient(ellipse, rgba(124,106,245,0.16) 0%, transparent 65%);
+      pointer-events: none;
+    }
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 52% 1fr;
+      gap: 56px;
+      align-items: center;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    @media (max-width: 880px) {
+      .hero-grid { grid-template-columns: 1fr; gap: 40px; }
+      .hero-code-panel { display: none; }
+    }
+    .hero-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 14px;
+      background: rgba(124,106,245,0.1);
+      border: 1px solid rgba(124,106,245,0.28);
+      border-radius: 999px;
+      font-size: 12px; font-weight: 500;
+      color: #c4b5fd;
+      margin-bottom: 26px;
+      letter-spacing: 0.01em;
+    }
+    .eyebrow-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: #7c6af5;
+      animation: blink 2.4s infinite;
+    }
+    @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+    .lp-h1 {
+      font-size: clamp(34px, 4.8vw, 58px);
+      font-weight: 800;
+      letter-spacing: -0.035em;
+      line-height: 1.07;
+      margin: 0 0 22px;
+      background: linear-gradient(170deg, #ffffff 30%, #b6bbcc 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .lp-sub {
+      font-size: 17px;
+      color: var(--text-2);
+      line-height: 1.65;
+      margin: 0 0 36px;
+      max-width: 480px;
+    }
+    .hero-btns { display: flex; gap: 12px; flex-wrap: wrap; }
+
+    /* Hero code panel */
+    .hero-code-panel {
+      background: #0e0e1a;
+      border: 1px solid rgba(124,106,245,0.22);
+      border-radius: 18px;
+      padding: 22px 24px;
+      position: relative;
+      box-shadow: 0 32px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(124,106,245,0.06) inset;
+    }
+    .hero-code-panel::after {
+      content: '';
+      position: absolute; inset: -1px;
+      border-radius: 19px;
+      background: linear-gradient(135deg, rgba(124,106,245,0.25) 0%, transparent 50%);
+      z-index: -1;
+    }
+    .code-chrome {
+      display: flex; align-items: center; gap: 6px;
+      margin-bottom: 18px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .cc-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .cc-r { background: #ff5f57; }
+    .cc-y { background: #febc2e; }
+    .cc-g { background: #28c840; }
+    .cc-name {
+      margin-left: auto;
+      font-size: 11px; font-weight: 500;
+      color: rgba(255,255,255,0.25);
+      font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    }
+    .hero-code-body {
+      font-family: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+      font-size: 12.5px;
+      line-height: 1.8;
+    }
+    .t-comment { color: #4b5268; font-style: italic; }
+    .t-tag     { color: #e06c75; }
+    .t-attr    { color: #61afef; }
+    .t-val     { color: #98c379; }
+    .t-plain   { color: #abb2bf; }
+
+    /* Integrations row */
+    .integrations-row {
+      max-width: 1200px;
+      margin: 54px auto 0;
+      padding-top: 36px;
+      border-top: 1px solid rgba(255,255,255,0.07);
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    }
+    .int-label {
+      font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: rgba(255,255,255,0.2);
+      margin-right: 6px;
+    }
+    .int-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 7px 14px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 999px;
+      font-size: 12px; font-weight: 500;
+      color: rgba(255,255,255,0.55);
+    }
+    .int-badge {
+      width: 18px; height: 18px;
+      border-radius: 5px;
+      display: grid; place-items: center;
+      font-size: 10px; font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    /* ── Section scaffolding ───────────────────────────────────── */
+    .lp-section { padding: 88px 24px; }
+    .lp-section-alt { background: #0d0d14; }
+    .section-header { margin-bottom: 52px; }
+    .section-header-c { text-align: center; }
+    .section-eyebrow {
+      font-size: 11.5px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .section-heading {
+      font-size: clamp(26px, 3.8vw, 38px);
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      line-height: 1.1;
+      margin: 0 0 14px;
+    }
+    .section-sub {
+      font-size: 16px;
+      color: var(--text-2);
+      line-height: 1.6;
+      max-width: 500px;
+    }
+    .section-sub-c { max-width: 520px; margin: 0 auto; }
+
+    /* ── Feature cards ─────────────────────────────────────────── */
+    .feat-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 34px 32px;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .feat-card:hover {
+      border-color: rgba(124,106,245,0.3);
+      transform: translateY(-3px);
+    }
+    .feat-icon {
+      width: 50px; height: 50px;
+      border-radius: 14px;
+      background: rgba(124,106,245,0.1);
+      border: 1px solid rgba(124,106,245,0.2);
+      display: grid; place-items: center;
+      font-size: 22px;
+      margin-bottom: 22px;
+    }
+    .feat-title {
+      font-size: 19px; font-weight: 700;
+      letter-spacing: -0.02em;
+      margin: 0 0 10px;
+    }
+    .feat-body {
+      font-size: 14px;
+      color: var(--text-2);
+      line-height: 1.7;
+      margin: 0;
+    }
+    .feat-body code {
+      background: rgba(255,255,255,0.08);
+      padding: 2px 7px;
+      border-radius: 5px;
+      font-size: 11.5px;
+      font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    }
+
+    /* ── Code demo ─────────────────────────────────────────────── */
+    .demo-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+    .demo-tabbar {
+      display: flex;
+      background: #0f0f18;
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+    }
+    .demo-tab {
+      padding: 15px 18px;
+      background: none; border: none;
+      color: var(--text-dim);
+      font: 13px/1 inherit;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .demo-tab:hover { color: var(--text-2); }
+    .demo-tab.active { color: var(--text); border-color: var(--accent); }
+    .demo-body { padding: 28px; }
+    .demo-panel { display: none; }
+    .demo-panel.active { display: block; }
+    pre.cb {
+      background: #070810;
+      border: 1px solid rgba(255,255,255,0.06);
+      border-radius: 12px;
+      padding: 24px 26px;
+      font-family: 'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #abb2bf;
+      overflow-x: auto;
+      margin: 0;
+    }
+    pre.cb code { font-family: inherit; background: none; padding: 0; border-radius: 0; font-size: inherit; }
+    .s-kw  { color: #c678dd; }
+    .s-fn  { color: #61afef; }
+    .s-str { color: #98c379; }
+    .s-tag { color: #e06c75; }
+    .s-att { color: #61afef; }
+    .s-val { color: #98c379; }
+    .s-num { color: #d19a66; }
+    .s-cmt { color: #4b5268; font-style: italic; }
+    .s-obj { color: #e5c07b; }
+
+    /* ── SDK cards ─────────────────────────────────────────────── */
+    .sdk-row { display: flex; flex-direction: column; gap: 16px; }
+    .sdk-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 28px 32px;
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      transition: border-color 0.2s, transform 0.15s;
+    }
+    .sdk-card:hover { border-color: rgba(124,106,245,0.3); transform: translateY(-2px); }
+    @media (max-width: 600px) { .sdk-card { flex-direction: column; align-items: flex-start; } }
+    .sdk-icon {
+      width: 54px; height: 54px;
+      border-radius: 15px;
+      background: rgba(124,106,245,0.1);
+      border: 1px solid rgba(124,106,245,0.2);
+      display: grid; place-items: center;
+      font-size: 26px;
+      flex-shrink: 0;
+    }
+    .sdk-info { flex: 1; }
+    .sdk-title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 5px; }
+    .sdk-desc  { font-size: 13px; color: var(--text-2); margin: 0 0 12px; }
+    .sdk-install {
+      display: inline-block;
+      font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+      font-size: 12px;
+      color: #61afef;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 6px 12px;
+      border-radius: 8px;
+    }
+
+    /* ── Steps ─────────────────────────────────────────────────── */
+    .steps-wrap {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 2px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 22px;
+      overflow: hidden;
+    }
+    @media (max-width: 768px) { .steps-wrap { grid-template-columns: 1fr; } }
+    .step-cell {
+      background: var(--bg-2);
+      padding: 38px 32px;
+    }
+    .step-num {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 18px;
+    }
+    .step-title { font-size: 19px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 12px; }
+    .step-body  { font-size: 14px; color: var(--text-2); line-height: 1.7; margin: 0; }
+
+    /* ── Pricing callout ───────────────────────────────────────── */
+    .pricing-callout {
+      background: linear-gradient(145deg, rgba(124,106,245,0.12) 0%, rgba(167,139,250,0.04) 100%);
+      border: 1px solid rgba(124,106,245,0.22);
+      border-radius: 26px;
+      padding: 72px 48px;
+      text-align: center;
+    }
+    @media (max-width: 600px) { .pricing-callout { padding: 48px 24px; } }
+
+    /* ── Footer ────────────────────────────────────────────────── */
+    .lp-footer {
+      border-top: 1px solid var(--border);
+      padding: 44px 24px;
+    }
+    .footer-inner {
+      max-width: 1200px; margin: 0 auto;
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 20px;
+    }
+    .footer-brand { display: flex; align-items: center; gap: 10px; }
+    .footer-tagline { font-size: 12px; color: var(--text-dim); margin-top: 4px; }
+    .footer-links { display: flex; gap: 2px; flex-wrap: wrap; }
+    .footer-link {
+      padding: 7px 12px;
+      color: var(--text-dim);
+      font-size: 13px;
+      border-radius: 8px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .footer-link:hover { color: var(--text-2); background: var(--bg-3); text-decoration: none; }
+    .footer-x {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 8px 14px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px;
+      font-size: 13px; font-weight: 500;
+      color: var(--text-2);
+    }
+    .footer-x:hover { background: rgba(255,255,255,0.07); text-decoration: none; }
+  </style>
 </head>
 <body>
+
+  <!-- ── NAVBAR ──────────────────────────────────────────────── -->
   <nav class="topnav">
     <div class="topnav-inner">
       <a class="brand" href="/">
-        <span class="brand-mark">A</span>
+        <span class="brand-mark">AP</span>
         <span>AvatarPlatform</span>
       </a>
       <div class="spacer"></div>
       <div class="nav-links">
+        <a class="nav-link" href="/docs">Docs</a>
         <a class="nav-link" href="/pricing">Pricing</a>
         <a class="nav-link" href="/characters">Characters</a>
-        <a class="nav-link" href="/login">Log in</a>
+        <a class="nav-link" href="/blog">Blog</a>
       </div>
-      <a class="btn btn-primary btn-sm" href="/signup">Get started</a>
+      <a class="nav-link" href="/login" style="font-size:13px;color:var(--text-2)">Log in</a>
+      <a class="btn btn-primary btn-sm" href="/signup">Get started free</a>
     </div>
   </nav>
 
-  <section class="hero">
-    <div class="hero-eyebrow">Real-time AI characters · Powered by Gemini Live</div>
-    <h1 class="hero-title">Build AI chatbots<br/>that look you in the eye.</h1>
-    <p class="hero-sub">
-      Drop a talking character on any site in 60 seconds. Upload your docs, paste your URLs,
-      pick a voice — and let visitors have a real conversation, with full lip-sync, in 30+ languages.
-    </p>
-    <div class="hero-cta">
-      <a class="btn btn-primary btn-lg" href="/signup">Start free →</a>
-      <a class="btn btn-ghost btn-lg" href="/pricing">See pricing</a>
+  <!-- ── HERO ────────────────────────────────────────────────── -->
+  <section class="lp-hero">
+    <div class="hero-grid">
+      <!-- Left: copy -->
+      <div>
+        <div class="hero-eyebrow">
+          <span class="eyebrow-dot"></span>
+          Powered by Gemini Live + Rive
+        </div>
+        <h1 class="lp-h1">Add a talking AI agent<br>to any website<br>in minutes</h1>
+        <p class="lp-sub">Host agents with animated Rive characters. Embed with one script tag. Customize looks, voice, and knowledge. Works async.</p>
+        <div class="hero-btns">
+          <a class="btn btn-primary btn-lg" href="/signup">Start free →</a>
+          <a class="btn btn-ghost btn-lg" href="/docs">Read the docs</a>
+        </div>
+      </div>
+
+      <!-- Right: code panel -->
+      <div class="hero-code-panel">
+        <div class="code-chrome">
+          <span class="cc-dot cc-r"></span>
+          <span class="cc-dot cc-y"></span>
+          <span class="cc-dot cc-g"></span>
+          <span class="cc-name">index.html</span>
+        </div>
+        <div class="hero-code-body">
+          <span class="t-comment">&lt;!-- Paste this before &lt;/body&gt; --&gt;</span><br>
+          <span class="t-tag">&lt;script</span><br>
+          &nbsp;&nbsp;<span class="t-attr">src</span>=<span class="t-val">"https://app.yourdomain.com/lipsync-sdk.js"</span><br>
+          &nbsp;&nbsp;<span class="t-attr">data-public-id</span>=<span class="t-val">"YOUR_BOT_ID"</span><br>
+          &nbsp;&nbsp;<span class="t-attr">data-position</span>=<span class="t-val">"bottom-right"</span><br>
+          &nbsp;&nbsp;<span class="t-attr">data-theme</span>=<span class="t-val">"#6366f1"</span><br>
+          &nbsp;&nbsp;<span class="t-attr">data-size</span>=<span class="t-val">"md"</span><br>
+          <span class="t-tag">&gt;&lt;/script&gt;</span><br><br>
+          <span class="t-comment">&lt;!-- That's it. Your agent is live. --&gt;</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Integrations row -->
+    <div class="integrations-row">
+      <span class="int-label">Works with</span>
+      <span class="int-pill">
+        <span class="int-badge" style="background:#1a73e8;color:#fff">G</span>
+        Gemini Live
+      </span>
+      <span class="int-pill">
+        <span class="int-badge" style="background:#111;color:#fff;font-size:8px">11</span>
+        ElevenLabs
+      </span>
+      <span class="int-pill">
+        <span class="int-badge" style="background:#10a37f;color:#fff;font-size:8px">OAI</span>
+        OpenAI Realtime
+      </span>
+      <span class="int-pill">
+        <span class="int-badge" style="background:#ff3b30;color:#fff">R</span>
+        Rive
+      </span>
     </div>
   </section>
 
-  <section class="container mb-lg">
-    <div class="grid grid-3">
-      <div class="card">
-        <div style="font-size:24px;margin-bottom:10px">🎭</div>
-        <h3 style="margin:0 0 6px;font-size:15px">Real-time Rive characters</h3>
-        <p class="muted text-sm" style="margin:0">Frame-perfect lip sync via the Rive runtime. Pick from 4 characters; bring your own coming soon.</p>
+  <!-- ── FEATURES ─────────────────────────────────────────────── -->
+  <section class="lp-section">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-eyebrow">Platform</p>
+        <h2 class="section-heading">Everything you need<br>to ship a talking agent</h2>
+        <p class="section-sub">From knowledge ingestion to pixel-perfect lip sync — the full stack, already built.</p>
       </div>
-      <div class="card">
-        <div style="font-size:24px;margin-bottom:10px">📚</div>
-        <h3 style="margin:0 0 6px;font-size:15px">Any knowledge source</h3>
-        <p class="muted text-sm" style="margin:0">PDFs, Word docs, images, audio, video, and full website URLs. Chunked and embedded with Google&nbsp;<code>gemini-embedding-001</code>.</p>
-      </div>
-      <div class="card">
-        <div style="font-size:24px;margin-bottom:10px">🌍</div>
-        <h3 style="margin:0 0 6px;font-size:15px">Multilingual + RTL</h3>
-        <p class="muted text-sm" style="margin:0">Auto language detection. First-class right-to-left for Arabic, Hebrew, Persian, Urdu.</p>
-      </div>
-      <div class="card">
-        <div style="font-size:24px;margin-bottom:10px">🎯</div>
-        <h3 style="margin:0 0 6px;font-size:15px">Source-cited answers</h3>
-        <p class="muted text-sm" style="margin:0">Every answer shows which file or webpage it came from. No more hallucinations sneaking past you.</p>
-      </div>
-      <div class="card">
-        <div style="font-size:24px;margin-bottom:10px">⚡</div>
-        <h3 style="margin:0 0 6px;font-size:15px">Drop-in embed</h3>
-        <p class="muted text-sm" style="margin:0">One <code>&lt;script&gt;</code> tag. Floating widget at bottom-right or bottom-left, or full inline iframe.</p>
-      </div>
-      <div class="card">
-        <div style="font-size:24px;margin-bottom:10px">🎨</div>
-        <h3 style="margin:0 0 6px;font-size:15px">Customizable</h3>
-        <p class="muted text-sm" style="margin:0">Theme colour, position, start state, RTL, source cards, branding — all tunable per chatbot.</p>
+      <div class="grid grid-2">
+        <div class="feat-card">
+          <div class="feat-icon">🤖</div>
+          <h3 class="feat-title">Host Agents</h3>
+          <p class="feat-body">Deploy AI agents backed by your knowledge base. Each agent has its own Rive character, voice, and personality. Upload PDFs, website URLs, or paste text — your agent learns it instantly.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon">🪄</div>
+          <h3 class="feat-title">Embed Widgets</h3>
+          <p class="feat-body">One script tag, zero build step. Drop a floating launcher or inline panel into any site — React, Vue, plain HTML. The widget handles auth, streaming, and lip-sync automatically.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon">🎨</div>
+          <h3 class="feat-title">Customize Looks</h3>
+          <p class="feat-body">Pick from 4 animated Rive characters or bring your own <code>.riv</code> file. Theme colour, position, launcher size, and panel layout are all configurable per project — no code required.</p>
+        </div>
+        <div class="feat-card">
+          <div class="feat-icon">⚡</div>
+          <h3 class="feat-title">Use Async</h3>
+          <p class="feat-body">Non-blocking SDK: fire <code>AvatarPlatform.ask(botId, question)</code> from anywhere. Get back a Promise with the answer and source citations. Stream tokens directly into your own UI.</p>
+        </div>
       </div>
     </div>
   </section>
 
-  <section class="container mb-lg" style="padding:60px 24px;text-align:center">
-    <h2 style="font-size:28px;margin:0 0 8px;letter-spacing:-0.02em">Simple, honest pricing</h2>
-    <p class="muted" style="margin:0 0 32px">Start free. Upgrade when you outgrow it.</p>
-    <a class="btn btn-primary btn-lg" href="/pricing">View plans</a>
+  <!-- ── CODE DEMO ─────────────────────────────────────────────── -->
+  <section class="lp-section lp-section-alt">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-eyebrow">Integration</p>
+        <h2 class="section-heading">Integrate in any stack</h2>
+        <p class="section-sub">Script tag, React component, or headless async API — pick the integration style that fits your app.</p>
+      </div>
+
+      <div class="demo-card">
+        <div class="demo-tabbar">
+          <button class="demo-tab active" onclick="switchTab(event,'script')">Script tag</button>
+          <button class="demo-tab" onclick="switchTab(event,'react')">React</button>
+          <button class="demo-tab" onclick="switchTab(event,'async')">Async</button>
+        </div>
+        <div class="demo-body">
+
+          <div class="demo-panel active" id="tab-script">
+            <pre class="cb"><code><span class="s-cmt">&lt;!-- No bundler needed. Paste before &lt;/body&gt; --&gt;</span>
+<span class="s-tag">&lt;script</span>
+  <span class="s-att">src</span>=<span class="s-val">"https://app.yourdomain.com/lipsync-sdk.js"</span>
+  <span class="s-att">data-public-id</span>=<span class="s-val">"YOUR_BOT_ID"</span>
+  <span class="s-att">data-position</span>=<span class="s-val">"bottom-right"</span>
+  <span class="s-att">data-theme</span>=<span class="s-val">"#6366f1"</span>
+  <span class="s-att">data-size</span>=<span class="s-val">"md"</span>
+  <span class="s-att">data-start-open</span>=<span class="s-val">"false"</span>
+<span class="s-tag">&gt;&lt;/script&gt;</span></code></pre>
+          </div>
+
+          <div class="demo-panel" id="tab-react">
+            <pre class="cb"><code><span class="s-kw">import</span> { AvatarWidget, useAvatarPlatform } <span class="s-kw">from</span> <span class="s-str">'@avatar-platform/react'</span>;
+
+<span class="s-cmt">// Works in Next.js, Vite, Create React App, Remix</span>
+<span class="s-kw">export default function</span> <span class="s-fn">Layout</span>({ children }) {
+  <span class="s-kw">const</span> { ask } = <span class="s-fn">useAvatarPlatform</span>(<span class="s-str">'YOUR_BOT_ID'</span>);
+
+  <span class="s-kw">return</span> (
+    &lt;&gt;
+      {children}
+      <span class="s-tag">&lt;AvatarWidget</span>
+        <span class="s-att">botId</span>=<span class="s-val">"YOUR_BOT_ID"</span>
+        <span class="s-att">position</span>=<span class="s-val">"bottom-right"</span>
+        <span class="s-att">theme</span>=<span class="s-val">"#6366f1"</span>
+        <span class="s-att">startOpen</span>={<span class="s-num">false</span>}
+        <span class="s-att">compactMobile</span>
+      <span class="s-tag">/&gt;</span>
+    &lt;/&gt;
+  );
+}</code></pre>
+          </div>
+
+          <div class="demo-panel" id="tab-async">
+            <pre class="cb"><code><span class="s-cmt">// Headless: use your own UI, the agent answers in the background</span>
+<span class="s-kw">const</span> result = <span class="s-kw">await</span> <span class="s-obj">AvatarPlatform</span>.<span class="s-fn">ask</span>(
+  <span class="s-str">'YOUR_BOT_ID'</span>,
+  <span class="s-str">'What is your refund policy?'</span>
+);
+
+console.<span class="s-fn">log</span>(result.answer);
+<span class="s-cmt">// → "Refunds are available within 7 days of purchase..."</span>
+
+console.<span class="s-fn">log</span>(result.sources);
+<span class="s-cmt">// → [{ title: "Refund Policy", url: "...", snippet: "..." }]</span>
+
+<span class="s-cmt">// Pass sessionId back to keep conversation context</span>
+<span class="s-kw">const</span> followUp = <span class="s-kw">await</span> <span class="s-obj">AvatarPlatform</span>.<span class="s-fn">ask</span>(
+  <span class="s-str">'YOUR_BOT_ID'</span>,
+  <span class="s-str">'How do I request one?'</span>,
+  result.sessionId
+);</code></pre>
+          </div>
+
+        </div>
+      </div>
+    </div>
   </section>
 
-  <footer style="border-top:1px solid var(--border);padding:24px;text-align:center;color:var(--text-dim);font-size:12px">
-    Built on the LipsyncAvatar SDK — open source, self-hostable.
+  <!-- ── SDK SECTION ───────────────────────────────────────────── -->
+  <section class="lp-section">
+    <div class="container">
+      <div class="section-header">
+        <p class="section-eyebrow">SDKs</p>
+        <h2 class="section-heading">Build with our SDKs</h2>
+        <p class="section-sub">Native packages for every major platform. TypeScript-first, same API everywhere.</p>
+      </div>
+      <div class="sdk-row">
+        <div class="sdk-card">
+          <div class="sdk-icon">⚛️</div>
+          <div class="sdk-info">
+            <h3 class="sdk-title">React SDK</h3>
+            <p class="sdk-desc">Drop-in &lt;AvatarWidget /&gt; with hooks for open/close control, async asks, and token streaming. Full TypeScript types. Works with Next.js, Vite, Remix, and CRA.</p>
+            <code class="sdk-install">npm install @avatar-platform/react</code>
+          </div>
+          <a class="btn btn-ghost" href="/docs/react-sdk" style="flex-shrink:0">View docs →</a>
+        </div>
+        <div class="sdk-card">
+          <div class="sdk-icon">📱</div>
+          <div class="sdk-info">
+            <h3 class="sdk-title">React Native SDK</h3>
+            <p class="sdk-desc">WebView-based widget for iOS and Android with the same props API as the web SDK. Works with Expo and bare React Native. No native module linking required.</p>
+            <code class="sdk-install">npm install @avatar-platform/react-native</code>
+          </div>
+          <a class="btn btn-ghost" href="/docs/react-native-sdk" style="flex-shrink:0">View docs →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── HOW IT WORKS ──────────────────────────────────────────── -->
+  <section class="lp-section lp-section-alt">
+    <div class="container">
+      <div class="section-header section-header-c">
+        <p class="section-eyebrow" style="text-align:center">How it works</p>
+        <h2 class="section-heading" style="text-align:center">Three steps to live</h2>
+      </div>
+      <div class="steps-wrap">
+        <div class="step-cell">
+          <p class="step-num">Step 01</p>
+          <h3 class="step-title">Upload your knowledge</h3>
+          <p class="step-body">Upload PDFs, Word docs, images, audio, video, or paste website URLs. Files are chunked with semantic awareness and embedded via Gemini into searchable pgvector storage.</p>
+        </div>
+        <div class="step-cell">
+          <p class="step-num">Step 02</p>
+          <h3 class="step-title">Pick a character</h3>
+          <p class="step-body">Choose from 4 animated Rive avatars — each with full lip-sync, idle animations, and expression states driven by a Rive state machine. BYO .riv file coming soon.</p>
+        </div>
+        <div class="step-cell">
+          <p class="step-num">Step 03</p>
+          <h3 class="step-title">Embed anywhere</h3>
+          <p class="step-body">Copy one script tag. Your agent is live. Visitors chat in 30+ languages with full real-time lip-sync, source citations, and optional lead capture forms.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── PRICING CALLOUT ───────────────────────────────────────── -->
+  <section class="lp-section">
+    <div class="container">
+      <div class="pricing-callout">
+        <p class="section-eyebrow" style="text-align:center">Pricing</p>
+        <h2 class="section-heading" style="text-align:center;margin:0 0 14px">Simple pricing.<br>Start free.</h2>
+        <p style="color:var(--text-2);font-size:16px;max-width:380px;margin:0 auto 36px;line-height:1.6;text-align:center">No credit card required. Upgrade when you outgrow the free tier.</p>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+          <a class="btn btn-primary btn-lg" href="/signup">Get started free →</a>
+          <a class="btn btn-ghost btn-lg" href="/pricing">See all plans</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ────────────────────────────────────────────────── -->
+  <footer class="lp-footer">
+    <div class="footer-inner">
+      <div>
+        <a class="brand" href="/" style="text-decoration:none">
+          <span class="brand-mark">AP</span>
+          <span style="color:var(--text);font-weight:700;font-size:15px">AvatarPlatform</span>
+        </a>
+        <p class="footer-tagline">AI talking agents for any website.</p>
+      </div>
+      <nav class="footer-links">
+        <a class="footer-link" href="/docs">Docs</a>
+        <a class="footer-link" href="/pricing">Pricing</a>
+        <a class="footer-link" href="/characters">Characters</a>
+        <a class="footer-link" href="/terms">Terms</a>
+        <a class="footer-link" href="/contact">Contact</a>
+        <a class="footer-link" href="#">GitHub</a>
+      </nav>
+      <a class="footer-x" href="#">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.632zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+        Follow on X
+      </a>
+    </div>
   </footer>
+
+  <script>
+  function switchTab(e, name) {
+    document.querySelectorAll('.demo-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.demo-panel').forEach(p => p.classList.remove('active'));
+    e.currentTarget.classList.add('active');
+    document.getElementById('tab-' + name).classList.add('active');
+  }
+  </script>
 </body>
 </html>

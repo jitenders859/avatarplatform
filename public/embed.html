@@ -13,20 +13,24 @@
     LAYOUT
     ───────────────────────────────────────────────────
     .widget-root           positioned shell (floating modes only; inline mode is full-bleed)
-      .launcher            FAB visible when minimized; click to open
-      .panel               chat panel: header + body + composer
-        .header            avatar mini + name + minimize button
+      .launcher            FAB visible when minimized; Rive avatar inside
+      .panel               chat panel
+        .header            name + status + minimize (no avatar here)
         .body              messages list (scrollable)
+        .avatar-row        Rive avatar stage, sits above composer in flex flow
         .composer          mic + textarea + send
+        .branding
 
-    The avatar's Rive canvas is held in an off-screen #sdk-host while the
-    SDK builds it, then reparented into the visible .avatar-canvas slot.
+    The Rive canvas is a single element that shuttles between the launcher
+    slot (when minimized) and the avatar-row slot (when open), driven by
+    openPanel() / closePanel(). No duplicate Rive instances needed.
   -->
 
   <div class="widget-root" id="root" data-position="bottom-right" data-state="loading" hidden>
     <!-- Launcher (visible when minimized) -->
     <button class="launcher" id="launcher" aria-label="Open chat" type="button">
-      <span class="launcher-avatar" id="launcher-avatar">💬</span>
+      <div class="launcher-avatar-slot" id="launcher-avatar-slot"></div>
+      <span class="launcher-fallback" id="launcher-fallback">💬</span>
       <span class="launcher-pulse" aria-hidden="true"></span>
       <span class="launcher-badge" id="launcher-badge" hidden>1</span>
     </button>
@@ -34,10 +38,13 @@
     <!-- Panel (visible when open) -->
     <section class="panel" id="panel" role="dialog" aria-label="Chat with assistant">
       <header class="header" id="header">
-        <div class="header-avatar"><div class="avatar-canvas-wrap"><div id="avatar-canvas"></div></div></div>
         <div class="header-text">
           <div class="header-name" id="bot-name">Assistant</div>
-          <div class="header-status"><span class="status-dot" id="status-dot"></span><span id="status-text">Connecting…</span><span id="capture-pill" style="display:none;margin-left:8px;font-size:10px;background:rgba(255,255,255,.15);border-radius:10px;padding:2px 7px;letter-spacing:.02em"></span></div>
+          <div class="header-status">
+            <span class="status-dot" id="status-dot"></span>
+            <span id="status-text">Connecting…</span>
+            <span id="capture-pill" style="display:none;margin-left:8px;font-size:10px;background:rgba(255,255,255,.15);border-radius:10px;padding:2px 7px;letter-spacing:.02em"></span>
+          </div>
         </div>
         <button class="icon-btn" id="minimize-btn" title="Minimize" aria-label="Minimize">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg>
@@ -45,6 +52,13 @@
       </header>
 
       <div class="body" id="messages" role="log" aria-live="polite"></div>
+
+      <!-- Avatar row: large Rive character above the composer -->
+      <div class="avatar-row" id="avatar-row">
+        <div class="avatar-stage" id="avatar-canvas-slot">
+          <!-- Canvas reparented here by JS once SDK builds it -->
+        </div>
+      </div>
 
       <div class="composer">
         <button class="icon-btn mic-btn" id="mic-btn" title="Hold to speak" aria-label="Microphone">
@@ -55,7 +69,8 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
         </button>
       </div>
-      <!-- Collapsible "Your details" panel populated as AI captures data -->
+
+      <!-- Collapsible "Your details" panel -->
       <div id="details-panel" style="display:none;border-top:1px solid rgba(255,255,255,.12);padding:8px 12px 4px;background:rgba(0,0,0,.15)">
         <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:2px 0 6px" onclick="toggleDetailsPanel()">
           <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.7">Your details</span>
@@ -68,9 +83,9 @@
   </div>
 
   <!-- Off-screen host the SDK uses to build its canvas before we reparent it -->
-  <div id="sdk-host" style="position:fixed;left:-99999px;top:-99999px;width:220px;height:220px;"></div>
+  <div id="sdk-host" style="position:fixed;left:-99999px;top:-99999px;width:300px;height:300px;"></div>
 
-  <!-- Loading skeleton shown until SDK is ready -->
+  <!-- Loading skeleton -->
   <div class="boot-overlay" id="boot-overlay">
     <div class="boot-skeleton">
       <div class="skel-circle pulse"></div>
@@ -89,8 +104,6 @@
   const publicId = m ? m[1] : new URLSearchParams(location.search).get('bot');
   if (!publicId) { showFatal('Missing chatbot ID'); }
 
-  // Did the parent page request inline (full-bleed) rendering via ?mode=inline ?
-  // The parent loader passes this when embedded as a full iframe.
   const urlMode = new URLSearchParams(location.search).get('mode');
 
   let avatar = null;
@@ -101,25 +114,31 @@
   let captureFields = [];
   let saveLeadTimer = null;
   let currentBotMsgEl = null;
-  let currentUserMsgEl = null;       // ← live updates while user is speaking
+  let currentUserMsgEl = null;
   let lastUserFinal = '';
   let unreadCount = 0;
   let panelOpen = true;
+  let avatarCanvas = null;   // single Rive canvas element shuttled between slots
 
-  const root         = document.getElementById('root');
-  const panel        = document.getElementById('panel');
-  const launcher     = document.getElementById('launcher');
-  const launcherBadge= document.getElementById('launcher-badge');
-  const launcherAvatar=document.getElementById('launcher-avatar');
-  const messagesEl   = document.getElementById('messages');
-  const statusDot    = document.getElementById('status-dot');
-  const statusText   = document.getElementById('status-text');
-  const sendBtn      = document.getElementById('send-btn');
-  const micBtn       = document.getElementById('mic-btn');
-  const textInput    = document.getElementById('text-input');
-  const minimizeBtn  = document.getElementById('minimize-btn');
-  const bootOverlay  = document.getElementById('boot-overlay');
-  const branding     = document.getElementById('branding');
+  const AVATAR_SIZES = { small: 80, medium: 120, large: 160, xlarge: 200 };
+
+  const root              = document.getElementById('root');
+  const panel             = document.getElementById('panel');
+  const launcher          = document.getElementById('launcher');
+  const launcherBadge     = document.getElementById('launcher-badge');
+  const launcherAvatarSlot= document.getElementById('launcher-avatar-slot');
+  const launcherFallback  = document.getElementById('launcher-fallback');
+  const messagesEl        = document.getElementById('messages');
+  const statusDot         = document.getElementById('status-dot');
+  const statusText        = document.getElementById('status-text');
+  const sendBtn           = document.getElementById('send-btn');
+  const micBtn            = document.getElementById('mic-btn');
+  const textInput         = document.getElementById('text-input');
+  const minimizeBtn       = document.getElementById('minimize-btn');
+  const bootOverlay       = document.getElementById('boot-overlay');
+  const branding          = document.getElementById('branding');
+  const avatarRow         = document.getElementById('avatar-row');
+  const avatarCanvasSlot  = document.getElementById('avatar-canvas-slot');
 
   // ── 1. Fetch config ─────────────────────────────────────────
   async function boot() {
@@ -132,21 +151,33 @@
     document.getElementById('bot-name').textContent = config.project.name;
     document.title = config.project.name;
 
-    // Theme color
     if (config.project.themeColor) {
       document.documentElement.style.setProperty('--accent', config.project.themeColor);
     }
 
-    // Position (inline if URL forced it, else from config)
     const position = urlMode === 'inline' ? 'inline' : (config.project.widgetPosition || 'bottom-right');
     root.dataset.position = position;
     if (position === 'inline') document.body.classList.add('mode-inline');
 
-    // Direction
     applyDirection(config.project.textDirection || 'auto');
-
-    // Branding
     if (!config.project.showBranding) branding.style.display = 'none';
+
+    // Avatar placement settings
+    const avatarSize = config.project.avatarSize || 'large';
+    const avatarSizePx = AVATAR_SIZES[avatarSize] || 160;
+    const avatarPos = config.project.avatarPosition || 'right';
+    const compactMobile = config.project.avatarCompactOnMobile !== false;
+
+    document.documentElement.style.setProperty('--avatar-size', avatarSizePx + 'px');
+    panel.dataset.avatarPos = avatarPos;
+    if (compactMobile) panel.dataset.compactMobile = '1';
+
+    // Apply launcher size: make launcher larger when showing avatar
+    if (config.project.showAvatarInLauncher !== false) {
+      const launcherSz = Math.max(64, Math.min(avatarSizePx, 88));
+      document.documentElement.style.setProperty('--launcher-size', launcherSz + 'px');
+      launcher.classList.add('has-avatar');
+    }
 
     if (!config.apiKey) { showFatal('This chatbot is not yet configured (no API key).'); return; }
 
@@ -156,15 +187,13 @@
   function applyDirection(setting) {
     let dir = setting;
     if (setting === 'auto') {
-      // Auto: pick from welcome message or browser locale
       dir = detectDirection(config.project.welcomeMessage || '') || 'ltr';
     }
     document.documentElement.dir = dir;
     document.documentElement.lang = dir === 'rtl' ? 'ar' : 'en';
   }
 
-  // RTL ranges: Arabic, Hebrew, Persian, Urdu (covered by Arabic block), N'Ko, etc.
-  const RTL_REGEX = /[\u0590-\u05ff\u0600-\u06ff\u0700-\u074f\u0780-\u07bf\u07c0-\u07ff\ufb50-\ufdff\ufe70-\ufeff]/;
+  const RTL_REGEX = /[֐-׿؀-ۿ܀-ݏހ-޿߀-߿ﭐ-﷿ﹰ-﻿]/;
   function detectDirection(text) {
     if (!text) return null;
     return RTL_REGEX.test(text) ? 'rtl' : 'ltr';
@@ -172,7 +201,6 @@
 
   // ── 2. SDK init ─────────────────────────────────────────────
   function initSDK() {
-    // Welcome-greeting trigger: see notes in original implementation.
     const GREET_TRIGGER = '__GREET_USER_NOW__';
     const welcomeMessage = (config.project.welcomeMessage || '').trim();
 
@@ -194,7 +222,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
       showVoiceSelect: false, showTranscript: false,
       showTextInput: false,   showBands: false,
-      width: 220, height: 220,
+      width: 300, height: 300,
 
       onConnected: () => {
         statusDot.className = 'status-dot connected';
@@ -211,37 +239,30 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       },
     });
 
-    // Reparent the SDK's canvas into our visible avatar slot
+    // Reparent canvas once SDK builds it
     waitForCanvas(canvas => {
-      const slot = document.getElementById('avatar-canvas');
-      slot.replaceWith(canvas);
-      canvas.id = 'avatar-canvas';
-      Object.assign(canvas.style, { width: '100%', height: '100%', display: 'block', borderRadius: '50%' });
-      // Use the avatar canvas as the launcher icon too (snapshot via dataURL)
-      // Fallback to text if canvas snapshot fails for any reason.
-      try { launcherAvatar.style.display = 'none'; } catch(_) {}
+      avatarCanvas = canvas;
+      Object.assign(canvas.style, { width: '100%', height: '100%', display: 'block', borderRadius: '12px' });
+      // Initial placement: avatar-row slot (panel will be open or we'll move it on close)
+      avatarCanvasSlot.appendChild(canvas);
+      launcherFallback.style.display = 'none';
     });
 
-    // Apply user's start-state preference. We always start CONNECTING in the
-    // background; if widgetStartOpen is false we open minimized.
     const startOpen = !!config.project.widgetStartOpen;
 
-    // Connect now so the welcome message can be spoken.
     if (welcomeMessage) {
       avatar.connect();
       waitForConnected(() => {
         currentBotMsgEl = addMessage('bot', '', { welcome: true });
         avatar.sendText(GREET_TRIGGER);
-        // Done loading
         finishBoot(startOpen);
       });
     } else {
-      // No welcome — connect lazily on first user message
       finishBoot(startOpen);
     }
   }
 
-  function waitForCanvas(cb, attempts = 50) {
+  function waitForCanvas(cb, attempts = 60) {
     const host = document.getElementById('sdk-host');
     const canvas = host && host.querySelector('canvas');
     if (canvas) return cb(canvas);
@@ -260,34 +281,29 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     setTimeout(() => bootOverlay.remove(), 300);
     root.hidden = false;
     root.dataset.state = 'ready';
-    // Inline mode: always open. Otherwise honor user's setting.
     if (root.dataset.position === 'inline' || startOpen) {
       openPanel();
     } else {
-      closePanel(true /* skip animation on first paint */);
+      closePanel(true);
     }
     setupDrag();
     notifyParent({ type: 'ready' });
   }
 
   // ── Drag-to-reposition ─────────────────────────────────────────
-  // Enabled only for floating modes on pointer:fine (desktop) devices.
-  // The header is the grab handle; the minimize button is excluded.
-  // We signal the parent loader to start the drag overlay — it owns
-  // the iframe element and can track mousemove outside our boundary.
   function setupDrag() {
     if (root.dataset.position === 'inline') return;
     if (window.matchMedia('(pointer: coarse)').matches) return;
 
     root.classList.add('draggable');
 
-    const header    = document.getElementById('header');
-    const minBtn    = document.getElementById('minimize-btn');
+    const headerEl = document.getElementById('header');
+    const minBtn   = document.getElementById('minimize-btn');
 
-    header.addEventListener('mousedown', (e) => {
+    headerEl.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       if (minBtn.contains(e.target)) return;
-      header.style.cursor = 'grabbing';
+      headerEl.style.cursor = 'grabbing';
       notifyParent({ type: 'drag-start' });
     });
   }
@@ -338,8 +354,6 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   }
 
   // ── 4. Streaming bot replies ────────────────────────────────
-  // The SDK emits *cumulative* model transcript text. We replace the bubble
-  // contents on each chunk and finalize after a short quiet period.
   let botBuffer = '';
   let botFlushTimer = null;
   function handleBotChunk(text) {
@@ -368,11 +382,8 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     }, 1500);
   }
 
-  // User speech transcript — also cumulative. We update a single user bubble
-  // until the user stops talking, then finalize.
   let userFlushTimer = null;
   function handleUserChunk(text) {
-    // Filter the hidden greeting trigger so it never appears as a user message
     if (text === '__GREET_USER_NOW__') return;
 
     if (!currentUserMsgEl) {
@@ -407,13 +418,6 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     return el;
   }
 
-  /**
-   * Render text into a message bubble preserving paragraph breaks while
-   * keeping it safe from HTML injection. Rule: split on blank lines into
-   * <p> blocks, single line breaks become <br>, everything else is text.
-   * Light markdown for **bold** and *italic* (most common cases) is rendered;
-   * URLs are auto-linked.
-   */
   function setMessageText(el, text) {
     el.innerHTML = '';
     if (!text) return;
@@ -430,7 +434,6 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   }
 
   function appendInlineFormatted(parent, text) {
-    // URL autolinking
     const urlRe = /(https?:\/\/[^\s<>"']+)/g;
     let lastIndex = 0;
     let m;
@@ -446,7 +449,6 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   }
 
   function appendStyled(parent, text) {
-    // very light markdown: **bold** and *italic*
     const re = /(\*\*[^*]+\*\*|\*[^*]+\*)/g;
     let last = 0, m;
     while ((m = re.exec(text)) !== null) {
@@ -498,19 +500,44 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     document.body.innerHTML = `<div style="padding:24px;font-family:sans-serif;color:#444">⚠️ ${msg}</div>`;
   }
 
-  // ── 6. Open/close (minimize/maximize) ───────────────────────
+  // ── 6. Open/close + avatar canvas shuttling ──────────────────
   function openPanel() {
     panelOpen = true;
     root.dataset.state = 'open';
     unreadCount = 0;
     launcherBadge.hidden = true;
+
+    // Move canvas from launcher to avatar stage
+    if (avatarCanvas && !avatarCanvasSlot.contains(avatarCanvas)) {
+      avatarCanvasSlot.appendChild(avatarCanvas);
+      Object.assign(avatarCanvas.style, {
+        width: '100%', height: '100%',
+        borderRadius: '12px',
+      });
+    }
+
     notifyParent({ type: 'open' });
   }
+
   function closePanel(skipAnim) {
     panelOpen = false;
     root.dataset.state = skipAnim ? 'closed-instant' : 'closed';
+
+    // Move canvas to launcher slot so it keeps animating there
+    if (avatarCanvas && config && config.project.showAvatarInLauncher !== false) {
+      if (!launcherAvatarSlot.contains(avatarCanvas)) {
+        launcherAvatarSlot.appendChild(avatarCanvas);
+        Object.assign(avatarCanvas.style, {
+          width: '100%', height: '100%',
+          borderRadius: '50%',
+        });
+      }
+      launcherFallback.style.display = 'none';
+    }
+
     notifyParent({ type: 'close' });
   }
+
   function bumpUnread() {
     unreadCount += 1;
     launcherBadge.textContent = String(Math.min(unreadCount, 99));
@@ -520,7 +547,6 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   launcher.addEventListener('click', openPanel);
   minimizeBtn.addEventListener('click', () => closePanel());
 
-  // Notify parent page (used by embed-loader.js to show/hide its own iframe wrapper)
   function notifyParent(payload) {
     try { parent.postMessage({ source: 'avatar-platform', publicId, ...payload }, '*'); } catch (_) {}
   }
@@ -529,7 +555,6 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   textInput.addEventListener('input', () => {
     textInput.style.height = 'auto';
     textInput.style.height = Math.min(textInput.scrollHeight, 120) + 'px';
-    // Auto direction per-input if textDirection is "auto"
     if ((config?.project?.textDirection || 'auto') === 'auto') {
       const dir = detectDirection(textInput.value) || 'ltr';
       textInput.style.direction = dir;
@@ -569,14 +594,12 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   }
 
   // ── Commands from embed-loader.js ──────────────────────────────
-  // The parent loader can ask us to open the panel (buffered click
-  // replay) or notify us that a drag has ended (reset cursor).
   window.addEventListener('message', (e) => {
     if (!e.data || e.data.source !== 'avatar-platform-host') return;
     if (e.data.type === 'open' && !panelOpen) openPanel();
     if (e.data.type === 'drag-end') {
-      const header = document.getElementById('header');
-      if (header) header.style.cursor = '';
+      const headerEl = document.getElementById('header');
+      if (headerEl) headerEl.style.cursor = '';
     }
   });
 
@@ -605,7 +628,6 @@ Always tag a value as soon as you receive it. If the visitor provides multiple v
       tags.push({ key, value: value.trim() });
       return '';
     });
-    // Clean up leftover blank lines from removed tags
     clean = clean.replace(/\n{3,}/g, '\n\n').trim();
     return { clean, tags };
   }
@@ -614,15 +636,13 @@ Always tag a value as soon as you receive it. If the visitor provides multiple v
     const keys = Object.keys(sessionCapture);
     if (keys.length === 0) return;
 
-    const panel = document.getElementById('details-panel');
+    const detailsPanel = document.getElementById('details-panel');
     const body  = document.getElementById('details-body');
     const pill  = document.getElementById('capture-pill');
 
-    panel.style.display = 'block';
+    detailsPanel.style.display = 'block';
 
     const total    = captureFields.length;
-    const required = captureFields.filter(f => f.required);
-    const filled   = required.filter(f => sessionCapture[f.key]);
     pill.style.display = 'inline';
     pill.textContent = total > 0 ? `${keys.length}/${total} captured` : `${keys.length} captured`;
 

@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>React SDK — AvatarPlatform Docs</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">React SDK</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link active" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>Libraries</div>
+        <h1>React SDK</h1>
+        <p class="docs-lead">Integrate the AvatarPlatform talking agent into any React application with a single component. Works with Next.js, Vite, Remix, and Create React App.</p>
+
+        <h2>Installation</h2>
+        <pre><code class="language-bash">npm install @avatar-platform/react
+# or
+yarn add @avatar-platform/react
+# or
+pnpm add @avatar-platform/react</code></pre>
+
+        <div class="callout callout-info">
+          <span class="callout-icon">ℹ️</span>
+          <div class="callout-body"><p>The React SDK wraps <code>lipsync-sdk.js</code> and dynamically injects it into the page. No bundler configuration is needed. React 17+ and React 18 are both supported.</p></div>
+        </div>
+
+        <h2>AvatarWidget</h2>
+        <p>The primary component. Drop it anywhere in your component tree — typically near the root layout so it persists across route changes.</p>
+
+        <pre><code class="language-tsx">import { AvatarWidget } from '@avatar-platform/react';
+
+export default function App() {
+  return (
+    &lt;&gt;
+      &lt;YourApp /&gt;
+      &lt;AvatarWidget
+        botId="YOUR_BOT_ID"
+        position="bottom-right"
+        theme="#6366f1"
+        size="md"
+        startOpen={false}
+        compactMobile
+      /&gt;
+    &lt;/&gt;
+  );
+}</code></pre>
+
+        <h3>Props</h3>
+        <table class="props-table">
+          <thead><tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="prop-name">botId</span></td>
+              <td><span class="prop-type">string</span></td>
+              <td>—</td>
+              <td><strong>Required.</strong> The public ID of your project. Find it in the dashboard → Embed tab.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">position</span></td>
+              <td><span class="prop-type">'bottom-right' | 'bottom-left'</span></td>
+              <td><span class="prop-default">'bottom-right'</span></td>
+              <td>Position of the floating launcher button.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">theme</span></td>
+              <td><span class="prop-type">string</span></td>
+              <td><span class="prop-default">'#7c6af5'</span></td>
+              <td>Accent colour for the widget UI. Any valid CSS hex colour.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">size</span></td>
+              <td><span class="prop-type">'sm' | 'md' | 'lg'</span></td>
+              <td><span class="prop-default">'md'</span></td>
+              <td>Size of the avatar character in the open panel.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">startOpen</span></td>
+              <td><span class="prop-type">boolean</span></td>
+              <td><span class="prop-default">false</span></td>
+              <td>If <code>true</code>, the panel opens automatically on load.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">compactMobile</span></td>
+              <td><span class="prop-type">boolean</span></td>
+              <td><span class="prop-default">true</span></td>
+              <td>Hides the avatar character on screens narrower than 480px to save space.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">offsetX</span></td>
+              <td><span class="prop-type">number</span></td>
+              <td><span class="prop-default">0</span></td>
+              <td>Horizontal offset in pixels from the edge of the screen.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">offsetY</span></td>
+              <td><span class="prop-type">number</span></td>
+              <td><span class="prop-default">0</span></td>
+              <td>Vertical offset in pixels from the bottom of the screen.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>useAvatarPlatform hook</h2>
+        <p>Access the widget API programmatically — ask questions, listen for answers, or control the open/close state from anywhere in your app.</p>
+
+        <pre><code class="language-tsx">import { AvatarWidget, useAvatarPlatform } from '@avatar-platform/react';
+
+function SupportButton() {
+  const { ask, open, close } = useAvatarPlatform('YOUR_BOT_ID');
+
+  const handleSearch = async (query: string) => {
+    const result = await ask(query);
+    console.log(result.answer);   // AI answer string
+    console.log(result.sources);  // source files used
+    open();                        // open the widget to show the reply
+  };
+
+  return (
+    &lt;button onClick={() =&gt; handleSearch('How do I reset my password?')}&gt;
+      Ask the AI
+    &lt;/button&gt;
+  );
+}</code></pre>
+
+        <h3>Hook return values</h3>
+        <table class="props-table">
+          <thead><tr><th>Method</th><th>Signature</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="prop-name">ask</span></td>
+              <td><span class="prop-type">(question: string, sessionId?: string) =&gt; Promise&lt;AskResult&gt;</span></td>
+              <td>Send a question to the agent. Returns <code>{ answer, sources, sessionId }</code>. Does not require voice or the widget to be open.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">preload</span></td>
+              <td><span class="prop-type">(botId: string) =&gt; Promise&lt;Config&gt;</span></td>
+              <td>Pre-fetch the bot configuration to warm the browser cache before the widget renders.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">open</span></td>
+              <td><span class="prop-type">() =&gt; void</span></td>
+              <td>Open the chat panel programmatically.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">close</span></td>
+              <td><span class="prop-type">() =&gt; void</span></td>
+              <td>Close the chat panel.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">hide</span></td>
+              <td><span class="prop-type">() =&gt; void</span></td>
+              <td>Hide the launcher button and panel entirely.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">show</span></td>
+              <td><span class="prop-type">() =&gt; void</span></td>
+              <td>Show the launcher button after hiding it.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>TypeScript types</h2>
+        <pre><code class="language-typescript">interface AvatarWidgetProps {
+  botId: string;
+  position?: 'bottom-right' | 'bottom-left';
+  theme?: string;
+  size?: 'sm' | 'md' | 'lg';
+  startOpen?: boolean;
+  compactMobile?: boolean;
+  offsetX?: number;
+  offsetY?: number;
+}
+
+interface AskResult {
+  answer: string;
+  sources: {
+    title: string;
+    url: string | null;
+    snippet: string;
+  }[];
+  sessionId: string;
+}
+
+interface UseAvatarPlatformReturn {
+  ask:     (question: string, sessionId?: string) =&gt; Promise&lt;AskResult&gt;;
+  preload: (botId: string) =&gt; Promise&lt;unknown&gt;;
+  open:    () =&gt; void;
+  close:   () =&gt; void;
+  hide:    () =&gt; void;
+  show:    () =&gt; void;
+}</code></pre>
+
+        <h2>Next.js example</h2>
+        <p>For Next.js App Router, mark the component as a client component and add the widget to your root layout:</p>
+        <pre><code class="language-tsx">// app/layout.tsx
+'use client';
+import { AvatarWidget } from '@avatar-platform/react';
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    &lt;html lang="en"&gt;
+      &lt;body&gt;
+        {children}
+        &lt;AvatarWidget botId={process.env.NEXT_PUBLIC_BOT_ID!} position="bottom-right" /&gt;
+      &lt;/body&gt;
+    &lt;/html&gt;
+  );
+}</code></pre>
+
+        <div class="callout callout-warn">
+          <span class="callout-icon">⚠️</span>
+          <div class="callout-body"><p><strong>SSR note:</strong> The widget renders on the client only. It is safe to use inside <code>'use client'</code> components. The component tree above it can remain a Server Component.</p></div>
+        </div>
+
+        <div class="callout callout-tip">
+          <span class="callout-icon">✅</span>
+          <div class="callout-body"><p>See <a href="/docs/prefetching">Prefetching &amp; Advanced Control</a> for how to use <code>AvatarPlatform.preload()</code> to eliminate the initial config-fetch latency.</p></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

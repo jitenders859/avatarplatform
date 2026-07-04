@@ -33,7 +33,7 @@ async function apiCall(path, opts = {}) {
 
 const API = {
   // Auth
-  signup:         (email, password) => apiCall('/api/auth/signup', { method: 'POST', body: { email, password } }),
+  signup:         (name, email, password) => apiCall('/api/auth/signup', { method: 'POST', body: { name, email, password } }),
   login:          (email, password) => apiCall('/api/auth/login',  { method: 'POST', body: { email, password } }),
   me:             () => apiCall('/api/auth/me'),
   updateMe:       (patch) => apiCall('/api/auth/me', { method: 'PATCH', body: patch }),
@@ -79,6 +79,13 @@ const API = {
   },
   getLead: (pid, lid) => apiCall(`/api/projects/${pid}/leads/${lid}`),
 
+  // Chunks
+  listChunks:  (pid, fid, search) => apiCall(`/api/projects/${pid}/files/${fid}/chunks${search ? '?search=' + encodeURIComponent(search) : ''}`),
+  deleteChunk: (pid, fid, cid) => apiCall(`/api/projects/${pid}/files/${fid}/chunks/${cid}`, { method: 'DELETE' }),
+
+  // Generic passthrough for ad-hoc calls
+  request: (path, opts = {}) => apiCall(path, opts),
+
   // Analytics
   analytics:        () => apiCall('/api/analytics/overview'),
   projectAnalytics: (id) => apiCall(`/api/analytics/project/${id}`),
@@ -113,6 +120,7 @@ function renderTopNav(active) {
     { id: 'dashboard', label: 'Chatbots', href: '/dashboard' },
     { id: 'analytics', label: 'Analytics', href: '/analytics' },
     { id: 'billing', label: 'Billing', href: '/billing' },
+    { id: 'docs', label: 'Docs', href: '/docs' },
   ];
   const html = `
     <nav class="topnav">
@@ -149,4 +157,55 @@ function renderTopNav(active) {
   });
   document.addEventListener('click', () => { dropdown.style.display = 'none'; });
   document.getElementById('logout-btn').addEventListener('click', () => Auth.logout());
+}
+
+// ── Socket.io — real-time file processing progress ────────────
+// Loaded only on authenticated pages that call renderTopNav().
+// Requires socket.io client served by the server at /socket.io/socket.io.js
+function initProgressSocket() {
+  if (typeof io === 'undefined') return; // socket.io client script not loaded
+  const user = Auth.user;
+  if (!user) return;
+
+  const socket = io({ transports: ['websocket', 'polling'] });
+  socket.on('connect', () => socket.emit('join', user.id));
+
+  socket.on('file:progress', ({ fileId, stage, pct }) => {
+    // Update a progress bar if one exists for this file
+    const row = document.querySelector(`[data-file-id="${fileId}"]`);
+    if (!row) return;
+
+    let bar = row.querySelector('.progress-bar');
+    if (!bar) {
+      const wrap = document.createElement('div');
+      wrap.style.cssText = 'height:3px;background:rgba(255,255,255,0.08);border-radius:2px;margin-top:6px;overflow:hidden';
+      bar = document.createElement('div');
+      bar.className = 'progress-bar';
+      bar.style.cssText = 'height:100%;background:var(--accent,#7c6af5);border-radius:2px;transition:width 0.3s';
+      wrap.appendChild(bar);
+      row.appendChild(wrap);
+    }
+
+    bar.style.width = pct + '%';
+
+    const pill = row.querySelector('.file-status-pill');
+    if (pill) {
+      pill.textContent = stage === 'done' ? 'ready'
+        : stage === 'failed' ? 'failed'
+        : stage;
+    }
+
+    if (stage === 'done' || stage === 'failed') {
+      setTimeout(() => {
+        if (typeof refreshFileList === 'function') refreshFileList();
+      }, 600);
+    }
+  });
+}
+
+// Auto-init once DOM is ready on authenticated pages
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initProgressSocket);
+} else {
+  initProgressSocket();
 }

@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ElevenLabs Avatar — AvatarPlatform Docs</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">ElevenLabs Avatar</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link active" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>SDK Introduction</div>
+        <h1>ElevenLabs Avatar</h1>
+        <p class="docs-lead">Use ElevenLabs voices instead of the default Gemini TTS engine. ElevenLabs produces more natural, expressive speech — particularly useful for characters with a specific personality or accent.</p>
+
+        <h2>Overview</h2>
+        <p>By default, AvatarPlatform uses the voice engine built into the Gemini Live API for real-time speech synthesis. When you configure an ElevenLabs voice, the platform routes audio generation through the ElevenLabs TTS API instead.</p>
+        <p>The lip-sync pipeline is the same regardless of voice engine: audio is analysed in real-time by the hybrid amplitude+phoneme controller, and viseme weights are driven into Rive via the 23-input state machine.</p>
+
+        <h2>Configuration</h2>
+        <h3>Step 1 — Add your ElevenLabs API key</h3>
+        <p>Add the key to your <code>.env</code> file:</p>
+        <pre><code class="language-bash">ELEVENLABS_API_KEY=your-elevenlabs-api-key</code></pre>
+
+        <h3>Step 2 — Set the voice ID per project</h3>
+        <p>In the dashboard, open your project → <strong>Settings</strong> tab → <strong>Voice</strong> dropdown. ElevenLabs voices appear in the list once your API key is configured. You can also set the voice ID directly via the API:</p>
+        <pre><code class="language-bash">PATCH /api/projects/:id
+Content-Type: application/json
+Authorization: Bearer YOUR_JWT
+
+{
+  "voice": "el:21m00Tcm4TlvDq8ikWAM"
+}</code></pre>
+        <p>The <code>el:</code> prefix tells the embed SDK to use the ElevenLabs voice engine. The value after the colon is the ElevenLabs voice ID.</p>
+
+        <h3>Popular voice IDs</h3>
+        <table class="props-table">
+          <thead><tr><th>Voice ID</th><th>Name</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><code>21m00Tcm4TlvDq8ikWAM</code></td><td>Rachel</td><td>Calm, American female. Great for support bots.</td></tr>
+            <tr><td><code>AZnzlk1XvdvUeBnXmlld</code></td><td>Domi</td><td>Strong, American female. Good for confident agents.</td></tr>
+            <tr><td><code>EXAVITQu4vr4xnSDxMaL</code></td><td>Bella</td><td>Soft, American female. Warm and friendly.</td></tr>
+            <tr><td><code>ErXwobaYiN019PkySvjV</code></td><td>Antoni</td><td>Well-rounded, American male.</td></tr>
+            <tr><td><code>VR6AewLTigWG4xSOukaG</code></td><td>Arnold</td><td>Crisp, American male. Great for product demos.</td></tr>
+          </tbody>
+        </table>
+        <p>You can browse all available voices in the <a href="https://elevenlabs.io/voice-library" target="_blank" rel="noopener">ElevenLabs voice library</a>.</p>
+
+        <h2>How it works</h2>
+        <p>When a visitor speaks to the agent:</p>
+        <ol>
+          <li>The Gemini Live WebSocket processes speech-to-text and generates a text response</li>
+          <li>The text response is sent to the ElevenLabs TTS API (server-side proxy at <code>/embed/:publicId/tts</code>)</li>
+          <li>The audio is streamed back to the browser in chunks</li>
+          <li>The hybrid lip-sync controller analyses each audio chunk in real-time and drives the Rive state machine</li>
+        </ol>
+
+        <h2>Latency tradeoffs</h2>
+        <table class="props-table">
+          <thead><tr><th></th><th>Gemini Live (default)</th><th>ElevenLabs</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Latency</strong></td>
+              <td>~300ms end-to-end (fully streaming)</td>
+              <td>~600–900ms (TTS generation adds a round trip)</td>
+            </tr>
+            <tr>
+              <td><strong>Voice quality</strong></td>
+              <td>Good — natural but sometimes robotic on long outputs</td>
+              <td>Excellent — highly expressive, consistent</td>
+            </tr>
+            <tr>
+              <td><strong>Language support</strong></td>
+              <td>30+ languages auto-detected</td>
+              <td>29 languages, specified per request</td>
+            </tr>
+            <tr>
+              <td><strong>Cost</strong></td>
+              <td>Included in Gemini Live pricing</td>
+              <td>ElevenLabs character credits billed separately</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout callout-tip">
+          <span class="callout-icon">💡</span>
+          <div class="callout-body"><p><strong>Recommendation:</strong> Use Gemini Live voices for the lowest latency. Switch to ElevenLabs when voice personality matters more than response speed — for example, a brand mascot or a product demo agent.</p></div>
+        </div>
+
+        <h2>ElevenLabs streaming</h2>
+        <p>AvatarPlatform uses ElevenLabs' streaming TTS endpoint (<code>/v1/text-to-speech/:voiceId/stream</code>) with <code>optimize_streaming_latency=3</code> to minimise the first-byte delay. Audio is passed to the Web Audio API and analysed with a real-time FFT analyser — the same pipeline used for Gemini Live audio.</p>
+
+        <div class="callout callout-warn">
+          <span class="callout-icon">⚠️</span>
+          <div class="callout-body"><p>ElevenLabs requires a server-side proxy because the API key must never be exposed to the browser. The proxy endpoint is already built into the embed routes — no extra configuration is needed beyond setting <code>ELEVENLABS_API_KEY</code>.</p></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

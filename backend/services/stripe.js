@@ -5,6 +5,7 @@
  * so the server can boot without billing configured. Calls fall back
  * to a clear "Stripe not configured" error at runtime.
  */
+const logger = require('../logger').child({ module: 'services/stripe' });
 let _stripe = null;
 let _initFailed = false;
 
@@ -18,7 +19,7 @@ function getStripe() {
     _stripe = new Stripe(key, { apiVersion: '2024-06-20' });
     return _stripe;
   } catch (e) {
-    console.error('[stripe] init failed:', e.message);
+    logger.error({ err: e.message }, 'Stripe init failed');
     _initFailed = true;
     return null;
   }

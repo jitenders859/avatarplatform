@@ -1,8 +1,6 @@
 /**
- * Analytics — read-only aggregations over the messages and files tables.
- *
- * Pretty lightweight; computes everything on demand. For larger scale,
- * cache per-period aggregates and recompute hourly.
+ * Analytics — SQL-aggregate views over messages, sessions, files, and leads.
+ * No in-memory row scanning; all aggregation happens in Postgres.
  */
 const express = require('express');
 const db = require('../db');
@@ -10,121 +8,141 @@ const { authRequired } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.get('/overview', authRequired, (req, res) => {
-  const userId = req.user.id;
-  const projects = db.findAll('projects', p => p.userId === userId);
-  const projectIds = new Set(projects.map(p => p.id));
-
-  const messages = db.findAll('messages', m => projectIds.has(m.projectId));
-  const sessions = db.findAll('sessions', s => projectIds.has(s.projectId));
-  const files    = db.findAll('files',    f => f.userId === userId);
-  const leads    = db.findAll('leads',    l => projectIds.has(l.projectId));
-
-  // Last 30 days, bucketed by day
+function buildDailyBuckets(msgRows, sessRows) {
   const now = Date.now();
   const DAY = 24 * 60 * 60 * 1000;
   const buckets = [];
   for (let i = 29; i >= 0; i--) {
-    const day = new Date(now - i * DAY);
-    const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
+    const d = new Date(now - i * DAY);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     buckets.push({ date: key, messages: 0, sessions: 0 });
   }
-  const indexByDate = Object.fromEntries(buckets.map((b, i) => [b.date, i]));
+  const byDate = Object.fromEntries(buckets.map((b, i) => [b.date, i]));
+  for (const r of msgRows)  if (r.date in byDate) buckets[byDate[r.date]].messages = Number(r.count);
+  for (const r of sessRows) if (r.date in byDate) buckets[byDate[r.date]].sessions = Number(r.count);
+  return buckets;
+}
 
-  function dayKey(ts) {
-    const d = new Date(ts);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
+router.get('/overview', authRequired, async (req, res) => {
+  const userId = req.user.id;
+  const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
-  for (const m of messages) {
-    const k = dayKey(m.createdAt);
-    if (k in indexByDate) buckets[indexByDate[k]].messages += 1;
-  }
-  for (const s of sessions) {
-    const k = dayKey(s.createdAt);
-    if (k in indexByDate) buckets[indexByDate[k]].sessions += 1;
-  }
-
-  // Per-project rollup
-  const byProject = {};
-  for (const p of projects) {
-    byProject[p.id] = { id: p.id, name: p.name, messages: 0, sessions: 0, files: 0, leads: 0 };
-  }
-  for (const m of messages) if (byProject[m.projectId]) byProject[m.projectId].messages += 1;
-  for (const s of sessions) if (byProject[s.projectId]) byProject[s.projectId].sessions += 1;
-  for (const f of files)    if (byProject[f.projectId]) byProject[f.projectId].files    += 1;
-  for (const l of leads)    if (byProject[l.projectId]) byProject[l.projectId].leads    += 1;
+  const [totals, byProject, msgDaily, sessDaily] = await Promise.all([
+    db.queryOne(
+      `SELECT
+         (SELECT COUNT(*) FROM projects WHERE user_id = $1)                                         AS projects,
+         (SELECT COUNT(*) FROM files f JOIN projects p ON p.id = f.project_id WHERE p.user_id = $1) AS files,
+         (SELECT COUNT(*) FROM messages m JOIN projects p ON p.id = m.project_id WHERE p.user_id = $1) AS messages,
+         (SELECT COUNT(*) FROM sessions s JOIN projects p ON p.id = s.project_id WHERE p.user_id = $1) AS sessions,
+         (SELECT COUNT(*) FROM leads l JOIN projects p ON p.id = l.project_id WHERE p.user_id = $1)    AS leads`,
+      [userId]
+    ),
+    db.query(
+      `SELECT p.id, p.name,
+              COUNT(DISTINCT m.id) AS messages,
+              COUNT(DISTINCT s.id) AS sessions,
+              COUNT(DISTINCT f.id) AS files,
+              COUNT(DISTINCT l.id) AS leads
+       FROM projects p
+       LEFT JOIN messages m ON m.project_id = p.id
+       LEFT JOIN sessions s ON s.project_id = p.id
+       LEFT JOIN files    f ON f.project_id = p.id
+       LEFT JOIN leads    l ON l.project_id = p.id
+       WHERE p.user_id = $1
+       GROUP BY p.id, p.name
+       ORDER BY COUNT(DISTINCT m.id) DESC`,
+      [userId]
+    ),
+    db.query(
+      `SELECT to_char(to_timestamp(m.created_at / 1000.0), 'YYYY-MM-DD') AS date, COUNT(*) AS count
+       FROM messages m JOIN projects p ON p.id = m.project_id
+       WHERE p.user_id = $1 AND m.created_at > $2
+       GROUP BY date`,
+      [userId, since]
+    ),
+    db.query(
+      `SELECT to_char(to_timestamp(s.created_at / 1000.0), 'YYYY-MM-DD') AS date, COUNT(*) AS count
+       FROM sessions s JOIN projects p ON p.id = s.project_id
+       WHERE p.user_id = $1 AND s.created_at > $2
+       GROUP BY date`,
+      [userId, since]
+    ),
+  ]);
 
   res.json({
     totals: {
-      projects: projects.length,
-      files: files.length,
-      messages: messages.length,
-      sessions: sessions.length,
-      leads: leads.length,
+      projects: Number(totals.projects),
+      files:    Number(totals.files),
+      messages: Number(totals.messages),
+      sessions: Number(totals.sessions),
+      leads:    Number(totals.leads),
     },
-    daily: buckets,
-    byProject: Object.values(byProject).sort((a, b) => b.messages - a.messages),
+    daily: buildDailyBuckets(msgDaily, sessDaily),
+    byProject: byProject.map(r => ({
+      id:       r.id,
+      name:     r.name,
+      messages: Number(r.messages),
+      sessions: Number(r.sessions),
+      files:    Number(r.files),
+      leads:    Number(r.leads),
+    })),
   });
 });
 
-router.get('/project/:id', authRequired, (req, res) => {
-  const project = db.findOne('projects', p => p.id === req.params.id && p.userId === req.user.id);
+router.get('/project/:id', authRequired, async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
-  const messages = db.findAll('messages', m => m.projectId === project.id);
-  const sessions = db.findAll('sessions', s => s.projectId === project.id);
-  const files    = db.findAll('files',    f => f.projectId === project.id);
+  const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
-  // 30-day daily buckets
-  const now = Date.now();
-  const DAY = 24 * 60 * 60 * 1000;
-  const buckets = [];
-  for (let i = 29; i >= 0; i--) {
-    const day = new Date(now - i * DAY);
-    const key = `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`;
-    buckets.push({ date: key, messages: 0, sessions: 0 });
-  }
-  const indexByDate = Object.fromEntries(buckets.map((b, i) => [b.date, i]));
-  function dayKey(ts) {
-    const d = new Date(ts);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  }
-  for (const m of messages) { const k = dayKey(m.createdAt); if (k in indexByDate) buckets[indexByDate[k]].messages += 1; }
-  for (const s of sessions) { const k = dayKey(s.createdAt); if (k in indexByDate) buckets[indexByDate[k]].sessions += 1; }
-
-  // Per-session message counts for avg calculation
-  const sessionMsgCounts = sessions.map(s => db.findAll('messages', m => m.sessionId === s.id).length);
-  const avgSessionLength = sessionMsgCounts.length
-    ? Math.round(sessionMsgCounts.reduce((a, b) => a + b, 0) / sessionMsgCounts.length)
-    : 0;
-
-  // 10 most recent unique user messages
-  const userMessages = messages.filter(m => m.role === 'user').sort((a, b) => b.createdAt - a.createdAt);
-  const seen = new Set();
-  const topQuestions = [];
-  for (const m of userMessages) {
-    const key = (m.text || '').trim().toLowerCase();
-    if (!seen.has(key)) {
-      seen.add(key);
-      topQuestions.push({ text: m.text, createdAt: m.createdAt });
-      if (topQuestions.length >= 10) break;
-    }
-  }
-
-  const leads = db.findAll('leads', l => l.projectId === project.id);
+  const [totals, avgRow, msgDaily, sessDaily, topQ] = await Promise.all([
+    db.queryOne(
+      `SELECT
+         (SELECT COUNT(*) FROM sessions WHERE project_id = $1)                   AS sessions,
+         (SELECT COUNT(*) FROM messages WHERE project_id = $1)                   AS messages,
+         (SELECT COUNT(*) FROM files    WHERE project_id = $1)                   AS files,
+         (SELECT COUNT(*) FROM leads    WHERE project_id = $1)                   AS leads,
+         (SELECT COUNT(*) FROM leads    WHERE project_id = $1 AND complete=true) AS leads_complete`,
+      [project.id]
+    ),
+    db.queryOne(
+      `SELECT COALESCE(AVG(msg_count), 0) AS avg
+       FROM (SELECT session_id, COUNT(*) AS msg_count FROM messages WHERE project_id = $1 GROUP BY session_id) sub`,
+      [project.id]
+    ),
+    db.query(
+      `SELECT to_char(to_timestamp(created_at / 1000.0), 'YYYY-MM-DD') AS date, COUNT(*) AS count
+       FROM messages WHERE project_id = $1 AND created_at > $2 GROUP BY date`,
+      [project.id, since]
+    ),
+    db.query(
+      `SELECT to_char(to_timestamp(created_at / 1000.0), 'YYYY-MM-DD') AS date, COUNT(*) AS count
+       FROM sessions WHERE project_id = $1 AND created_at > $2 GROUP BY date`,
+      [project.id, since]
+    ),
+    db.query(
+      `SELECT text, created_at FROM (
+         SELECT DISTINCT ON (lower(trim(text))) text, created_at
+         FROM messages
+         WHERE project_id = $1 AND role = 'user' AND text IS NOT NULL
+         ORDER BY lower(trim(text)), created_at DESC
+       ) sub
+       ORDER BY created_at DESC LIMIT 10`,
+      [project.id]
+    ),
+  ]);
 
   res.json({
     totals: {
-      sessions: sessions.length,
-      messages: messages.length,
-      files: files.length,
-      avgSessionLength,
-      leads: leads.length,
-      leadsComplete: leads.filter(l => l.complete).length,
+      sessions:      Number(totals.sessions),
+      messages:      Number(totals.messages),
+      files:         Number(totals.files),
+      avgSessionLength: Math.round(Number(avgRow.avg) || 0),
+      leads:         Number(totals.leads),
+      leadsComplete: Number(totals.leadsComplete),
     },
-    daily: buckets,
-    topQuestions,
+    daily: buildDailyBuckets(msgDaily, sessDaily),
+    topQuestions: topQ.map(r => ({ text: r.text, createdAt: r.createdAt })),
   });
 });
 

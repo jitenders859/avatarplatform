@@ -1,50 +1,26 @@
 /**
- * In-memory cosine similarity over chunks belonging to a project.
- *
- * For a JSON-DB SaaS this scales fine to ~100k chunks per project.
- * If a project ever exceeds that, swap this for pgvector / Pinecone /
- * Qdrant — the call site (`searchProject`) is the only thing that
- * needs to change.
+ * Semantic search using pgvector's cosine distance operator (<=>).
+ * Replaces the old in-memory cosine similarity calculation.
  */
 const db = require('../db');
 
-function dot(a, b) {
-  let s = 0;
-  const n = Math.min(a.length, b.length);
-  for (let i = 0; i < n; i++) s += a[i] * b[i];
-  return s;
-}
-
-function norm(v) {
-  let s = 0;
-  for (let i = 0; i < v.length; i++) s += v[i] * v[i];
-  return Math.sqrt(s) || 1;
-}
-
-function cosine(a, b) {
-  return dot(a, b) / (norm(a) * norm(b));
-}
-
 /**
  * Find the top-K most similar chunks within a project.
- * Returns [{ chunk, score }] sorted descending.
+ * Returns [{ chunk, score }] sorted descending by cosine similarity.
  */
-function searchProject(projectId, queryEmbedding, k = 5) {
-  const chunks = db.findAll('chunks', c => c.projectId === projectId && Array.isArray(c.embedding));
-  if (chunks.length === 0) return [];
-  const qNorm = norm(queryEmbedding);
-
-  const scored = chunks.map(c => {
-    const cn = c._cachedNorm || norm(c.embedding);
-    // Compute similarity inline to avoid the cosine helper's redundant norm calls
-    let s = 0;
-    const n = Math.min(c.embedding.length, queryEmbedding.length);
-    for (let i = 0; i < n; i++) s += c.embedding[i] * queryEmbedding[i];
-    return { chunk: c, score: s / (cn * qNorm) };
-  });
-
-  scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, k);
+async function searchProject(projectId, queryEmbedding, k = 5) {
+  const vectorStr = '[' + queryEmbedding.join(',') + ']';
+  const rows = await db.query(
+    `SELECT id, project_id, file_id, idx, text, heading, page_hint, char_count,
+            approx_tokens, embedding_model, embedding_dim, created_at,
+            1 - (embedding <=> $1::vector) AS score
+     FROM chunks
+     WHERE project_id = $2 AND embedding IS NOT NULL
+     ORDER BY embedding <=> $1::vector
+     LIMIT $3`,
+    [vectorStr, projectId, k]
+  );
+  return rows.map(r => ({ chunk: r, score: typeof r.score === 'number' ? r.score : parseFloat(r.score) }));
 }
 
-module.exports = { searchProject, cosine };
+module.exports = { searchProject };

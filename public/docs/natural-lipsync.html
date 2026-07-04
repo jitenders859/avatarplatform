@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Natural Lip Sync — AvatarPlatform Docs</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">Natural Lip Sync</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link active" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>SDK Introduction</div>
+        <h1>Natural Lip Sync</h1>
+        <p class="docs-lead">AvatarPlatform uses a hybrid amplitude + phoneme controller to drive Rive mouth shapes in real time. The result is smooth, expressive lip sync that works for any voice engine without requiring phoneme data from the TTS service.</p>
+
+        <h2>Architecture overview</h2>
+        <p>The lip-sync system lives in two files:</p>
+        <ul>
+          <li><code>public/js/audio-clock.js</code> — high-resolution audio scheduler that converts audio buffer timing into phoneme events</li>
+          <li><code>public/js/viseme-map.js</code> — lookup table mapping phoneme characters to Azure-style viseme IDs (0–22)</li>
+        </ul>
+        <p>These are combined inside <code>lipsync-sdk.js</code>'s <code>HybridLipsyncController</code> class, which runs continuously while audio is playing.</p>
+
+        <h2>How viseme mapping works</h2>
+        <h3>The 23 viseme slots</h3>
+        <p>AvatarPlatform uses Azure's 22 viseme IDs (0 = silence + 1–22 for phoneme groups) as an intermediate representation. Each viseme ID maps to one Rive number input (inputs 100–122):</p>
+        <table class="props-table">
+          <thead><tr><th>Viseme ID</th><th>Phoneme group</th><th>Rive input</th><th>Example sounds</th></tr></thead>
+          <tbody>
+            <tr><td>0</td><td>silence</td><td>100</td><td>pause, breath</td></tr>
+            <tr><td>1</td><td>aa</td><td>101</td><td>"f<strong>a</strong>ther"</td></tr>
+            <tr><td>2</td><td>aw</td><td>102</td><td>"c<strong>au</strong>ght"</td></tr>
+            <tr><td>3</td><td>o</td><td>110</td><td>"b<strong>oa</strong>t"</td></tr>
+            <tr><td>4</td><td>ey</td><td>103</td><td>"s<strong>ay</strong>"</td></tr>
+            <tr><td>5</td><td>er</td><td>113</td><td>"h<strong>er</strong>"</td></tr>
+            <tr><td>6</td><td>ih</td><td>105</td><td>"s<strong>i</strong>t"</td></tr>
+            <tr><td>7</td><td>uw</td><td>104</td><td>"y<strong>ou</strong>"</td></tr>
+            <tr><td>21</td><td>p_b_m</td><td>107</td><td>"<strong>p</strong>ot", "<strong>b</strong>at", "<strong>m</strong>ap"</td></tr>
+            <tr><td>22</td><td>ng</td><td>122</td><td>si<strong>ng</strong></td></tr>
+          </tbody>
+        </table>
+        <p>At any moment, at most one Rive input is non-zero. The active input value ramps from 1 → 100 across the duration of the phoneme (the "timed-ramp" mode), giving a smooth interpolated mouth movement rather than a binary snap.</p>
+
+        <h2>Amplitude mode</h2>
+        <p>The Web Audio <code>AnalyserNode</code> runs at <strong>50 Hz</strong> (every 20ms), reading 512 FFT bins. The RMS power of the speech-frequency band (200–3400 Hz) drives a continuous jaw-open value:</p>
+        <pre><code class="language-javascript">// From audio-clock.js — simplified
+const fftData = new Float32Array(analyser.frequencyBinCount); // 256 bins
+analyser.getFloatFrequencyData(fftData);
+
+// Speech band: bins 3–43 at 48kHz (roughly 200–3400 Hz)
+const rms = Math.sqrt(fftData.slice(3, 43).reduce((s, v) => s + v*v, 0) / 40);
+const jawOpen = Math.min(1, rms * amplitudeSensitivity);</code></pre>
+        <p>This value modulates the active viseme's Rive input in the range <code>[visemeMinValue, visemeMaxValue]</code>, ensuring the mouth opens proportionally to loudness even when no discrete phoneme event is scheduled.</p>
+
+        <h2>Phoneme schedule mode</h2>
+        <p>The scheduler estimates when phonemes occur based on audio playback timing. It fires at <code>PHONEMES_PER_SEC = 13.5</code> phonemes per second — approximately the average English speech rate.</p>
+        <p>Each phoneme event:</p>
+        <ol>
+          <li>Determines the next viseme ID by cycling through a plausible phoneme sequence</li>
+          <li>Schedules the Rive input to ramp from <code>visemeMinValue</code> → <code>visemeMaxValue</code> over the phoneme duration</li>
+          <li>Triggers silence (input 100) for <code>SILENCE_PAUSE_MS = 130ms</code> between words</li>
+          <li>Applies <code>visemeOverlapMs = 35ms</code> of co-articulation overlap between adjacent phonemes</li>
+        </ol>
+
+        <h2>Phoneme-based vs amplitude-based</h2>
+        <table class="props-table">
+          <thead><tr><th></th><th>Amplitude-based</th><th>Phoneme-based</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Data source</strong></td>
+              <td>Real-time FFT of audio output</td>
+              <td>Scheduled events based on audio timing</td>
+            </tr>
+            <tr>
+              <td><strong>Accuracy</strong></td>
+              <td>Approximate — jaw movement only</td>
+              <td>Better — includes consonants, lip closure, rounding</td>
+            </tr>
+            <tr>
+              <td><strong>Latency</strong></td>
+              <td>Zero — real-time analysis</td>
+              <td>~40ms anticipation pre-roll (<code>anticipationMs</code>)</td>
+            </tr>
+            <tr>
+              <td><strong>Use case</strong></td>
+              <td>Fallback, low-CPU mode</td>
+              <td>Primary mode (timed-ramp)</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>In <strong>timed-ramp mode</strong> (the default), both run simultaneously. The phoneme scheduler selects which Rive input is active; the amplitude controller modulates its value. This produces the most natural result.</p>
+
+        <h2>Customising viseme weights</h2>
+        <p>You can remap any Azure viseme ID to a different Rive input by passing <code>riveInputMap</code> to the <code>LipsyncAvatar</code> constructor:</p>
+        <pre><code class="language-javascript">const avatar = new LipsyncAvatar({
+  container: '#chat',
+  riveSrc: '/assets/characters/character_1.riv',
+  apiKey: config.apiKey,
+
+  // Override specific viseme → Rive input mappings
+  riveInputMap: {
+    0: 100,   // silence → input 100 (closed)
+    1: 101,   // aa vowel → input 101 (wide open)
+    21: 107,  // p/b/m → input 107 (lip closure)
+  },
+
+  // Timing parameters
+  visemeMinValue: 1,       // Rive value at phoneme start (1–99)
+  visemeMaxValue: 100,     // Rive value at phoneme peak (visemeMinValue–100)
+  visemePeakRatio: 0.88,   // fraction of phoneme duration at which peak is reached
+  visemeOverlapMs: 35,     // co-articulation overlap between phonemes (ms)
+
+  // Amplitude
+  amplitudeSensitivity: 1.0,  // multiply FFT amplitude (0.5 = quieter, 2.0 = more exaggerated)
+
+  // Timing
+  anticipationMs: 40,     // pre-roll: mouth starts moving N ms before phoneme
+  mouthDelayMs: 0,        // positive = delay mouth (audio arrives late)
+});</code></pre>
+
+        <h3>Rive input reference</h3>
+        <p>Each Rive character file uses number inputs 100–122 for mouth poses. Input 100 is the closed/silent pose. Inputs 101–122 correspond to the 22 phoneme groups in the Azure viseme set. Setting an input to 0 deactivates it (no contribution to the mouth shape).</p>
+
+        <div class="callout callout-tip">
+          <span class="callout-icon">💡</span>
+          <div class="callout-body"><p>If you're designing your own <code>.riv</code> file, use the same input numbering (100–122) to ensure compatibility with the SDK's phoneme scheduler out of the box.</p></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

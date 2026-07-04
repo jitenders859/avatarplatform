@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Troubleshooting — AvatarPlatform Docs</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">Troubleshooting</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link active" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>SDK Introduction</div>
+        <h1>Troubleshooting</h1>
+        <p class="docs-lead">Solutions to the most common issues when deploying AvatarPlatform embeds, setting up the server, and configuring voice chat.</p>
+
+        <h2>Widget &amp; Embed</h2>
+
+        <div class="issue-card">
+          <div class="issue-header">
+            <span class="issue-icon">🔴</span>
+            <span class="issue-title">Avatar doesn't appear on the page</span>
+          </div>
+          <div class="issue-body">
+            <p><strong>Most common cause:</strong> <code>PUBLIC_GEMINI_API_KEY</code> (or <code>GEMINI_API_KEY</code>) is missing on the server. The embed config endpoint returns an empty <code>apiKey</code>, causing the SDK to abort before rendering.</p>
+            <p><strong>Fix:</strong> Set at least <code>GEMINI_API_KEY</code> in your <code>.env</code> file and restart the server:</p>
+            <pre><code class="language-bash">GEMINI_API_KEY=AIza...   # required
+PUBLIC_GEMINI_API_KEY=AIza...  # recommended (separate restricted key)</code></pre>
+            <p><strong>Also check:</strong></p>
+            <ul>
+              <li>The <code>data-public-id</code> attribute on the script tag matches a real project's Public ID (visible in the dashboard Embed tab)</li>
+              <li>The script <code>src</code> points to the correct server URL</li>
+              <li>No Content Security Policy (CSP) header is blocking the script or the Rive CDN</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="issue-card">
+          <div class="issue-header">
+            <span class="issue-icon">🔇</span>
+            <span class="issue-title">No audio — the character's mouth doesn't move</span>
+          </div>
+          <div class="issue-body">
+            <p><strong>Cause:</strong> Browsers block autoplay of audio until the user has interacted with the page. The Gemini Live WebSocket audio context is suspended on load.</p>
+            <p><strong>Fix:</strong> The SDK automatically resumes the <code>AudioContext</code> on the first user gesture (click, tap, or keypress) anywhere on the page. Make sure the user clicks something — including the widget launcher — before speaking.</p>
+            <p><strong>If audio still doesn't play after a click:</strong></p>
+            <ul>
+              <li>Check the browser console for <code>AudioContext.resume() failed</code> errors</li>
+              <li>On iOS Safari, ensure the user tapped the launcher (not just tapped elsewhere) — iOS requires the gesture to be on an audio-related element</li>
+              <li>Some browser extensions (ad-blockers, privacy tools) block WebAudio. Test in an incognito window.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="issue-card">
+          <div class="issue-header">
+            <span class="issue-icon">🌐</span>
+            <span class="issue-title">CORS errors in the browser console</span>
+          </div>
+          <div class="issue-body">
+            <p>AvatarPlatform's embed routes (<code>/embed/*</code>) allow all origins by default — <code>Access-Control-Allow-Origin: *</code>. This is intentional: the embed widget runs on the <em>visitor's</em> website, not your own domain.</p>
+            <p><strong>If you're seeing CORS errors:</strong></p>
+            <ul>
+              <li>The request is going to the wrong URL (e.g., <code>localhost:3000</code> instead of your server)</li>
+              <li>A reverse proxy (nginx, Cloudflare) is stripping CORS headers — check your proxy config</li>
+              <li>You have a <code>cors({ origin: 'specific-domain.com' })</code> override in <code>server.js</code> — the default is <code>cors()</code> (open)</li>
+            </ul>
+            <p>The dashboard API routes (<code>/api/*</code>) also allow all origins. If you want to restrict these, add an <code>origin</code> option to the <code>cors()</code> call in <code>server.js</code>.</p>
+          </div>
+        </div>
+
+        <div class="issue-card">
+          <div class="issue-header">
+            <span class="issue-icon">📱</span>
+            <span class="issue-title">Embedding fails on iOS Safari — no microphone access</span>
+          </div>
+          <div class="issue-body">
+            <p>iOS Safari requires the <code>AudioContext</code> to be created and resumed synchronously in response to a user gesture. The SDK creates the context on the first mic button tap, which satisfies this requirement.</p>
+            <p><strong>Known issues on iOS:</strong></p>
+            <ul>
+              <li><strong>iOS 15 and earlier:</strong> WebRTC mic access may fail in WKWebView (used in React Native). Use iOS 16+ or Safari on device for full voice support.</li>
+              <li><strong>Low Power Mode:</strong> iOS can throttle <code>requestAnimationFrame</code> to 30fps, causing choppy Rive animations. This is a platform limitation.</li>
+              <li><strong>Autoplay policy:</strong> Audio won't play until a tap occurs. This is by design — do not call <code>audioContext.resume()</code> before a user gesture.</li>
+            </ul>
+            <p><strong>For React Native on iOS:</strong> Ensure <code>NSMicrophoneUsageDescription</code> is set in <code>Info.plist</code>. See the <a href="/docs/react-native-sdk">React Native SDK</a> docs.</p>
+          </div>
+        </div>
+
+        <div class="issue-card">
+          <div class="issue-header">
+            <span class="issue-icon">👄</span>
+            <span class="issue-title">Lip sync is out of sync — mouth moves after the speech</span>
+          </div>
+          <div class="issue-body">
+            <p>This is caused by audio buffer latency — the audio is scheduled in the Web Audio API ahead of the current time, but the lip-sync controller reads from the analyser in real-time.</p>
+            <p><strong>Fix:</strong> Adjust <code>mouthDelayMs</code> to compensate:</p>
+            <pre><code class="language-javascript">// If mouth moves ~100ms AFTER speech, set a negative delay
+const avatar = new LipsyncAvatar({
+  ...
+  mouthDelayMs: -80,  // advance mouth by 80ms relative to audio
+});</code></pre>
+            <p>Typical values range from <code>-50</code> to <code>-150</code> depending on the audio buffer size and device. Start with <code>-80</code> and tune from there.</p>
+            <p><strong>Also try:</strong> Increasing <code>anticipationMs</code> (default 40ms) — this pre-rolls the mouth before the scheduled phoneme starts.</p>
+          </div>
+        </div>
+
+        <h2>Server &amp; Database</h2>
+
+        <div class="issue-card">
+          <div class="issue-header">
+            <span class="issue-icon">🗄️</span>
+            <span class="issue-title">Server crashes with "relation does not exist"</span>
+          </div>
+          <div class="issue-body">
+            <p>The Postgres schema hasn't been applied. Run <code>supabase/schema.sql</code> in your Supabase SQL Editor (or via <code>psql</code>).</p>
+            <pre><code class="language-bash">psql $DATABASE_URL -f supabase/schema.sql</code></pre>
+            <p>Also ensure the <code>vector</code> extension is enabled — the schema creates it with <code>CREATE EXTENSION IF NOT EXISTS vector</code> but Supabase Free tier has it available by default.</p>
+          </div>
+        </div>
+
+        <div class="issue-card">
+          <div class="issue-header">
+            <span class="issue-icon">🔐</span>
+            <span class="issue-title">JWT errors — "Invalid or expired token"</span>
+          </div>
+          <div class="issue-body">
+            <p>This happens when <code>JWT_SECRET</code> changes between sessions. Tokens are signed with this secret — if the secret changes, all existing tokens become invalid and users are logged out.</p>
+            <p><strong>Fix:</strong> Set a stable, long-lived <code>JWT_SECRET</code> in your environment. Never regenerate it in production unless you intend to invalidate all sessions:</p>
+            <pre><code class="language-bash"># Generate a secure secret:
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"</code></pre>
+          </div>
+        </div>
+
+        <div class="issue-card">
+          <div class="issue-header">
+            <span class="issue-icon">⚡</span>
+            <span class="issue-title">Embeddings are slow or timing out</span>
+          </div>
+          <div class="issue-body">
+            <p>The Gemini Embedding API has rate limits. If you're uploading many files at once, the embedding service will queue requests and may hit the rate limit.</p>
+            <p><strong>Symptoms:</strong> Files stuck in <code>processing</code> status for more than 2 minutes; server logs show <code>[embed] 429 Too Many Requests</code>.</p>
+            <p><strong>Fix:</strong> Upload files one at a time, or add a delay between uploads. The embedding service (<code>backend/services/embed.js</code>) uses exponential backoff on 429 errors but a hard 3-retry limit.</p>
+            <p>For bulk imports, reduce <code>chunkSize</code> in <code>backend/services/process.js</code> (default 1200 chars) to create smaller chunks and reduce the number of API calls per file.</p>
+          </div>
+        </div>
+
+        <div class="issue-card">
+          <div class="issue-header">
+            <span class="issue-icon">💳</span>
+            <span class="issue-title">Stripe webhook returns 400 "signature verify failed"</span>
+          </div>
+          <div class="issue-body">
+            <p>The Stripe webhook endpoint requires the raw request body for signature verification. If a middleware (body-parser, nginx gzip) modifies the body before it reaches the handler, the signature check fails.</p>
+            <p><strong>The endpoint is already mounted before <code>express.json()</code> in <code>server.js</code></strong> — this is correct. The issue is usually an nginx reverse proxy applying gzip or a Cloudflare transform rule.</p>
+            <p>Ensure your reverse proxy passes the body unchanged to the Node process for the path <code>POST /api/billing/webhook</code>.</p>
+          </div>
+        </div>
+
+        <h2>Still stuck?</h2>
+        <p>Check the server logs first — almost every error is logged with a <code>[route/action]</code> prefix. If you can't find the cause, <a href="/contact">book a 30-minute setup call</a> or email <a href="mailto:support@avatarplatform.ai">support@avatarplatform.ai</a>.</p>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

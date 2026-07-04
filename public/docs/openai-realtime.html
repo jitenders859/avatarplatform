@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>OpenAI Realtime API Avatar — AvatarPlatform Docs</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">OpenAI Realtime API Avatar</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link active" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>SDK Introduction</div>
+        <h1>OpenAI Realtime API Avatar</h1>
+        <p class="docs-lead">Swap the Gemini Live backend for OpenAI's Realtime API. Both use a bidirectional WebSocket — the audio and lip-sync pipeline are identical; only the WebSocket endpoint and auth change.</p>
+
+        <div class="callout callout-info">
+          <span class="callout-icon">ℹ️</span>
+          <div class="callout-body"><p>OpenAI Realtime support is a configuration overlay. The core lip-sync controller (<a href="/docs/natural-lipsync">Natural Lip Sync</a>) works the same regardless of which service sends the audio.</p></div>
+        </div>
+
+        <h2>How to swap Gemini for OpenAI Realtime</h2>
+        <h3>Step 1 — Add your OpenAI API key</h3>
+        <pre><code class="language-bash"># .env
+OPENAI_API_KEY=sk-proj-...
+# Also set a public key for client-side WebSocket authentication:
+PUBLIC_OPENAI_API_KEY=sk-proj-...</code></pre>
+        <div class="callout callout-warn">
+          <span class="callout-icon">⚠️</span>
+          <div class="callout-body"><p>Like Gemini Live, the OpenAI Realtime WebSocket is opened directly from the browser. Use a separate, usage-restricted key for <code>PUBLIC_OPENAI_API_KEY</code>.</p></div>
+        </div>
+
+        <h3>Step 2 — Configure the project to use OpenAI</h3>
+        <p>In your project settings, set the <strong>Voice engine</strong> to <code>openai-realtime</code> and pick a voice:</p>
+        <pre><code class="language-bash">PATCH /api/projects/:id
+{
+  "voiceEngine": "openai-realtime",
+  "voice": "alloy"    # alloy | echo | shimmer | fable | onyx | nova
+}</code></pre>
+
+        <h2>OpenAI Realtime WebSocket pipeline</h2>
+        <p>The OpenAI Realtime API uses a similar bidirectional WebSocket pattern to Gemini Live:</p>
+        <pre><code class="language-text">Browser mic (24kHz PCM16)
+    │
+    ▼
+WebSocket ──────────────────────► wss://api.openai.com/v1/realtime
+                                         │  model: gpt-4o-realtime-preview
+    ◄──────────────────────────── PCM16 audio chunks (24kHz)
+    │                              + text transcription deltas
+    │
+    ├─ Web Audio API → speaker
+    └─ FFT analyser → lip-sync → Rive</code></pre>
+
+        <h3>Key differences from Gemini Live</h3>
+        <table class="props-table">
+          <thead><tr><th>Aspect</th><th>Gemini Live</th><th>OpenAI Realtime</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>Model</strong></td>
+              <td><code>gemini-3.1-flash-live-preview</code></td>
+              <td><code>gpt-4o-realtime-preview</code></td>
+            </tr>
+            <tr>
+              <td><strong>Input sample rate</strong></td>
+              <td>16 kHz</td>
+              <td>24 kHz</td>
+            </tr>
+            <tr>
+              <td><strong>Output sample rate</strong></td>
+              <td>24 kHz</td>
+              <td>24 kHz</td>
+            </tr>
+            <tr>
+              <td><strong>Session init</strong></td>
+              <td><code>BidiGenerateContentSetup</code> message</td>
+              <td><code>session.update</code> event</td>
+            </tr>
+            <tr>
+              <td><strong>Audio format</strong></td>
+              <td>PCM16 base64</td>
+              <td>PCM16 base64 (<code>input_audio_format: "pcm16"</code>)</td>
+            </tr>
+            <tr>
+              <td><strong>Interruption</strong></td>
+              <td>Supported</td>
+              <td>Supported (<code>response.cancel</code>)</td>
+            </tr>
+            <tr>
+              <td><strong>Context window</strong></td>
+              <td>1M tokens</td>
+              <td>128k tokens</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h2>RAG with OpenAI Realtime</h2>
+        <p>The RAG pipeline is engine-agnostic. Before the session starts, the widget calls <code>POST /embed/:publicId/retrieve</code> with the session opening message as the query. The retrieved chunks are injected into the <code>instructions</code> field of the <code>session.update</code> event:</p>
+        <pre><code class="language-javascript">// Session setup message (sent after WebSocket opens)
+{
+  "type": "session.update",
+  "session": {
+    "model": "gpt-4o-realtime-preview",
+    "voice": "alloy",
+    "instructions": `${systemPrompt}\n\nKnowledge base:\n${retrievedChunks}`,
+    "input_audio_format": "pcm16",
+    "output_audio_format": "pcm16",
+    "turn_detection": {
+      "type": "server_vad",
+      "threshold": 0.5,
+      "silence_duration_ms": 800
+    }
+  }
+}</code></pre>
+
+        <h2>Voices</h2>
+        <table class="props-table">
+          <thead><tr><th>Voice ID</th><th>Character</th></tr></thead>
+          <tbody>
+            <tr><td><code>alloy</code></td><td>Neutral, clear — good general-purpose voice</td></tr>
+            <tr><td><code>echo</code></td><td>Warm male voice</td></tr>
+            <tr><td><code>shimmer</code></td><td>Clear female voice, slightly higher pitch</td></tr>
+            <tr><td><code>fable</code></td><td>Expressive British accent</td></tr>
+            <tr><td><code>onyx</code></td><td>Deep, authoritative male</td></tr>
+            <tr><td><code>nova</code></td><td>Warm, friendly female</td></tr>
+          </tbody>
+        </table>
+
+        <div class="callout callout-tip">
+          <span class="callout-icon">💡</span>
+          <div class="callout-body"><p>The lip-sync quality is the same for all three voice engines (Gemini Live, ElevenLabs, OpenAI Realtime) because it's driven by amplitude analysis of the audio, not by the voice engine itself. See <a href="/docs/natural-lipsync">Natural Lip Sync</a> for details.</p></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

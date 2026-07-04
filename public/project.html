@@ -102,13 +102,25 @@
         </div>
       </div>
 
-      <div class="card">
+      <div class="card mb-md">
         <div class="card-header">
           <h3 class="card-title">Sources</h3>
           <span class="muted text-sm" id="files-count"></span>
           <button class="btn btn-sm btn-ghost" id="reindex-btn" style="margin-left:auto" title="Re-embed all sources with the current model">↺ Re-index</button>
         </div>
         <div id="files-list"></div>
+      </div>
+
+      <!-- Chunks viewer — shown when a file is selected -->
+      <div class="card" id="chunks-panel" hidden>
+        <div class="card-header">
+          <h3 class="card-title" id="chunks-title">Chunks</h3>
+          <span class="muted text-sm" id="chunks-count"></span>
+          <input class="input" id="chunks-search" placeholder="Search chunks…" style="width:200px;margin-left:auto;margin-right:8px" />
+          <button class="btn btn-sm btn-ghost" id="chunks-close-btn" onclick="closeChunksPanel()">✕ Close</button>
+        </div>
+        <div id="chunks-list" style="display:flex;flex-direction:column;gap:8px;margin-top:12px"></div>
+        <div id="chunks-empty" class="muted text-sm" style="display:none;padding:20px 0;text-align:center">No chunks match your search.</div>
       </div>
     </section>
 
@@ -134,7 +146,7 @@
 
     <!-- ── Widget customization tab ───────────────────────── -->
     <section class="tab-panel" id="panel-widget" hidden>
-      <div class="card">
+      <div class="card mb-md">
         <h2 class="card-title mb-md">Widget appearance</h2>
         <div class="grid grid-2">
           <div class="field">
@@ -191,9 +203,62 @@
             <span class="help">Distance from the bottom edge.</span>
           </div>
         </div>
-        <div class="row mt-md" style="justify-content:flex-end">
-          <button class="btn btn-primary" id="save-widget">Save changes</button>
+      </div>
+
+      <div class="card mb-md">
+        <h2 class="card-title mb-md">Avatar placement</h2>
+        <div class="grid grid-2">
+          <div class="field">
+            <label>Avatar position (open panel)</label>
+            <select class="select" id="f-avatar-position">
+              <option value="right">Right side (default)</option>
+              <option value="left">Left side</option>
+            </select>
+            <span class="help">Which side of the chat panel the character appears on.</span>
+          </div>
+          <div class="field">
+            <label>Avatar size</label>
+            <select class="select" id="f-avatar-size">
+              <option value="small">Small (80px)</option>
+              <option value="medium">Medium (120px)</option>
+              <option value="large">Large (160px) — default</option>
+              <option value="xlarge">Extra large (200px)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Show avatar in launcher button</label>
+            <select class="select" id="f-avatar-launcher">
+              <option value="true">Yes — Rive avatar in the FAB</option>
+              <option value="false">No — use icon/emoji</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Keep avatar visible while AI speaks</label>
+            <select class="select" id="f-avatar-keep">
+              <option value="true">Yes (recommended)</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Compact avatar on mobile</label>
+            <select class="select" id="f-avatar-compact">
+              <option value="true">Yes — reduce to 80px on small screens</option>
+              <option value="false">No — keep full size</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Avatar horizontal offset (px)</label>
+            <input class="input" type="number" id="f-avatar-offset-x" min="-100" max="100" value="0" />
+          </div>
+          <div class="field">
+            <label>Avatar vertical offset (px)</label>
+            <input class="input" type="number" id="f-avatar-offset-y" min="-100" max="100" value="0" />
+          </div>
         </div>
+      </div>
+
+      <div class="row" style="justify-content:flex-end">
+        <button class="btn btn-primary" id="save-widget">Save all changes</button>
       </div>
     </section>
 
@@ -228,6 +293,15 @@
 
     <!-- ── Embed tab ─────────────────────────────────────── -->
     <section class="tab-panel" id="panel-embed" hidden>
+      <div class="card mb-md" style="background:linear-gradient(135deg,rgba(124,106,245,0.1),rgba(167,139,250,0.05));border-color:rgba(124,106,245,0.25)">
+        <div style="display:flex;align-items:center;gap:14px">
+          <span style="font-size:28px">🤖</span>
+          <div>
+            <h2 class="card-title" style="margin:0 0 4px">Your Agent</h2>
+            <p class="muted text-sm" style="margin:0">Hosted on AvatarPlatform · Powered by Gemini Live</p>
+          </div>
+        </div>
+      </div>
       <div class="card mb-md">
         <h2 class="card-title mb-md">Drop-in script tag</h2>
         <p class="muted text-sm">Paste this anywhere on your site. Floating widget, no extra setup.</p>
@@ -357,6 +431,7 @@
     </section>
   </div>
 
+  <script src="/socket.io/socket.io.js"></script>
   <script src="/js/api.js"></script>
   <script>
   Auth.requireLogin();
@@ -422,6 +497,15 @@
       document.getElementById('f-branding').value  = String(p.showBranding !== false);
       document.getElementById('f-offset-x').value  = p.widgetOffsetX ?? 0;
       document.getElementById('f-offset-y').value  = p.widgetOffsetY ?? 0;
+
+      // Avatar placement
+      document.getElementById('f-avatar-position').value = p.avatarPosition || 'right';
+      document.getElementById('f-avatar-size').value     = p.avatarSize || 'large';
+      document.getElementById('f-avatar-launcher').value = String(p.showAvatarInLauncher !== false);
+      document.getElementById('f-avatar-keep').value     = String(p.avatarKeepVisible !== false);
+      document.getElementById('f-avatar-compact').value  = String(p.avatarCompactOnMobile !== false);
+      document.getElementById('f-avatar-offset-x').value = p.avatarOffsetX ?? 0;
+      document.getElementById('f-avatar-offset-y').value = p.avatarOffsetY ?? 0;
 
       // Settings tab: webhook
       document.getElementById('f-webhook-url').value = p.webhookUrl || '';
@@ -502,18 +586,26 @@
   document.getElementById('save-widget').addEventListener('click', async () => {
     try {
       const patch = {
-        widgetPosition:  document.getElementById('f-position').value,
-        widgetStartOpen: document.getElementById('f-startopen').value === 'true',
-        textDirection:   document.getElementById('f-direction').value,
-        themeColor:      document.getElementById('f-theme').value,
-        showSourceCards: document.getElementById('f-sources').value === 'true',
-        showBranding:    document.getElementById('f-branding').value === 'true',
-        widgetOffsetX:   parseInt(document.getElementById('f-offset-x').value, 10) || 0,
-        widgetOffsetY:   parseInt(document.getElementById('f-offset-y').value, 10) || 0,
+        widgetPosition:       document.getElementById('f-position').value,
+        widgetStartOpen:      document.getElementById('f-startopen').value === 'true',
+        textDirection:        document.getElementById('f-direction').value,
+        themeColor:           document.getElementById('f-theme').value,
+        showSourceCards:      document.getElementById('f-sources').value === 'true',
+        showBranding:         document.getElementById('f-branding').value === 'true',
+        widgetOffsetX:        parseInt(document.getElementById('f-offset-x').value, 10) || 0,
+        widgetOffsetY:        parseInt(document.getElementById('f-offset-y').value, 10) || 0,
+        // Avatar placement
+        avatarPosition:       document.getElementById('f-avatar-position').value,
+        avatarSize:           document.getElementById('f-avatar-size').value,
+        showAvatarInLauncher: document.getElementById('f-avatar-launcher').value === 'true',
+        avatarKeepVisible:    document.getElementById('f-avatar-keep').value === 'true',
+        avatarCompactOnMobile:document.getElementById('f-avatar-compact').value === 'true',
+        avatarOffsetX:        parseInt(document.getElementById('f-avatar-offset-x').value, 10) || 0,
+        avatarOffsetY:        parseInt(document.getElementById('f-avatar-offset-y').value, 10) || 0,
       };
       const { project: p } = await API.updateProject(projectId, patch);
       project = p;
-      toast('Widget settings saved', 'success');
+      toast('Widget & avatar settings saved', 'success');
     } catch (e) { toast(e.message, 'error'); }
   });
 
@@ -593,6 +685,7 @@
             <div class="muted text-sm" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escape(sub)}${f.error ? ` — <span style="color:#fca5a5">${escape(f.error)}</span>` : ''}</div>
           </div>
           <span class="status-badge">${statusBadge(f.status, f.chunkCount, f.error)}</span>
+          ${f.status === 'ready' ? `<button class="btn btn-sm btn-ghost" onclick="viewChunks('${f.id}',${JSON.stringify(escape(name))})">Chunks</button>` : ''}
           <button class="btn btn-sm btn-ghost" onclick="reproc('${f.id}')">↻</button>
           <button class="btn btn-sm btn-danger" onclick="del('${f.id}')">×</button>
         </div>`;
@@ -601,6 +694,103 @@
 
   window.reproc = async (id) => { stopPoller(id); await API.reprocessFile(projectId, id); loadFiles(); };
   window.del    = async (id) => { if (!confirm('Delete this source?')) return; stopPoller(id); await API.deleteFile(projectId, id); loadFiles(); };
+
+  // ── Chunks viewer ──────────────────────────────────────────────
+  let chunksFileId = null;
+  let allChunks = [];
+
+  window.viewChunks = async (fileId, fileName) => {
+    chunksFileId = fileId;
+    document.getElementById('chunks-title').textContent = `Chunks — ${fileName || fileId}`;
+    document.getElementById('chunks-search').value = '';
+    document.getElementById('chunks-panel').hidden = false;
+    document.getElementById('chunks-list').innerHTML = '<div class="muted text-sm" style="padding:16px 0">Loading…</div>';
+    document.getElementById('chunks-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    await reloadChunks();
+  };
+
+  window.closeChunksPanel = () => {
+    document.getElementById('chunks-panel').hidden = true;
+    chunksFileId = null;
+    allChunks = [];
+  };
+
+  document.getElementById('chunks-search').addEventListener('input', () => {
+    renderChunks(allChunks);
+  });
+
+  async function reloadChunks() {
+    if (!chunksFileId) return;
+    try {
+      const data = await API.listChunks(projectId, chunksFileId);
+      allChunks = data.chunks || [];
+      renderChunks(allChunks);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function renderChunks(chunks) {
+    const search = document.getElementById('chunks-search').value.toLowerCase().trim();
+    const filtered = search ? chunks.filter(c => c.text.toLowerCase().includes(search)) : chunks;
+    const listEl = document.getElementById('chunks-list');
+    const emptyEl = document.getElementById('chunks-empty');
+    document.getElementById('chunks-count').textContent = `${filtered.length} of ${chunks.length} chunks`;
+
+    if (filtered.length === 0) {
+      listEl.innerHTML = '';
+      emptyEl.style.display = 'block';
+      return;
+    }
+    emptyEl.style.display = 'none';
+
+    listEl.innerHTML = filtered.map(c => {
+      const headingBadge = c.heading ? `<span class="pill pill-info" style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(c.heading)}</span>` : '';
+      const pageBadge = c.pageHint ? `<span class="pill" style="font-size:10px">p.${c.pageHint}</span>` : '';
+      const embBadge = c.hasEmbedding
+        ? `<span class="pill pill-success" style="font-size:10px">✓ embedded</span>`
+        : `<span class="pill pill-warn" style="font-size:10px">no embedding</span>`;
+      const modelLabel = c.embeddingModel ? `<span class="muted" style="font-size:10px">${escape(c.embeddingModel)}</span>` : '';
+      const preview = c.text.slice(0, 200).replace(/</g, '&lt;');
+      const full    = c.text.replace(/</g, '&lt;');
+      const chunkId = `chunk-${c.id}`;
+      return `
+        <div style="border:1px solid var(--border);border-radius:10px;padding:12px;background:var(--bg-2)">
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px">
+            <span style="font-size:13px;font-weight:600;color:var(--text-dim)">#${c.idx + 1}</span>
+            ${headingBadge}${pageBadge}${embBadge}${modelLabel}
+            <span class="muted text-sm" style="margin-left:auto">${c.charCount} chars · ~${c.approxTokens} tokens</span>
+            <button class="btn btn-sm btn-danger" onclick="deleteChunk('${c.id}')" title="Delete chunk">×</button>
+          </div>
+          <div id="${chunkId}-preview" style="font-size:12px;color:var(--text);white-space:pre-wrap;word-break:break-word;max-height:80px;overflow:hidden">${preview}${c.text.length > 200 ? '…' : ''}</div>
+          <div id="${chunkId}-full" style="display:none;font-size:12px;color:var(--text);white-space:pre-wrap;word-break:break-word">${full}</div>
+          <button class="btn btn-sm btn-ghost" style="margin-top:6px" onclick="toggleChunkExpand('${chunkId}', this)">Expand</button>
+        </div>`;
+    }).join('');
+  }
+
+  window.toggleChunkExpand = (chunkId, btn) => {
+    const preview = document.getElementById(chunkId + '-preview');
+    const full    = document.getElementById(chunkId + '-full');
+    if (full.style.display === 'none') {
+      preview.style.display = 'none';
+      full.style.display = 'block';
+      btn.textContent = 'Collapse';
+    } else {
+      preview.style.display = 'block';
+      full.style.display = 'none';
+      btn.textContent = 'Expand';
+    }
+  };
+
+  window.deleteChunk = async (chunkId) => {
+    if (!confirm('Delete this chunk? It will no longer appear in search results.')) return;
+    try {
+      await API.deleteChunk(projectId, chunksFileId, chunkId);
+      allChunks = allChunks.filter(c => c.id !== chunkId);
+      renderChunks(allChunks);
+      toast('Chunk deleted', 'success');
+      loadFiles();
+    } catch (e) { toast(e.message, 'error'); }
+  };
 
   document.getElementById('upload-btn').addEventListener('click', () => document.getElementById('file-input').click());
   document.getElementById('file-input').addEventListener('change', async (e) => {
