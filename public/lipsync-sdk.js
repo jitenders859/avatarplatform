@@ -685,6 +685,67 @@
     return btoa(b);
   }
 
+  // Emotion keyword patterns, keyed by the same language codes detectLanguage()
+  // returns. Best-effort translations for common conversational words — override
+  // or extend any language via opts.behaviorConfig.emotionKeywords, e.g.
+  // { english: { happy: /\b(nice)\b/i } } replaces only the English "happy" pattern.
+  // Word-boundary \b is only used for Latin-script languages, since JS \w is
+  // ASCII-only and \b never matches inside non-Latin scripts.
+  //
+  // NOTE: detectLanguage() (defined above, ~line 322) only ever returns:
+  // english, devanagari, arabic, japanese, chinese, cyrillic, bengali, spanish,
+  // french, german, portuguese. It has no 'indonesian' branch (the switch in
+  // anyTextToAzureIds has a dead 'indonesian' case for the same reason) — so an
+  // 'indonesian' entry here would never be selected. Not added.
+  const DEFAULT_EMOTION_KEYWORDS = {
+    english:    { surprised: /\b(wow|incredible|really|oh my|fascinating|remarkable)\b/i,
+                  happy:     /\b(great|excellent|wonderful|amazing|love|thanks|glad|happy|awesome|perfect)\b/i,
+                  sad:       /\b(sorry|unfortunately|problem|issue|error|fail|mistake|wrong|trouble)\b/i },
+    spanish:    { surprised: /\b(increíble|vaya|en serio|sorprendente|asombroso)\b/i,
+                  happy:     /\b(genial|excelente|maravilloso|encantador|gracias|feliz|perfecto|estupendo)\b/i,
+                  sad:       /\b(lo siento|desafortunadamente|problema|error|disculpa|lamentablemente)\b/i },
+    french:     { surprised: /\b(incroyable|vraiment|waouh|étonnant|fascinant)\b/i,
+                  happy:     /\b(génial|excellent|merveilleux|super|merci|content|parfait|formidable)\b/i,
+                  sad:       /\b(désolé|malheureusement|problème|erreur|dommage)\b/i },
+    german:     { surprised: /\b(unglaublich|wirklich|erstaunlich|faszinierend)\b/i,
+                  happy:     /\b(großartig|ausgezeichnet|wunderbar|super|danke|froh|perfekt)\b/i,
+                  sad:       /\b(entschuldigung|leider|problem|fehler|schade)\b/i },
+    portuguese: { surprised: /\b(incrível|uau|sério|surpreendente|fascinante)\b/i,
+                  happy:     /\b(ótimo|excelente|maravilhoso|adorável|obrigado|feliz|perfeito)\b/i,
+                  sad:       /\b(desculpe|infelizmente|problema|erro|lamento)\b/i },
+    devanagari: { surprised: /(अविश्वसनीय|वाकई|वाह|आश्चर्यजनक)/,
+                  happy:     /(बढ़िया|शानदार|अद्भुत|धन्यवाद|खुश)/,
+                  sad:       /(माफ़ करना|दुर्भाग्य से|समस्या|गलती|क्षमा करें)/ },
+    arabic:     { surprised: /(مذهل|حقا|واو|مثير للدهشة)/,
+                  happy:     /(رائع|ممتاز|جميل|شكرا|سعيد|مثالي)/,
+                  sad:       /(آسف|للأسف|مشكلة|خطأ|عذرا)/ },
+    bengali:    { surprised: /(অবিশ্বাস্য|সত্যিই|বাহ|আশ্চর্যজনক)/,
+                  happy:     /(দুর্দান্ত|চমৎকার|ধন্যবাদ|খুশি|নিখুঁত)/,
+                  sad:       /(দুঃখিত|দুর্ভাগ্যবশত|সমস্যা|ভুল)/ },
+    cyrillic:   { surprised: /(невероятно|правда|ух ты|удивительно|поразительно)/i,
+                  happy:     /(отлично|прекрасно|замечательно|спасибо|рад|идеально|супер)/i,
+                  sad:       /(извините|к сожалению|проблема|ошибка|жаль)/i },
+    japanese:   { surprised: /(すごい|本当に|まさか|驚き)/,
+                  happy:     /(素晴らしい|最高|ありがとう|嬉しい|完璧)/,
+                  sad:       /(ごめんなさい|残念|問題|間違い|すみません)/ },
+    chinese:    { surprised: /(真的吗|难以置信|哇|惊人)/,
+                  happy:     /(太好了|太棒了|谢谢|开心|完美|很好)/,
+                  sad:       /(对不起|抱歉|不幸的是|问题|错误)/ },
+  };
+
+  function mergeEmotionKeywords(overrides) {
+    const merged = {};
+    for (const lang of Object.keys(DEFAULT_EMOTION_KEYWORDS)) {
+      merged[lang] = { ...DEFAULT_EMOTION_KEYWORDS[lang], ...((overrides && overrides[lang]) || {}) };
+    }
+    if (overrides) {
+      for (const lang of Object.keys(overrides)) {
+        if (!merged[lang]) merged[lang] = { ...overrides[lang] };
+      }
+    }
+    return merged;
+  }
+
   // ═══════════════════════════════════════════════════════
   //  CHARACTER BEHAVIOR CONTROLLER
   //  Expression/idle animation layer. Runs alongside lip-sync.
@@ -728,6 +789,8 @@
       this._nextBlinkMs  = 0;
       this._nextDartMs   = 0;
       this._gestureCooldownMs = 0;
+      this._emotionKeywords = mergeEmotionKeywords(opts.emotionKeywords);
+      this._moodSlowUntilMs = 0;
     }
 
     start() {
@@ -750,11 +813,12 @@
 
     reactToEmotion(text) {
       if (!text) return;
-      const t = text.toLowerCase();
-      if (/\b(wow|incredible|really|oh my|fascinating|remarkable)\b/.test(t)) { this._triggerBrows(); return; }
-      if (/\b(great|excellent|wonderful|amazing|love|thanks|glad|happy|awesome|perfect)\b/.test(t)) { this._triggerSmile(); return; }
-      if (/\b(sorry|unfortunately|problem|issue|error|fail|mistake|wrong|trouble)\b/.test(t)) { this._triggerEmpathy(); }
-      if (/\?/.test(text)) { this._triggerThinkingLook(); }
+      const lang  = detectLanguage(text) || 'english';
+      const table = this._emotionKeywords[lang] || this._emotionKeywords.english;
+      if (table.surprised && table.surprised.test(text)) { this._triggerBrows(); return; }
+      if (table.happy     && table.happy.test(text))     { this._triggerSmile(); return; }
+      if (table.sad       && table.sad.test(text))       { this._triggerSad(); return; }
+      if (/[?？؟]/.test(text)) { this._triggerThinkingLook(); }
     }
 
     _tick() {
@@ -784,7 +848,11 @@
       this._nextBlinkMs = now + this._blinkInterval();
     }
 
-    _blinkInterval() { return (this._state === 'idle' ? 3000 : 4500) + Math.random() * 3000; }
+    _blinkInterval() {
+      const base = this._state === 'idle' ? 3000 : 4500;
+      const moodMultiplier = performance.now() < this._moodSlowUntilMs ? 1.4 : 1;
+      return base * moodMultiplier + Math.random() * 3000;
+    }
 
     _updateEyeDart(now) {
       if (this._state === 'thinking') return;
@@ -816,6 +884,8 @@
     _triggerSmile() {
       if (!this._canGesture()) return;
       this._setNumber('smile', 80 * this._gestureIntensity);
+      this._setNumber('headNod', 6 * this._gestureIntensity);
+      setTimeout(() => this._setNumber('headNod', 0), 400);
       setTimeout(() => this._setNumber('smile', 0), 1400);
       this._markGesture(2000);
     }
@@ -823,14 +893,22 @@
     _triggerBrows() {
       if (!this._canGesture()) return;
       this._setNumber('brows', 65 * this._gestureIntensity);
-      setTimeout(() => this._setNumber('brows', 0), 550);
+      this._setNumber('headNod', -12 * this._gestureIntensity);
+      setTimeout(() => { this._setNumber('brows', 0); this._setNumber('headNod', 0); }, 550);
       this._markGesture(900);
     }
 
-    _triggerEmpathy() {
+    _triggerSad() {
       if (!this._canGesture()) return;
-      this._setNumber('headTilt', 10 * this._gestureIntensity);
-      setTimeout(() => this._setNumber('headTilt', 0), 1200);
+      this._setNumber('brows', -30 * this._gestureIntensity);
+      this._setNumber('headNod', 10 * this._gestureIntensity);
+      this._setNumber('headTilt', 8 * this._gestureIntensity);
+      this._moodSlowUntilMs = performance.now() + 2500;
+      setTimeout(() => {
+        this._setNumber('brows', 0);
+        this._setNumber('headNod', 0);
+        this._setNumber('headTilt', 0);
+      }, 1600);
       this._markGesture(2500);
     }
 
@@ -1682,7 +1760,7 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._outputTranscriptBuf += delta;
           // Schedule visemes from the delta only (cumulative would re-queue duplicates)
           this._scheduleFromText(delta);
-          if (this._behaviorCtrl) this._behaviorCtrl.reactToEmotion(delta);
+          if (this._behaviorCtrl) this._behaviorCtrl.reactToEmotion(this._outputTranscriptBuf.slice(-60));
           // Update SDK's internal transcript display with the full accumulated text
           if (this._el.transcript) {
             if (!this._outputMsgEl) {
