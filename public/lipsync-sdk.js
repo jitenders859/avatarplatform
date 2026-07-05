@@ -118,9 +118,11 @@
     return 1 - Math.pow(1 - t, 3);
   }
 
-  function easeInOutCubic(t) {
+  // Mouth-open ramp: barely moving near the start, accelerating continuously
+  // up to fastest right before the viseme peaks. Mirror of easeOutCubic.
+  function easeInCubic(t) {
     t = clamp01(t);
-    return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    return t * t * t;
   }
 
   const PHONEME_TO_AZ = {
@@ -1446,16 +1448,18 @@ When answering, speak naturally and conversationally — do not read the knowled
       }
     }
 
-    _timedMouthValue(progress, durationMs) {
+    _timedMouthValue(progress) {
       const minValue = this._opts.visemeMinValue;
       const maxValue = this._opts.visemeMaxValue;
       if (this._opts.visemeSpeedMode === 'instant') return maxValue;
 
       // Progress is normalized to the spoken viseme duration. The mouth starts
       // at 1 and reaches 100 close to the end of the viseme instead of jumping.
+      // easeInCubic: barely moving near 1, accelerating continuously to fastest
+      // right at 100 — matches how a real mouth opening actually looks.
       const peakRatio = this._opts.visemePeakRatio;
       const normalized = clamp01(progress / peakRatio);
-      const eased = durationMs < 80 ? easeOutCubic(normalized) : easeInOutCubic(normalized);
+      const eased = easeInCubic(normalized);
       return Math.round(minValue + (maxValue - minValue) * eased);
     }
 
@@ -1622,7 +1626,7 @@ When answering, speak naturally and conversationally — do not read the knowled
 
         if (nowMs >= curr.startMs) {
           const currProgress = clamp01((nowMs - curr.startMs) / Math.max(1, curr.durationMs));
-          values[curr.azId] = this._timedMouthValue(currProgress, curr.durationMs);
+          values[curr.azId] = this._timedMouthValue(currProgress);
 
           // Start the next viseme a little early at a small value. This removes
           // the hard cut between mouth shapes without forcing every input to 100.
