@@ -1476,13 +1476,14 @@ When answering, speak naturally and conversationally — do not read the knowled
       // _nextPlayAt. Use the audio scheduled since the *previous* transcript
       // delta as this delta's real time budget, and scale the G2P-estimated
       // durations to fit it — instead of guessing a fixed +150ms offset.
+      const MIN_WINDOW_MS = 80, MAX_WINDOW_MS = 4000;
       const rawTotalMs = entries.reduce((sum, e) => sum + e.durationMs, 0);
       if (this._audioStart > 0 && rawTotalMs > 0) {
         const scheduledMs = (this._nextPlayAt - this._audioStart) * 1000;
         const windowMs = scheduledMs - this._lastTextAnchorMs;
         // Only trust the window if it's plausible; otherwise fall back to
         // the original unscaled stacking below (never worse than today).
-        if (windowMs >= 80 && windowMs <= 4000) {
+        if (windowMs >= MIN_WINDOW_MS && windowMs <= MAX_WINDOW_MS) {
           const scale = windowMs / rawTotalMs;
           for (const e of entries) {
             e.startMs    *= scale;
@@ -1599,6 +1600,7 @@ When answering, speak naturally and conversationally — do not read the knowled
       this._nextPlayAt  = 0;
       this._schedQueue  = [];
       this._schedRaf    = null;
+      this._lastTextAnchorMs = 0;
 
       const url = new URL(`wss://${WS_HOST}${WS_PATH}`);
       url.searchParams.set('key', this._opts.apiKey.trim());
@@ -1767,6 +1769,7 @@ When answering, speak naturally and conversationally — do not read the knowled
       this._stopMicNow();
       this._schedQueue = [];
       this._audioStart = 0;
+      this._lastTextAnchorMs = 0;
       if (this._ws) { try { this._ws.close(); } catch(_) {} this._ws = null; }
     }
 
