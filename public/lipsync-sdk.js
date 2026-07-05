@@ -1124,6 +1124,7 @@
       this._stopSession();
       if (this._lerpRaf) { cancelAnimationFrame(this._lerpRaf); this._lerpRaf = null; }
       if (this._schedRaf) { cancelAnimationFrame(this._schedRaf); this._schedRaf = null; }
+      if (this._behaviorCtrl) { this._behaviorCtrl.stop(); this._behaviorCtrl = null; }
       if (this._riveInst) { try { this._riveInst.cleanup(); } catch(_) {} }
       if (this._root && this._root.parentNode) this._root.parentNode.removeChild(this._root);
     }
