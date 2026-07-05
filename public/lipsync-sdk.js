@@ -866,6 +866,10 @@
 
     _updateIdleHead(dt) {
       if (this._state !== 'idle') return;
+      // Don't fight a gesture's own headNod/headTilt while it's still holding
+      // (a gesture can fire while _state is still 'idle', e.g. a transcript
+      // delta arriving before the audio chunk that flips state to 'speaking').
+      if (performance.now() < this._gestureCooldownMs) return;
       this._idleNoisePhase += dt * 0.0009;
       this._setNumber('headTilt', Math.sin(this._idleNoisePhase * 0.7) * 5  * this._idleIntensity);
       this._setNumber('headNod',  Math.sin(this._idleNoisePhase * 0.5) * 3  * this._idleIntensity);
@@ -1052,6 +1056,7 @@
       this._silenceHoldMs       = 0;
       this._destroyed           = false;
       this._outputTranscriptBuf = '';
+      this._emotionScanPos      = 0; // how much of _outputTranscriptBuf reactToEmotion has already seen
       this._inputTranscriptBuf  = '';
       this._outputMsgEl         = null;
       this._behaviorCtrl        = null;
@@ -1761,7 +1766,17 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._outputTranscriptBuf += delta;
           // Schedule visemes from the delta only (cumulative would re-queue duplicates)
           this._scheduleFromText(delta);
-          if (this._behaviorCtrl) this._behaviorCtrl.reactToEmotion(this._outputTranscriptBuf.slice(-60));
+          if (this._behaviorCtrl) {
+            // Scan only newly-arrived text (plus a lookback overlap long enough to
+            // catch any keyword split across a chunk boundary) rather than a fixed
+            // trailing window — a fixed window keeps a matched keyword in view for
+            // many subsequent deltas, letting the same gesture re-fire once its
+            // cooldown expires even though nothing new was said.
+            const EMOTION_SCAN_OVERLAP = 30;
+            const scanFrom = Math.max(0, this._emotionScanPos - EMOTION_SCAN_OVERLAP);
+            this._behaviorCtrl.reactToEmotion(this._outputTranscriptBuf.slice(scanFrom));
+            this._emotionScanPos = this._outputTranscriptBuf.length;
+          }
           // Update SDK's internal transcript display with the full accumulated text
           if (this._el.transcript) {
             if (!this._outputMsgEl) {
@@ -1786,6 +1801,7 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._setStatus('Listening…', 'connected');
           this._el.canvasWrap.className = 'lsa-canvas-wrap';
           this._outputTranscriptBuf = '';
+          this._emotionScanPos      = 0;
           this._inputTranscriptBuf  = '';
           this._outputMsgEl         = null;
           if (this._behaviorCtrl) this._behaviorCtrl.setState('listening');
@@ -1808,6 +1824,7 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._el.canvasWrap.classList.add('lsa-listening');
           this._el.canvasWrap.classList.remove('lsa-speaking');
           this._outputTranscriptBuf = '';
+          this._emotionScanPos      = 0;
           this._inputTranscriptBuf  = '';
           this._outputMsgEl         = null;
           if (this._behaviorCtrl) this._behaviorCtrl.setState('listening');
