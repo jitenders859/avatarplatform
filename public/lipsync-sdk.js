@@ -969,6 +969,7 @@
       this._schedQueue   = [];
       this._schedRaf     = null;
       this._audioStart   = 0;
+      this._lastTextAnchorMs = 0; // scheduled-audio ms at the last processed transcript delta
       this._fftBands     = {};
       this._silenceHoldMs       = 0;
       this._destroyed           = false;
@@ -1469,6 +1470,31 @@ When answering, speak naturally and conversationally — do not read the knowled
         entries = phonemesToSchedule(textToPhonemes(text));
       }
 
+      // ── Window-based duration scaling ──────────────────────────
+      // Gemini Live gives no phoneme timestamps, but a PCM chunk's duration is
+      // exact (bytes/48000s), and _playPCM already accumulates that into
+      // _nextPlayAt. Use the audio scheduled since the *previous* transcript
+      // delta as this delta's real time budget, and scale the G2P-estimated
+      // durations to fit it — instead of guessing a fixed +150ms offset.
+      const rawTotalMs = entries.reduce((sum, e) => sum + e.durationMs, 0);
+      if (this._audioStart > 0 && rawTotalMs > 0) {
+        const scheduledMs = (this._nextPlayAt - this._audioStart) * 1000;
+        const windowMs = scheduledMs - this._lastTextAnchorMs;
+        // Only trust the window if it's plausible; otherwise fall back to
+        // the original unscaled stacking below (never worse than today).
+        if (windowMs >= 80 && windowMs <= 4000) {
+          const scale = windowMs / rawTotalMs;
+          for (const e of entries) {
+            e.startMs    *= scale;
+            e.durationMs *= scale;
+          }
+          if (this._opts.debugTiming) {
+            console.log(`[LipsyncAvatar] timing window=${windowMs.toFixed(0)}ms raw=${rawTotalMs.toFixed(0)}ms scale=${scale.toFixed(2)}`);
+          }
+        }
+        this._lastTextAnchorMs = scheduledMs;
+      }
+
       const queueEndMs = this._schedQueue.length > 0
         ? this._schedQueue[this._schedQueue.length-1].startMs +
           this._schedQueue[this._schedQueue.length-1].durationMs
@@ -1685,6 +1711,7 @@ When answering, speak naturally and conversationally — do not read the knowled
           setTimeout(() => {
             this._schedQueue = [];
             this._audioStart = 0;
+            this._lastTextAnchorMs = 0;
             this._setAzureViseme(0, { immediate: true });
             if (this._behaviorCtrl) this._behaviorCtrl.setState('idle');
           }, 400);
@@ -1694,6 +1721,7 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._nextPlayAt = this._audioCtx.currentTime;
           this._schedQueue = [];
           this._audioStart  = 0;
+          this._lastTextAnchorMs = 0;
           this._setAzureViseme(0, { immediate: true });
           this._setStatus('Interrupted', 'listening');
           this._el.canvasWrap.classList.add('lsa-listening');
