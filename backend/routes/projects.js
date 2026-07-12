@@ -4,6 +4,7 @@ const { v4: uuid } = require('uuid');
 const db = require('../db');
 const { authRequired } = require('../middleware/auth');
 const { invalidateProjectCache } = require('../cache');
+const { isValidTier } = require('../services/tiers');
 
 const router = express.Router();
 
@@ -41,6 +42,7 @@ router.post('/', authRequired, async (req, res) => {
     voice: voice || 'Puck',
     welcomeMessage: 'Hi! Ask me anything.',
     publicId: uuid().replace(/-/g, '').slice(0, 16),
+    capabilityTier: 'basic',
     // Widget customization
     widgetPosition: 'bottom-right',
     widgetStartOpen: false,
@@ -48,6 +50,7 @@ router.post('/', authRequired, async (req, res) => {
     themeColor: '#7c6af5',
     showBranding: true,
     showSourceCards: true,
+    showQuickReplies: false,
     widgetOffsetX: 0,
     widgetOffsetY: 0,
     // Avatar placement
@@ -79,10 +82,10 @@ router.patch('/:id', authRequired, async (req, res) => {
   const allowed = [
     'name', 'characterId', 'systemPrompt', 'voice', 'welcomeMessage',
     'widgetPosition', 'widgetStartOpen', 'textDirection', 'themeColor',
-    'showBranding', 'showSourceCards', 'widgetOffsetX', 'widgetOffsetY',
+    'showBranding', 'showSourceCards', 'showQuickReplies', 'widgetOffsetX', 'widgetOffsetY',
     'avatarPosition', 'avatarSize', 'showAvatarInLauncher',
     'avatarOffsetX', 'avatarOffsetY', 'avatarKeepVisible', 'avatarCompactOnMobile',
-    'webhookUrl',
+    'webhookUrl', 'capabilityTier',
   ];
   const patch = {};
   for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
@@ -101,6 +104,9 @@ router.patch('/:id', authRequired, async (req, res) => {
   }
   if (patch.avatarSize && !['small', 'medium', 'large', 'xlarge'].includes(patch.avatarSize)) {
     return res.status(400).json({ error: 'Invalid avatarSize' });
+  }
+  if (patch.capabilityTier && !isValidTier(patch.capabilityTier)) {
+    return res.status(400).json({ error: 'Invalid capabilityTier' });
   }
 
   const updated = await db.update('projects', project.id, patch);
