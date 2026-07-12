@@ -6,7 +6,7 @@
   <title>Chat</title>
   <link rel="stylesheet" href="/css/embed.css" />
   <script src="https://unpkg.com/@rive-app/canvas@2.21.0/rive.js"></script>
-  <script src="/lipsync-sdk.js"></script>
+  <script src="/lipsync-sdk.min.js"></script>
 </head>
 <body>
   <!--
@@ -64,6 +64,8 @@
         <button class="icon-btn mic-btn" id="mic-btn" title="Hold to speak" aria-label="Microphone">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 1 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 11a7 7 0 0 1-14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
         </button>
+        <button class="icon-btn" id="quiz-btn" title="Quiz me on this" aria-label="Quiz me" style="display:none">📝</button>
+        <button class="icon-btn" id="progress-btn" title="Your progress" aria-label="Your progress" style="display:none">📊</button>
         <textarea id="text-input" rows="1" placeholder="Type a message…" aria-label="Message"></textarea>
         <button class="send-btn" id="send-btn" title="Send" aria-label="Send" type="button">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
@@ -110,6 +112,8 @@
   let config = null;
   let sessionId = null;
   let pendingSources = null;
+  let pendingFigures = null;
+  let pendingOptions = null;
   let sessionCapture = {};
   let captureFields = [];
   let saveLeadTimer = null;
@@ -133,6 +137,8 @@
   const statusText        = document.getElementById('status-text');
   const sendBtn           = document.getElementById('send-btn');
   const micBtn            = document.getElementById('mic-btn');
+  const quizBtn           = document.getElementById('quiz-btn');
+  const progressBtn       = document.getElementById('progress-btn');
   const textInput         = document.getElementById('text-input');
   const minimizeBtn       = document.getElementById('minimize-btn');
   const bootOverlay       = document.getElementById('boot-overlay');
@@ -161,6 +167,10 @@
 
     applyDirection(config.project.textDirection || 'auto');
     if (!config.project.showBranding) branding.style.display = 'none';
+    if (config.project.capabilityTier === 'advanced') {
+      quizBtn.style.display = '';
+      progressBtn.style.display = '';
+    }
 
     // Avatar placement settings
     const avatarSize = config.project.avatarSize || 'large';
@@ -205,7 +215,9 @@
     const welcomeMessage = (config.project.welcomeMessage || '').trim();
 
     captureFields = config.captureFields || [];
-    const baseSystemPrompt = (config.project.systemPrompt || '') + buildCaptureInstructions(captureFields);
+    const baseSystemPrompt = (config.project.systemPrompt || '')
+      + buildCaptureInstructions(captureFields)
+      + buildQuickReplyInstructions(config.project.showQuickReplies);
     const systemPromptWithGreeting = welcomeMessage
       ? `${baseSystemPrompt}
 
@@ -336,6 +348,11 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
     pendingSources = (config.project.showSourceCards !== false) ? retrieved.sources : null;
 
+    const seenPageImages = new Set();
+    pendingFigures = retrieved.chunks
+      .filter(c => c.pageImageUrl && !seenPageImages.has(c.pageImageUrl) && seenPageImages.add(c.pageImageUrl))
+      .map(c => ({ pageImageUrl: c.pageImageUrl, caption: c.pageImageCaption, fileName: c.fileName, pdfUrl: c.pdfUrl, pdfPage: c.pdfPage }));
+
     const kbText = retrieved.chunks.length === 0 ? ''
       : retrieved.chunks.map((c, i) =>
           `[Source ${i + 1}: ${c.fileName || 'unnamed'}]\n${c.text}`
@@ -358,12 +375,14 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   let botBuffer = '';
   let botFlushTimer = null;
   function handleBotChunk(text) {
-    const { clean, tags } = extractCaptureTags(text);
+    const { clean: cleanCapture, tags } = extractCaptureTags(text);
+    const { clean, options } = extractOptionsTag(cleanCapture);
     if (tags.length) {
       for (const { key, value } of tags) sessionCapture[key] = value;
       scheduleSaveLead();
       updateCapturePanel();
     }
+    pendingOptions = options;
 
     if (!currentBotMsgEl) currentBotMsgEl = addMessage('bot', '');
     setMessageText(currentBotMsgEl, clean);
@@ -377,7 +396,15 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         attachSources(currentBotMsgEl, pendingSources);
         pendingSources = null;
       }
-      if (botBuffer) logTurn('model', botBuffer);
+      if (pendingFigures && pendingFigures.length) {
+        for (const fig of pendingFigures) renderFigureCard(fig);
+        pendingFigures = null;
+      }
+      if (config.project.showQuickReplies && pendingOptions && currentBotMsgEl) {
+        attachOptionButtons(currentBotMsgEl, pendingOptions);
+      }
+      pendingOptions = null;
+      if (botBuffer) logTurn('assistant', botBuffer);
       botBuffer = '';
       currentBotMsgEl = null;
     }, 1500);
@@ -489,6 +516,315 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       wrap.appendChild(card);
     }
     afterEl.parentNode.insertBefore(wrap, afterEl.nextSibling);
+  }
+
+  function attachOptionButtons(afterEl, options) {
+    if (!options || options.length < 2) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'quick-replies';
+    for (const opt of options) {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'quick-reply';
+      btn.textContent = opt;
+      btn.addEventListener('click', () => {
+        for (const b of wrap.querySelectorAll('.quick-reply')) b.disabled = true;
+        btn.classList.add('selected');
+        sendMessage(opt);
+      });
+      wrap.appendChild(btn);
+    }
+    afterEl.parentNode.insertBefore(wrap, afterEl.nextSibling);
+  }
+
+  /**
+   * Inline auto-embedded figure — a rendered PDF page Gemini vision
+   * classified as containing a diagram/chart, shown directly in the
+   * message flow whenever a retrieved chunk has one (no click needed to
+   * reveal it — that was the chosen design over a click-to-expand chip).
+   */
+  function renderFigureCard(fig) {
+    const card = document.createElement('div');
+    card.className = 'figure-card';
+
+    const img = document.createElement('img');
+    img.src = fig.pageImageUrl;
+    img.alt = fig.caption || fig.fileName || 'Figure';
+    card.appendChild(img);
+
+    if (fig.caption || fig.fileName) {
+      const cap = document.createElement('div');
+      cap.className = 'figure-caption';
+      cap.textContent = [fig.caption, fig.fileName && fig.pdfPage ? `${fig.fileName}, p.${fig.pdfPage}` : fig.fileName]
+        .filter(Boolean).join(' — ');
+      card.appendChild(cap);
+    }
+
+    if (fig.pdfUrl) {
+      const link = document.createElement('a');
+      link.className = 'figure-pdf-link';
+      link.href = `${fig.pdfUrl}#page=${fig.pdfPage || 1}`;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.textContent = `↗ Open PDF at page ${fig.pdfPage || 1}`;
+      card.appendChild(link);
+    }
+
+    messagesEl.appendChild(card);
+    requestAnimationFrame(() => card.classList.add('visible'));
+    scrollToBottom();
+  }
+
+  // ── Study mode: quiz me ──────────────────────────────────────
+  quizBtn.addEventListener('click', () => {
+    const topic = textInput.value.trim();
+    textInput.value = '';
+    textInput.style.height = 'auto';
+    sendStudyMessage(topic ? `Quiz me on: ${topic}` : 'Quiz me on a topic from what you know, your choice.');
+  });
+
+  async function sendStudyMessage(message) {
+    addMessage('user', message);
+    quizBtn.disabled = true;
+    sendBtn.disabled = true;
+    statusText.textContent = 'Thinking…';
+    try {
+      const res = await fetch(`/embed/${publicId}/study`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, sessionId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        addMessage('bot', data.error || 'Study tools are unavailable right now.');
+        return;
+      }
+      if (data.sessionId) sessionId = data.sessionId;
+
+      const answerEl = addMessage('bot', data.answer);
+      if (config.project.showSourceCards !== false && data.sources && data.sources.length) {
+        attachSources(answerEl, data.sources);
+      }
+
+      for (const fig of data.figures || []) renderFigureCard(fig);
+
+      for (const call of data.toolCalls || []) {
+        const topic = call.args && call.args.topic;
+        if (call.name === 'generate_quiz' && call.result && call.result.questions) {
+          for (const q of call.result.questions) renderQuizCard(q, topic, data.sources || []);
+        }
+        if (call.name === 'generate_flashcards' && call.result && call.result.cards) {
+          for (const c of call.result.cards) renderFlashcard(c, topic, data.sources || []);
+        }
+      }
+    } catch (e) {
+      addMessage('bot', 'Something went wrong loading your study material.');
+    } finally {
+      quizBtn.disabled = false;
+      sendBtn.disabled = false;
+      statusText.textContent = statusDot.classList.contains('connected') ? 'Connected' : 'Disconnected';
+    }
+  }
+
+  function renderQuizCard(q, topic, turnSources) {
+    const card = document.createElement('div');
+    card.className = 'quiz-card';
+
+    if (q.origin === 'owner') {
+      const tag = document.createElement('div');
+      tag.className = 'quiz-origin';
+      tag.textContent = 'From your instructor';
+      card.appendChild(tag);
+    }
+
+    const questionEl = document.createElement('div');
+    questionEl.className = 'quiz-question';
+    questionEl.textContent = q.question;
+    card.appendChild(questionEl);
+
+    const optionsEl = document.createElement('div');
+    optionsEl.className = 'quiz-options';
+    const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+    q.options.forEach((opt, idx) => {
+      const btn = document.createElement('button');
+      btn.className = 'quiz-option';
+      btn.textContent = `${letters[idx] || idx + 1}. ${opt}`;
+      btn.addEventListener('click', () => gradeQuiz(card, q, topic, idx));
+      optionsEl.appendChild(btn);
+    });
+    card.appendChild(optionsEl);
+
+    const feedback = document.createElement('div');
+    feedback.className = 'quiz-feedback';
+    feedback.style.display = 'none';
+    card.appendChild(feedback);
+
+    messagesEl.appendChild(card);
+    requestAnimationFrame(() => card.classList.add('visible'));
+    scrollToBottom();
+
+    if (q.sourceChunkIds && q.sourceChunkIds.length && turnSources.length) {
+      attachSources(card, turnSources);
+    }
+  }
+
+  function gradeQuiz(card, q, topic, selectedIdx) {
+    const buttons = [...card.querySelectorAll('.quiz-option')];
+    buttons.forEach((btn, idx) => {
+      btn.disabled = true;
+      if (idx === q.correctIndex) btn.classList.add('correct');
+      else if (idx === selectedIdx) btn.classList.add('incorrect');
+    });
+
+    const feedback = card.querySelector('.quiz-feedback');
+    feedback.style.display = '';
+    feedback.textContent = selectedIdx === q.correctIndex
+      ? 'Correct!'
+      : 'Not quite — the correct answer is highlighted above.';
+
+    fetch(`/embed/${publicId}/quiz-attempt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId,
+        question: q.question,
+        topic,
+        selectedIndex: selectedIdx,
+        correctIndex: q.correctIndex,
+        sourceChunkIds: q.sourceChunkIds || [],
+      }),
+    }).catch(() => {});
+  }
+
+  function renderFlashcard(c, topic, turnSources) {
+    const card = document.createElement('div');
+    card.className = 'quiz-card flash-card';
+
+    if (c.origin === 'owner') {
+      const tag = document.createElement('div');
+      tag.className = 'quiz-origin';
+      tag.textContent = 'From your instructor';
+      card.appendChild(tag);
+    }
+
+    const face = document.createElement('div');
+    face.className = 'flash-face';
+    face.textContent = c.front;
+    card.appendChild(face);
+
+    const flipBtn = document.createElement('button');
+    flipBtn.className = 'quiz-option';
+    flipBtn.textContent = 'Show answer';
+    flipBtn.addEventListener('click', () => {
+      face.textContent = c.back;
+      face.classList.add('flash-face-back');
+      flipBtn.remove();
+      ratingEl.style.display = 'flex';
+    }, { once: true });
+    card.appendChild(flipBtn);
+
+    const ratingEl = document.createElement('div');
+    ratingEl.className = 'quiz-options';
+    ratingEl.style.display = 'none';
+    ratingEl.style.flexDirection = 'row';
+    ['still_learning', 'got_it'].forEach(rating => {
+      const btn = document.createElement('button');
+      btn.className = 'quiz-option';
+      btn.style.flex = '1';
+      btn.textContent = rating === 'got_it' ? '✓ Got it' : '↻ Still learning';
+      btn.addEventListener('click', () => reviewFlashcard(card, ratingEl, c, topic, rating));
+      ratingEl.appendChild(btn);
+    });
+    card.appendChild(ratingEl);
+
+    messagesEl.appendChild(card);
+    requestAnimationFrame(() => card.classList.add('visible'));
+    scrollToBottom();
+
+    if (c.sourceChunkId && turnSources.length) attachSources(card, turnSources);
+  }
+
+  function reviewFlashcard(card, ratingEl, c, topic, rating) {
+    [...ratingEl.querySelectorAll('.quiz-option')].forEach(btn => {
+      btn.disabled = true;
+      if (btn.textContent.includes(rating === 'got_it' ? 'Got it' : 'Still learning')) {
+        btn.classList.add(rating === 'got_it' ? 'correct' : 'incorrect');
+      }
+    });
+
+    fetch(`/embed/${publicId}/flashcard-review`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sessionId,
+        front: c.front,
+        back: c.back,
+        topic,
+        sourceChunkId: c.sourceChunkId || null,
+        selfRating: rating,
+      }),
+    }).catch(() => {});
+  }
+
+  // ── Progress panel ────────────────────────────────────────────
+  progressBtn.addEventListener('click', async () => {
+    progressBtn.disabled = true;
+    try {
+      const res = await fetch(`/embed/${publicId}/progress?sessionId=${encodeURIComponent(sessionId || '')}`);
+      const data = await res.json();
+      if (!res.ok) { addMessage('bot', data.error || 'Could not load your progress.'); return; }
+      renderProgressCard(data);
+    } catch (e) {
+      addMessage('bot', 'Could not load your progress.');
+    }
+    progressBtn.disabled = false;
+  });
+
+  function renderProgressCard(p) {
+    const card = document.createElement('div');
+    card.className = 'quiz-card';
+
+    const title = document.createElement('div');
+    title.className = 'quiz-question';
+    title.textContent = '📊 Your progress';
+    card.appendChild(title);
+
+    if (p.scope === 'session') {
+      const note = document.createElement('div');
+      note.className = 'quiz-origin';
+      note.style.marginBottom = '8px';
+      note.textContent = "This visit only — share your email to track progress across visits";
+      card.appendChild(note);
+    }
+
+    const stats = document.createElement('div');
+    stats.className = 'quiz-feedback';
+    stats.style.display = '';
+    stats.style.marginTop = '0';
+    const accuracyText = p.quizAccuracy === null ? 'no quizzes yet' : `${p.quizAccuracy}% correct (${p.totalQuizAttempts} question${p.totalQuizAttempts === 1 ? '' : 's'})`;
+    stats.innerHTML = `Quiz accuracy: ${accuracyText}<br>Flashcards reviewed: ${p.cardsReviewed}<br>Study streak: ${p.streak} day${p.streak === 1 ? '' : 's'}`;
+    card.appendChild(stats);
+
+    if (p.byTopic && p.byTopic.length) {
+      const topicsEl = document.createElement('div');
+      topicsEl.className = 'quiz-options';
+      topicsEl.style.marginTop = '10px';
+      p.byTopic.forEach(t => {
+        const row = document.createElement('div');
+        row.className = 'quiz-option';
+        row.style.cursor = 'default';
+        const parts = [];
+        if (t.quizAccuracy !== null) parts.push(`${t.quizAccuracy}% quiz accuracy`);
+        if (t.cardsReviewed) parts.push(`${t.cardsReviewed} card${t.cardsReviewed === 1 ? '' : 's'} reviewed`);
+        row.textContent = `${t.topic}: ${parts.join(', ')}`;
+        topicsEl.appendChild(row);
+      });
+      card.appendChild(topicsEl);
+    }
+
+    messagesEl.appendChild(card);
+    requestAnimationFrame(() => card.classList.add('visible'));
+    scrollToBottom();
   }
 
   function scrollToBottom() {
@@ -631,6 +967,27 @@ Always tag a value as soon as you receive it. If the visitor provides multiple v
     });
     clean = clean.replace(/\n{3,}/g, '\n\n').trim();
     return { clean, tags };
+  }
+
+  // ── Quick-reply helpers ──────────────────────────────────────
+  function buildQuickReplyInstructions(enabled) {
+    if (!enabled) return '';
+    return `
+
+QUICK REPLY INSTRUCTIONS: When you offer the user a small, closed set of choices to pick from (a menu of next steps, an either/or decision, a short list of topics) — and only then — append a line in this exact format after your response: [[OPTIONS:Choice one|Choice two|Choice three]]
+Use 2 to 5 short options. Do not mention the tag to the user — it will be stripped before display and shown as tappable buttons. Do not use this for open-ended questions or when collecting free-text information.`;
+  }
+
+  const OPTIONS_TAG_RE = /\[\[OPTIONS:([^\]]+)\]\]/g;
+
+  function extractOptionsTag(text) {
+    let options = null;
+    let clean = text.replace(OPTIONS_TAG_RE, (_, list) => {
+      options = list.split('|').map(s => s.trim()).filter(Boolean).slice(0, 5);
+      return '';
+    });
+    clean = clean.replace(/\n{3,}/g, '\n\n').trim();
+    return { clean, options };
   }
 
   function updateCapturePanel() {

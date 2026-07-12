@@ -24,6 +24,9 @@
       <button class="tab active" data-tab="settings">Settings</button>
       <button class="tab" data-tab="knowledge">Knowledge</button>
       <button class="tab" data-tab="capture">Capture</button>
+      <button class="tab" data-tab="quiz">Quiz</button>
+      <button class="tab" data-tab="flashcards">Flashcards</button>
+      <button class="tab" data-tab="videos">Videos</button>
       <button class="tab" data-tab="widget">Widget</button>
       <button class="tab" data-tab="preview">Preview</button>
       <button class="tab" data-tab="analytics">Analytics</button>
@@ -60,6 +63,15 @@
               <label>Voice</label>
               <select class="select" id="f-voice"></select>
             </div>
+          </div>
+          <div class="field">
+            <label>Capability tier</label>
+            <select class="select" id="f-tier">
+              <option value="basic">Basic — chat, knowledge base, lead capture</option>
+              <option value="medium">Medium — adds referenced images, video recs, slides</option>
+              <option value="advanced">Advanced — adds quizzes, flashcards, progress tracking</option>
+            </select>
+            <span class="help">Which study-tool features this chatbot has. Higher tiers include everything in the ones below them.</span>
           </div>
           <div class="field">
             <label>Webhook URL</label>
@@ -186,6 +198,14 @@
             </select>
           </div>
           <div class="field">
+            <label>Show quick-reply buttons</label>
+            <select class="select" id="f-quickreplies">
+              <option value="false">No</option>
+              <option value="true">Yes — let visitors tap a choice instead of typing</option>
+            </select>
+            <span class="help">When the assistant offers a short menu of choices, show them as tappable buttons.</span>
+          </div>
+          <div class="field">
             <label>Show "Powered by" branding</label>
             <select class="select" id="f-branding">
               <option value="true">Yes</option>
@@ -285,9 +305,22 @@
           <span class="muted text-sm" id="pa-chart-to"></span>
         </div>
       </div>
-      <div class="card">
+      <div class="card mb-md">
         <h3 class="card-title mb-md">Recent questions</h3>
         <div id="pa-questions"></div>
+      </div>
+
+      <div class="card mb-md" id="pa-progress-card" style="display:none">
+        <div class="card-header">
+          <h3 class="card-title">Learner progress</h3>
+          <span class="muted text-sm" id="pa-progress-note"></span>
+        </div>
+        <div id="pa-learners"></div>
+      </div>
+
+      <div class="card" id="pa-topics-card" style="display:none">
+        <h3 class="card-title mb-md">Accuracy by topic</h3>
+        <div id="pa-topics"></div>
       </div>
     </section>
 
@@ -401,6 +434,170 @@
       </div>
     </section>
 
+    <!-- ── Quiz tab ───────────────────────────────────────── -->
+    <section class="tab-panel" id="panel-quiz" hidden>
+      <div class="card mb-md">
+        <div style="display:flex;align-items:flex-start;gap:16px">
+          <div style="font-size:36px">📝</div>
+          <div>
+            <h3 class="card-title" style="margin-bottom:4px">Quiz questions</h3>
+            <p class="muted text-sm" style="margin:0">Write questions yourself, or let the AI generate them from your knowledge base when a visitor asks to be quizzed. Your questions are always used first — the AI only fills in the rest.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-md" id="quiz-tier-notice" style="display:none">
+        <p class="muted text-sm" style="margin:0">Quiz features require the <strong>Advanced</strong> capability tier. You can still build your question bank below, but visitors won't be quizzed until you upgrade this chatbot's tier in <a href="#" onclick="switchTab('settings');return false">Settings</a>.</p>
+      </div>
+
+      <div class="card mb-md">
+        <div class="card-header">
+          <h3 class="card-title">Question bank</h3>
+          <span class="muted text-sm" id="quiz-count"></span>
+          <div class="row" style="gap:8px;margin-left:auto">
+            <button class="btn btn-ghost btn-sm" onclick="downloadCsvTemplate('quiz')">↓ CSV template</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('quiz-csv-input').click()">↑ Import CSV</button>
+            <input type="file" id="quiz-csv-input" accept=".csv" style="display:none" onchange="importQuizCsv(this.files[0])" />
+            <button class="btn btn-primary btn-sm" onclick="openQuizForm()">+ Add question</button>
+          </div>
+        </div>
+        <div id="quiz-list"></div>
+      </div>
+
+      <!-- Add / edit question form -->
+      <div class="card" id="quiz-form-card" hidden>
+        <h3 class="card-title mb-md">Add question</h3>
+        <div class="col gap-md">
+          <div class="field">
+            <label>Question</label>
+            <textarea class="textarea" id="qz-question" rows="2" placeholder="What is the standard traffic pattern altitude for light aircraft?"></textarea>
+          </div>
+          <div class="field">
+            <label>Topic tag <span class="muted text-sm">(optional — helps match visitor requests to this question)</span></label>
+            <input class="input" id="qz-topic" placeholder="traffic patterns" />
+          </div>
+          <div class="field">
+            <label>Options <span class="muted text-sm">(mark the correct one)</span></label>
+            <div class="col gap-sm" id="qz-options"></div>
+            <button class="btn btn-ghost btn-sm mt-sm" onclick="addQuizOption()">+ Add option</button>
+          </div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn-ghost btn-sm" onclick="suggestDistractors()" id="qz-suggest-btn">✨ Suggest wrong answers</button>
+          </div>
+          <div id="quiz-form-error" class="text-sm" style="color:#fca5a5;display:none"></div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn-primary" id="qz-save-btn" onclick="saveQuizQuestion()">Save question</button>
+            <button class="btn btn-ghost" onclick="closeQuizForm()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Flashcards tab ─────────────────────────────────── -->
+    <section class="tab-panel" id="panel-flashcards" hidden>
+      <div class="card mb-md">
+        <div style="display:flex;align-items:flex-start;gap:16px">
+          <div style="font-size:36px">🗂️</div>
+          <div>
+            <h3 class="card-title" style="margin-bottom:4px">Flashcards</h3>
+            <p class="muted text-sm" style="margin:0">Write flashcards yourself, or let the AI generate them from your knowledge base. Your cards are always used first — the AI only fills in the rest.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-md" id="flashcards-tier-notice" style="display:none">
+        <p class="muted text-sm" style="margin:0">Flashcards require the <strong>Advanced</strong> capability tier. You can still build your deck below, but visitors won't see them until you upgrade this chatbot's tier in <a href="#" onclick="switchTab('settings');return false">Settings</a>.</p>
+      </div>
+
+      <div class="card mb-md">
+        <div class="card-header">
+          <h3 class="card-title">Card deck</h3>
+          <span class="muted text-sm" id="flashcards-count"></span>
+          <div class="row" style="gap:8px;margin-left:auto">
+            <button class="btn btn-ghost btn-sm" onclick="downloadCsvTemplate('flashcards')">↓ CSV template</button>
+            <button class="btn btn-ghost btn-sm" onclick="document.getElementById('flashcards-csv-input').click()">↑ Import CSV</button>
+            <input type="file" id="flashcards-csv-input" accept=".csv" style="display:none" onchange="importFlashcardsCsv(this.files[0])" />
+            <button class="btn btn-primary btn-sm" onclick="openFlashcardForm()">+ Add card</button>
+          </div>
+        </div>
+        <div id="flashcards-list"></div>
+      </div>
+
+      <!-- Add card form -->
+      <div class="card" id="flashcard-form-card" hidden>
+        <h3 class="card-title mb-md">Add card</h3>
+        <div class="col gap-md">
+          <div class="field">
+            <label>Front</label>
+            <textarea class="textarea" id="fc-front" rows="2" placeholder="What is the standard traffic pattern altitude for light aircraft?"></textarea>
+          </div>
+          <div class="field">
+            <label>Back</label>
+            <textarea class="textarea" id="fc-back" rows="2" placeholder="1000 feet AGL"></textarea>
+          </div>
+          <div class="field">
+            <label>Topic tag <span class="muted text-sm">(optional — helps match visitor requests to this card)</span></label>
+            <input class="input" id="fc-topic" placeholder="traffic patterns" />
+          </div>
+          <div id="flashcard-form-error" class="text-sm" style="color:#fca5a5;display:none"></div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn-primary" id="fc-save-btn" onclick="saveFlashcard()">Save card</button>
+            <button class="btn btn-ghost" onclick="closeFlashcardForm()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Videos tab ─────────────────────────────────────── -->
+    <section class="tab-panel" id="panel-videos" hidden>
+      <div class="card mb-md">
+        <div style="display:flex;align-items:flex-start;gap:16px">
+          <div style="font-size:36px">🎬</div>
+          <div>
+            <h3 class="card-title" style="margin-bottom:4px">Video library</h3>
+            <p class="muted text-sm" style="margin:0">Curate YouTube videos per topic. The chatbot only recommends videos you've added here — it never invents a link or searches YouTube live.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mb-md" id="videos-tier-notice" style="display:none">
+        <p class="muted text-sm" style="margin:0">Video recommendations require the <strong>Medium</strong> or <strong>Advanced</strong> capability tier. You can still build your library below, but visitors won't get recommendations until you upgrade this chatbot's tier in <a href="#" onclick="switchTab('settings');return false">Settings</a>.</p>
+      </div>
+
+      <div class="card mb-md">
+        <div class="card-header">
+          <h3 class="card-title">Videos</h3>
+          <span class="muted text-sm" id="videos-count"></span>
+          <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="openVideoForm()">+ Add video</button>
+        </div>
+        <div id="videos-list"></div>
+      </div>
+
+      <!-- Add video form -->
+      <div class="card" id="video-form-card" hidden>
+        <h3 class="card-title mb-md">Add video</h3>
+        <div class="col gap-md">
+          <div class="field">
+            <label>Title</label>
+            <input class="input" id="vr-title" placeholder="Reading METARs and TAFs" />
+          </div>
+          <div class="field">
+            <label>YouTube URL</label>
+            <input class="input" id="vr-url" placeholder="https://www.youtube.com/watch?v=..." />
+          </div>
+          <div class="field">
+            <label>Topic tags <span class="muted text-sm">(comma-separated — matched against visitor requests)</span></label>
+            <input class="input" id="vr-tags" placeholder="weather, metar, taf" />
+          </div>
+          <div id="video-form-error" class="text-sm" style="color:#fca5a5;display:none"></div>
+          <div class="row" style="gap:8px">
+            <button class="btn btn-primary" id="vr-save-btn" onclick="saveVideo()">Save video</button>
+            <button class="btn btn-ghost" onclick="closeVideoForm()">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- ── Leads tab ──────────────────────────────────────── -->
     <section class="tab-panel" id="panel-leads" hidden>
       <div class="card mb-md" style="padding:12px 20px">
@@ -461,6 +658,9 @@
       if (t.dataset.tab === 'analytics') loadProjectAnalytics();
       if (t.dataset.tab === 'conversations') loadSessions();
       if (t.dataset.tab === 'capture') loadCaptureFields();
+      if (t.dataset.tab === 'quiz') loadQuizQuestions();
+      if (t.dataset.tab === 'flashcards') loadFlashcards();
+      if (t.dataset.tab === 'videos') loadVideos();
       if (t.dataset.tab === 'leads') loadLeads();
     });
   });
@@ -477,6 +677,7 @@
       document.getElementById('f-name').value = p.name;
       document.getElementById('f-welcome').value = p.welcomeMessage || '';
       document.getElementById('f-prompt').value = p.systemPrompt || '';
+      document.getElementById('f-tier').value = p.capabilityTier || 'basic';
 
       const charSel = document.getElementById('f-character');
       charSel.innerHTML = chars.map(c =>
@@ -494,6 +695,7 @@
       document.getElementById('f-direction').value = p.textDirection || 'auto';
       document.getElementById('f-theme').value     = p.themeColor || '#7c6af5';
       document.getElementById('f-sources').value   = String(p.showSourceCards !== false);
+      document.getElementById('f-quickreplies').value = String(p.showQuickReplies === true);
       document.getElementById('f-branding').value  = String(p.showBranding !== false);
       document.getElementById('f-offset-x').value  = p.widgetOffsetX ?? 0;
       document.getElementById('f-offset-y').value  = p.widgetOffsetY ?? 0;
@@ -549,6 +751,7 @@
         systemPrompt: document.getElementById('f-prompt').value,
         characterId: document.getElementById('f-character').value,
         voice: document.getElementById('f-voice').value,
+        capabilityTier: document.getElementById('f-tier').value,
         webhookUrl: document.getElementById('f-webhook-url').value.trim() || null,
       };
       const { project: p } = await API.updateProject(projectId, patch);
@@ -591,6 +794,7 @@
         textDirection:        document.getElementById('f-direction').value,
         themeColor:           document.getElementById('f-theme').value,
         showSourceCards:      document.getElementById('f-sources').value === 'true',
+        showQuickReplies:     document.getElementById('f-quickreplies').value === 'true',
         showBranding:         document.getElementById('f-branding').value === 'true',
         widgetOffsetX:        parseInt(document.getElementById('f-offset-x').value, 10) || 0,
         widgetOffsetY:        parseInt(document.getElementById('f-offset-y').value, 10) || 0,
@@ -924,6 +1128,39 @@
           </div>`).join('');
       }
     } catch (e) { toast(e.message, 'error'); }
+
+    try {
+      const { learners, anonymousActivity, byTopic } = await API.projectProgress(projectId);
+
+      const hasActivity = learners.length || byTopic.length;
+      document.getElementById('pa-progress-card').style.display = hasActivity ? '' : 'none';
+      document.getElementById('pa-topics-card').style.display = byTopic.length ? '' : 'none';
+      if (!hasActivity) return;
+
+      const anonNote = (anonymousActivity.quizAttempts + anonymousActivity.cardsReviewed) > 0
+        ? `+ ${anonymousActivity.quizAttempts} quiz / ${anonymousActivity.cardsReviewed} card activity from visitors without a captured email`
+        : '';
+      document.getElementById('pa-progress-note').textContent = anonNote;
+
+      const learnersEl = document.getElementById('pa-learners');
+      if (learners.length === 0) {
+        learnersEl.innerHTML = '<p class="muted text-sm">No learner has provided an email yet — progress is only trackable across visits once one is captured.</p>';
+      } else {
+        learnersEl.innerHTML = learners.map(l => `
+          <div style="display:flex;align-items:center;gap:16px;padding:8px 0;border-bottom:1px solid var(--border)">
+            <div style="flex:1;min-width:0;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(l.learnerKey)}</div>
+            <div class="muted text-sm" style="white-space:nowrap">${l.quizAccuracy === null ? 'no quizzes' : l.quizAccuracy + '% (' + l.quizTotal + ')'}</div>
+            <div class="muted text-sm" style="white-space:nowrap">${l.cardsReviewed} card${l.cardsReviewed === 1 ? '' : 's'}</div>
+            <div class="muted text-sm" style="white-space:nowrap;flex-shrink:0">${l.lastActive ? new Date(l.lastActive).toLocaleDateString() : ''}</div>
+          </div>`).join('');
+      }
+
+      document.getElementById('pa-topics').innerHTML = byTopic.map(t => `
+        <div style="display:flex;align-items:center;gap:16px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <div style="flex:1;font-size:13px">${escape(t.topic)}</div>
+          <div class="muted text-sm">${t.quizAccuracy === null ? '—' : t.quizAccuracy + '% correct'} (${t.quizTotal})</div>
+        </div>`).join('');
+    } catch (e) { /* progress tracking is optional — don't block the rest of the tab on it */ }
   }
 
   function escape(s) {
@@ -1100,6 +1337,347 @@
       await loadCaptureFields();
       toast(`"${tpl.name}" template applied`, 'success');
     } catch (e) { toast(e.message, 'error'); }
+  };
+
+  // ── Quiz tab ─────────────────────────────────────────────────
+  let quizQuestions = [];
+
+  async function loadQuizQuestions() {
+    document.getElementById('quiz-tier-notice').style.display =
+      project.capabilityTier === 'advanced' ? 'none' : '';
+    try {
+      const { questions } = await API.listQuizQuestions(projectId);
+      quizQuestions = questions;
+      renderQuizQuestions();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function renderQuizQuestions() {
+    const list = document.getElementById('quiz-list');
+    document.getElementById('quiz-count').textContent = `${quizQuestions.length} question${quizQuestions.length === 1 ? '' : 's'}`;
+    if (quizQuestions.length === 0) {
+      list.innerHTML = '<div class="empty" style="padding:24px 0"><div class="empty-icon">📝</div><div class="empty-title">No questions yet</div><p class="muted text-sm">Add your own below, or let the AI generate them from your knowledge base at chat time.</p></div>';
+      return;
+    }
+    list.innerHTML = quizQuestions.map(q => `
+      <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:500;font-size:14px">${escape(q.question)}</div>
+            <div class="muted text-sm mt-sm">
+              ${q.options.map((o, i) => i === q.correctIndex
+                ? `<span style="color:#4ade80">✓ ${escape(o)}</span>`
+                : escape(o)).join(' · ')}
+            </div>
+            ${q.topicTag ? `<div class="muted text-sm mt-sm">Topic: <code style="font-size:11px">${escape(q.topicTag)}</code></div>` : ''}
+          </div>
+          <button class="btn btn-sm btn-danger" onclick="deleteQuizQuestion('${q.id}')">×</button>
+        </div>
+      </div>`).join('');
+  }
+
+  window.deleteQuizQuestion = async (qid) => {
+    if (!confirm('Delete this question?')) return;
+    try {
+      await API.deleteQuizQuestion(projectId, qid);
+      await loadQuizQuestions();
+      toast('Question deleted', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.openQuizForm = () => {
+    document.getElementById('qz-question').value = '';
+    document.getElementById('qz-topic').value = '';
+    const optionsEl = document.getElementById('qz-options');
+    optionsEl.innerHTML = '';
+    for (let i = 0; i < 4; i++) addQuizOptionRow();
+    document.getElementById('quiz-form-error').style.display = 'none';
+    const formCard = document.getElementById('quiz-form-card');
+    formCard.hidden = false;
+    formCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('qz-question').focus();
+  };
+
+  window.closeQuizForm = () => {
+    document.getElementById('quiz-form-card').hidden = true;
+  };
+
+  function addQuizOptionRow(value) {
+    const optionsEl = document.getElementById('qz-options');
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.style.gap = '8px';
+    row.innerHTML = `
+      <input type="radio" name="qz-correct" style="flex-shrink:0" />
+      <input class="input" placeholder="Option text" style="flex:1" value="${value ? escape(value) : ''}" />
+      <button type="button" class="btn btn-sm btn-ghost" onclick="this.closest('.row').remove()">×</button>
+    `;
+    optionsEl.appendChild(row);
+  }
+  window.addQuizOption = () => addQuizOptionRow();
+
+  window.suggestDistractors = async () => {
+    const question = document.getElementById('qz-question').value.trim();
+    const rows = [...document.querySelectorAll('#qz-options .row')];
+    const correctRow = rows.find(r => r.querySelector('input[type="radio"]').checked);
+    const correctAnswer = correctRow ? correctRow.querySelector('input.input').value.trim() : '';
+    if (!question || !correctAnswer) {
+      toast('Write the question and mark/fill in the correct answer first', 'error');
+      return;
+    }
+    const btn = document.getElementById('qz-suggest-btn');
+    btn.disabled = true;
+    try {
+      const { distractors } = await API.suggestDistractors(projectId, question, correctAnswer);
+      const emptyRows = rows.filter(r => r !== correctRow && !r.querySelector('input.input').value.trim());
+      distractors.forEach((d, i) => { if (emptyRows[i]) emptyRows[i].querySelector('input.input').value = d; });
+    } catch (e) { toast(e.message, 'error'); }
+    btn.disabled = false;
+  };
+
+  window.saveQuizQuestion = async () => {
+    const question = document.getElementById('qz-question').value.trim();
+    const topicTag = document.getElementById('qz-topic').value.trim();
+    const rows = [...document.querySelectorAll('#qz-options .row')];
+    const options = rows.map(r => r.querySelector('input.input').value.trim());
+    const correctIndex = rows.findIndex(r => r.querySelector('input[type="radio"]').checked);
+    const errEl = document.getElementById('quiz-form-error');
+    errEl.style.display = 'none';
+
+    if (!question) { errEl.textContent = 'Question is required'; errEl.style.display = 'block'; return; }
+    if (options.some(o => !o)) { errEl.textContent = 'All options must have text (remove unused ones)'; errEl.style.display = 'block'; return; }
+    if (options.length < 2) { errEl.textContent = 'At least 2 options are required'; errEl.style.display = 'block'; return; }
+    if (correctIndex === -1) { errEl.textContent = 'Mark which option is correct'; errEl.style.display = 'block'; return; }
+
+    const btn = document.getElementById('qz-save-btn');
+    btn.disabled = true;
+    try {
+      await API.createQuizQuestion(projectId, { question, options, correctIndex, topicTag: topicTag || undefined });
+      closeQuizForm();
+      await loadQuizQuestions();
+      toast('Question added', 'success');
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+    }
+    btn.disabled = false;
+  };
+
+  window.switchTab = (name) => {
+    document.querySelector(`.tab[data-tab="${name}"]`)?.click();
+  };
+
+  // ── CSV import (shared by Quiz and Flashcards tabs) ───────────
+  const CSV_TEMPLATES = {
+    quiz: {
+      filename: 'quiz-questions-template.csv',
+      content: 'question,option1,option2,option3,option4,correct_answer,topic_tag\n' +
+        '"What is the standard traffic pattern altitude for light aircraft?","500 feet AGL","1000 feet AGL","1500 feet AGL","2000 feet AGL","1000 feet AGL","traffic patterns"\n',
+    },
+    flashcards: {
+      filename: 'flashcards-template.csv',
+      content: 'front,back,topic_tag\n"What does ATC stand for?","Air Traffic Control","acronyms"\n',
+    },
+  };
+
+  window.downloadCsvTemplate = (kind) => {
+    const tpl = CSV_TEMPLATES[kind];
+    const blob = new Blob([tpl.content], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = tpl.filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  function reportCsvImport(result) {
+    const msg = `Imported ${result.imported} row${result.imported === 1 ? '' : 's'}` +
+      (result.errors.length ? `, ${result.errors.length} skipped` : '');
+    toast(msg, result.errors.length ? 'error' : 'success');
+    if (result.errors.length) console.warn('CSV import errors:', result.errors);
+  }
+
+  window.importQuizCsv = async (file) => {
+    if (!file) return;
+    try {
+      const result = await API.importQuizCsv(projectId, file);
+      reportCsvImport(result);
+      await loadQuizQuestions();
+    } catch (e) { toast(e.message, 'error'); }
+    document.getElementById('quiz-csv-input').value = '';
+  };
+
+  window.importFlashcardsCsv = async (file) => {
+    if (!file) return;
+    try {
+      const result = await API.importFlashcardsCsv(projectId, file);
+      reportCsvImport(result);
+      await loadFlashcards();
+    } catch (e) { toast(e.message, 'error'); }
+    document.getElementById('flashcards-csv-input').value = '';
+  };
+
+  // ── Flashcards tab ───────────────────────────────────────────
+  let flashcards = [];
+
+  async function loadFlashcards() {
+    document.getElementById('flashcards-tier-notice').style.display =
+      project.capabilityTier === 'advanced' ? 'none' : '';
+    try {
+      const { cards } = await API.listFlashcards(projectId);
+      flashcards = cards;
+      renderFlashcards();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function renderFlashcards() {
+    const list = document.getElementById('flashcards-list');
+    document.getElementById('flashcards-count').textContent = `${flashcards.length} card${flashcards.length === 1 ? '' : 's'}`;
+    if (flashcards.length === 0) {
+      list.innerHTML = '<div class="empty" style="padding:24px 0"><div class="empty-icon">🗂️</div><div class="empty-title">No cards yet</div><p class="muted text-sm">Add your own below, or let the AI generate them from your knowledge base at chat time.</p></div>';
+      return;
+    }
+    list.innerHTML = flashcards.map(c => `
+      <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:500;font-size:14px">${escape(c.front)}</div>
+            <div class="muted text-sm mt-sm">${escape(c.back)}</div>
+            ${c.topicTag ? `<div class="muted text-sm mt-sm">Topic: <code style="font-size:11px">${escape(c.topicTag)}</code></div>` : ''}
+          </div>
+          <button class="btn btn-sm btn-danger" onclick="deleteFlashcard('${c.id}')">×</button>
+        </div>
+      </div>`).join('');
+  }
+
+  window.deleteFlashcard = async (cid) => {
+    if (!confirm('Delete this card?')) return;
+    try {
+      await API.deleteFlashcard(projectId, cid);
+      await loadFlashcards();
+      toast('Card deleted', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.openFlashcardForm = () => {
+    document.getElementById('fc-front').value = '';
+    document.getElementById('fc-back').value = '';
+    document.getElementById('fc-topic').value = '';
+    document.getElementById('flashcard-form-error').style.display = 'none';
+    const formCard = document.getElementById('flashcard-form-card');
+    formCard.hidden = false;
+    formCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('fc-front').focus();
+  };
+
+  window.closeFlashcardForm = () => {
+    document.getElementById('flashcard-form-card').hidden = true;
+  };
+
+  window.saveFlashcard = async () => {
+    const front = document.getElementById('fc-front').value.trim();
+    const back = document.getElementById('fc-back').value.trim();
+    const topicTag = document.getElementById('fc-topic').value.trim();
+    const errEl = document.getElementById('flashcard-form-error');
+    errEl.style.display = 'none';
+
+    if (!front) { errEl.textContent = 'Front is required'; errEl.style.display = 'block'; return; }
+    if (!back) { errEl.textContent = 'Back is required'; errEl.style.display = 'block'; return; }
+
+    const btn = document.getElementById('fc-save-btn');
+    btn.disabled = true;
+    try {
+      await API.createFlashcard(projectId, { front, back, topicTag: topicTag || undefined });
+      closeFlashcardForm();
+      await loadFlashcards();
+      toast('Card added', 'success');
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+    }
+    btn.disabled = false;
+  };
+
+  // ── Videos tab ───────────────────────────────────────────────
+  let videoResources = [];
+
+  async function loadVideos() {
+    document.getElementById('videos-tier-notice').style.display =
+      project.capabilityTier !== 'basic' ? 'none' : '';
+    try {
+      const { videos } = await API.listVideoResources(projectId);
+      videoResources = videos;
+      renderVideos();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function renderVideos() {
+    const list = document.getElementById('videos-list');
+    document.getElementById('videos-count').textContent = `${videoResources.length} video${videoResources.length === 1 ? '' : 's'}`;
+    if (videoResources.length === 0) {
+      list.innerHTML = '<div class="empty" style="padding:24px 0"><div class="empty-icon">🎬</div><div class="empty-title">No videos yet</div><p class="muted text-sm">Add a YouTube link and topic tags so the chatbot can recommend it.</p></div>';
+      return;
+    }
+    list.innerHTML = videoResources.map(v => `
+      <div style="padding:10px 0;border-bottom:1px solid var(--border)">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:500;font-size:14px">${escape(v.title)}</div>
+            <div class="muted text-sm mt-sm"><a href="${escape(v.youtubeUrl)}" target="_blank" rel="noopener">${escape(v.youtubeUrl)}</a></div>
+            <div class="muted text-sm mt-sm">Tags: ${v.topicTags.map(t => `<code style="font-size:11px">${escape(t)}</code>`).join(' ')}</div>
+          </div>
+          <button class="btn btn-sm btn-danger" onclick="deleteVideo('${v.id}')">×</button>
+        </div>
+      </div>`).join('');
+  }
+
+  window.deleteVideo = async (vid) => {
+    if (!confirm('Delete this video?')) return;
+    try {
+      await API.deleteVideoResource(projectId, vid);
+      await loadVideos();
+      toast('Video deleted', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.openVideoForm = () => {
+    document.getElementById('vr-title').value = '';
+    document.getElementById('vr-url').value = '';
+    document.getElementById('vr-tags').value = '';
+    document.getElementById('video-form-error').style.display = 'none';
+    const formCard = document.getElementById('video-form-card');
+    formCard.hidden = false;
+    formCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('vr-title').focus();
+  };
+
+  window.closeVideoForm = () => {
+    document.getElementById('video-form-card').hidden = true;
+  };
+
+  window.saveVideo = async () => {
+    const title = document.getElementById('vr-title').value.trim();
+    const youtubeUrl = document.getElementById('vr-url').value.trim();
+    const topicTags = document.getElementById('vr-tags').value.split(',').map(t => t.trim()).filter(Boolean);
+    const errEl = document.getElementById('video-form-error');
+    errEl.style.display = 'none';
+
+    if (!title) { errEl.textContent = 'Title is required'; errEl.style.display = 'block'; return; }
+    if (!youtubeUrl) { errEl.textContent = 'YouTube URL is required'; errEl.style.display = 'block'; return; }
+    if (topicTags.length === 0) { errEl.textContent = 'At least one topic tag is required'; errEl.style.display = 'block'; return; }
+
+    const btn = document.getElementById('vr-save-btn');
+    btn.disabled = true;
+    try {
+      await API.createVideoResource(projectId, { title, youtubeUrl, topicTags });
+      closeVideoForm();
+      await loadVideos();
+      toast('Video added', 'success');
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+    }
+    btn.disabled = false;
   };
 
   // ── Leads tab ────────────────────────────────────────────────
