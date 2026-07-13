@@ -768,9 +768,13 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
   // ── Progress panel ────────────────────────────────────────────
   progressBtn.addEventListener('click', async () => {
+    if (!sessionId) {
+      addMessage('bot', 'Chat a bit first, then check back here for your progress!');
+      return;
+    }
     progressBtn.disabled = true;
     try {
-      const res = await fetch(`/embed/${publicId}/progress?sessionId=${encodeURIComponent(sessionId || '')}`);
+      const res = await fetch(`/embed/${publicId}/progress?sessionId=${encodeURIComponent(sessionId)}`);
       const data = await res.json();
       if (!res.ok) { addMessage('bot', data.error || 'Could not load your progress.'); return; }
       renderProgressCard(data);

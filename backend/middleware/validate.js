@@ -53,13 +53,36 @@ const schemas = {
 
   ask: z.object({
     question: z.string().min(1, 'question is required').max(1000, 'Question too long'),
-    sessionId: z.string().optional(),
+    sessionId: z.string().optional().nullable(),
+  }),
+
+  study: z.object({
+    message: z.string().min(1, 'message is required').max(1000, 'Message too long'),
+    sessionId: z.string().optional().nullable(),
+  }),
+
+  quizAttempt: z.object({
+    sessionId: z.string().min(1, 'sessionId is required'),
+    question: z.string().min(1, 'question is required').max(2000),
+    topic: z.string().max(200).optional(),
+    selectedIndex: z.number().int().nullable().optional(),
+    correctIndex: z.number().int(),
+    sourceChunkIds: z.array(z.string()).optional(),
+  }),
+
+  flashcardReview: z.object({
+    sessionId: z.string().min(1, 'sessionId is required'),
+    front: z.string().min(1, 'front is required').max(2000),
+    back: z.string().min(1, 'back is required').max(2000),
+    topic: z.string().max(200).optional(),
+    sourceChunkId: z.string().nullable().optional(),
+    selfRating: z.enum(['got_it', 'still_learning'], { error: 'selfRating must be got_it or still_learning' }),
   }),
 
   log: z.object({
     role: z.enum(['user', 'assistant'], { error: 'role must be user or assistant' }),
     text: z.string().min(1, 'text is required').max(2000),
-    sessionId: z.string().optional(),
+    sessionId: z.string().optional().nullable(),
   }),
 };
 
