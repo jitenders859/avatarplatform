@@ -1103,9 +1103,13 @@
     }
 
     /**
-     * Send an image into the live conversation. Mirrors sendText's
-     * realtime_input channel and the audio Blob shape already used for
-     * mic capture (data + mime_type) — see _startMicCapture below.
+     * Send an image into the live conversation as a discrete client_content
+     * turn (inline_data part + a nudge text part), NOT realtime_input —
+     * verified against the live API that realtime_input.video is treated as
+     * a continuous low-rate video stream and does not reliably deliver a
+     * single standalone image (Gemini acknowledges "an image" but can't
+     * describe its contents), whereas a client_content turn with inline_data
+     * is understood correctly.
      * @throws {Error} if there is no active connection — callers should
      *   wrap this in try/catch rather than assume it always succeeds.
      */
@@ -1114,10 +1118,16 @@
         throw new Error('Not connected — start the session before sending an image.');
       }
       this._ws.send(JSON.stringify({
-        realtime_input: { video: { data: base64Data, mime_type: mimeType } },
-      }));
-      this._ws.send(JSON.stringify({
-        realtime_input: { text: 'The user just shared an image. Briefly describe what you notice and ask a clarifying question about what they\'d like to know.' },
+        client_content: {
+          turns: [{
+            role: 'user',
+            parts: [
+              { inline_data: { data: base64Data, mime_type: mimeType } },
+              { text: 'The user just shared an image. Briefly describe what you notice and ask a clarifying question about what they\'d like to know.' },
+            ],
+          }],
+          turn_complete: true,
+        },
       }));
     }
 
