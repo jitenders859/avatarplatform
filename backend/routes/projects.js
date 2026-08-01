@@ -51,6 +51,9 @@ router.post('/', authRequired, async (req, res) => {
     showBranding: true,
     showSourceCards: true,
     showQuickReplies: false,
+    fullScreenOnDesktop: false,
+    fullScreenOnMobile: false,
+    showFullScreenToggle: false,
     widgetOffsetX: 0,
     widgetOffsetY: 0,
     // Avatar placement
@@ -83,6 +86,7 @@ router.patch('/:id', authRequired, async (req, res) => {
     'name', 'characterId', 'systemPrompt', 'voice', 'welcomeMessage',
     'widgetPosition', 'widgetStartOpen', 'textDirection', 'themeColor',
     'showBranding', 'showSourceCards', 'showQuickReplies', 'widgetOffsetX', 'widgetOffsetY',
+    'fullScreenOnDesktop', 'fullScreenOnMobile', 'showFullScreenToggle',
     'avatarPosition', 'avatarSize', 'showAvatarInLauncher',
     'avatarOffsetX', 'avatarOffsetY', 'avatarKeepVisible', 'avatarCompactOnMobile',
     'webhookUrl', 'capabilityTier',
