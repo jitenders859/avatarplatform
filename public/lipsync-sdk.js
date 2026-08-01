@@ -1106,6 +1106,8 @@
      * Send an image into the live conversation. Mirrors sendText's
      * realtime_input channel and the audio Blob shape already used for
      * mic capture (data + mime_type) — see _startMicCapture below.
+     * @throws {Error} if there is no active connection — callers should
+     *   wrap this in try/catch rather than assume it always succeeds.
      */
     sendImage(base64Data, mimeType) {
       if (!base64Data || !this._isConnected || !this._ws) {
