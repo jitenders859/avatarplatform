@@ -67,6 +67,10 @@
         <button class="icon-btn mic-btn" id="mic-btn" title="Hold to speak" aria-label="Microphone">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 1 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 11a7 7 0 0 1-14 0"/><line x1="12" y1="18" x2="12" y2="22"/></svg>
         </button>
+        <button class="icon-btn" id="image-btn" title="Upload an image" aria-label="Upload an image" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+        </button>
+        <input type="file" id="image-input" accept="image/jpeg,image/png,image/webp" style="display:none" />
         <button class="icon-btn" id="quiz-btn" title="Quiz me on this" aria-label="Quiz me" style="display:none">📝</button>
         <button class="icon-btn" id="progress-btn" title="Your progress" aria-label="Your progress" style="display:none">📊</button>
         <textarea id="text-input" rows="1" placeholder="Type a message…" aria-label="Message"></textarea>
@@ -141,6 +145,8 @@
   const statusText        = document.getElementById('status-text');
   const sendBtn           = document.getElementById('send-btn');
   const micBtn            = document.getElementById('mic-btn');
+  const imageBtn           = document.getElementById('image-btn');
+  const imageInput         = document.getElementById('image-input');
   const quizBtn           = document.getElementById('quiz-btn');
   const progressBtn       = document.getElementById('progress-btn');
   const textInput         = document.getElementById('text-input');
@@ -329,6 +335,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       closePanel(true);
     }
     setupDrag();
+    setupImageDragDrop();
     notifyParent({ type: 'ready' });
   }
 
@@ -349,6 +356,37 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       if (root.dataset.fullscreen === '1') return;
       headerEl.style.cursor = 'grabbing';
       notifyParent({ type: 'drag-start' });
+    });
+  }
+
+  // ── Drag-and-drop image upload (opt-in per project) ────────────
+  function setupImageDragDrop() {
+    if (!config.project.allowDragDropUpload) return;
+    let dragDepth = 0;
+    const hasFiles = e => e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files');
+
+    root.addEventListener('dragenter', e => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth++;
+      root.classList.add('drag-over-image');
+    });
+    root.addEventListener('dragover', e => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+    });
+    root.addEventListener('dragleave', e => {
+      if (!hasFiles(e)) return;
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (dragDepth === 0) root.classList.remove('drag-over-image');
+    });
+    root.addEventListener('drop', e => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      dragDepth = 0;
+      root.classList.remove('drag-over-image');
+      const file = e.dataTransfer.files[0];
+      if (file) handleImageFile(file);
     });
   }
 
@@ -400,6 +438,92 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         logTurn('user', text);
       });
     }, 150);
+  }
+
+  // ── Image upload ──────────────────────────────────────────────
+  const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+  const MAX_IMAGE_DIM = 1600;
+  const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+  function loadImageFile(file) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Could not read that image file.')); };
+      img.src = url;
+    });
+  }
+
+  async function prepareImageForSend(file) {
+    if (!file) throw new Error('No file selected.');
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      throw new Error('Please upload a JPEG, PNG, or WEBP image.');
+    }
+
+    const img = await loadImageFile(file);
+    const longEdge = Math.max(img.width, img.height);
+    const scale = longEdge > MAX_IMAGE_DIM ? MAX_IMAGE_DIM / longEdge : 1;
+    const targetW = Math.max(1, Math.round(img.width * scale));
+    const targetH = Math.max(1, Math.round(img.height * scale));
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetW;
+    canvas.height = targetH;
+    canvas.getContext('2d').drawImage(img, 0, 0, targetW, targetH);
+
+    let quality = 0.85;
+    let dataUrl = canvas.toDataURL('image/jpeg', quality);
+    while (dataUrl.length * 0.75 > MAX_IMAGE_BYTES && quality > 0.4) {
+      quality -= 0.15;
+      dataUrl = canvas.toDataURL('image/jpeg', quality);
+    }
+    if (dataUrl.length * 0.75 > MAX_IMAGE_BYTES) {
+      throw new Error('That image is too large even after compression — try a smaller photo.');
+    }
+
+    return { base64: dataUrl.split(',')[1], mimeType: 'image/jpeg', dataUrl };
+  }
+
+  function addImageMessage(dataUrl) {
+    const el = document.createElement('div');
+    el.className = 'msg user image-msg';
+    const img = document.createElement('img');
+    img.className = 'image-thumb';
+    img.src = dataUrl;
+    img.alt = 'Uploaded image';
+    el.appendChild(img);
+    messagesEl.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('visible'));
+    scrollToBottom();
+  }
+
+  async function handleImageFile(file) {
+    let prepared;
+    try {
+      prepared = await prepareImageForSend(file);
+    } catch (e) {
+      addMessage('bot', `⚠️ ${e.message}`);
+      return;
+    }
+
+    addImageMessage(prepared.dataUrl);
+
+    const send = () => {
+      try {
+        avatar.sendImage(prepared.base64, prepared.mimeType);
+        logTurn('user', '[Image shared]');
+      } catch (e) {
+        addMessage('bot', '⚠️ Could not send the image — try again once the chat has started.');
+      }
+    };
+
+    if (!statusDot.classList.contains('connected')) {
+      avatar.connect();
+      waitForConnected(send);
+    } else {
+      send();
+    }
   }
 
   // ── 4. Streaming bot replies ────────────────────────────────
@@ -946,6 +1070,13 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     }
   });
   sendBtn.addEventListener('click', () => sendMessage(textInput.value));
+
+  imageBtn.addEventListener('click', () => imageInput.click());
+  imageInput.addEventListener('change', () => {
+    const file = imageInput.files[0];
+    imageInput.value = '';
+    if (file) handleImageFile(file);
+  });
 
   let micOn = false;
   micBtn.addEventListener('click', async () => {
