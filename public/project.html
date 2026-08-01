@@ -206,6 +206,30 @@
             <span class="help">When the assistant offers a short menu of choices, show them as tappable buttons.</span>
           </div>
           <div class="field">
+            <label>Full-screen on desktop</label>
+            <select class="select" id="f-fullscreen-desktop">
+              <option value="false">No — floating panel (default)</option>
+              <option value="true">Yes — open panel fills the screen</option>
+            </select>
+            <span class="help">No effect when Position is Inline.</span>
+          </div>
+          <div class="field">
+            <label>Full-screen on mobile</label>
+            <select class="select" id="f-fullscreen-mobile">
+              <option value="false">No — floating panel (default)</option>
+              <option value="true">Yes — open panel fills the screen</option>
+            </select>
+            <span class="help">No effect when Position is Inline.</span>
+          </div>
+          <div class="field">
+            <label>Show maximize/restore button</label>
+            <select class="select" id="f-fullscreen-toggle">
+              <option value="false">No</option>
+              <option value="true">Yes — let visitors switch modes themselves</option>
+            </select>
+            <span class="help">Adds a header button so visitors can toggle full screen regardless of the defaults above.</span>
+          </div>
+          <div class="field">
             <label>Show "Powered by" branding</label>
             <select class="select" id="f-branding">
               <option value="true">Yes</option>
@@ -647,6 +671,7 @@
   // Tab switching
   document.querySelectorAll('.tab').forEach(t => {
     t.addEventListener('click', () => {
+      if (t.hidden) return;
       document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
       t.classList.add('active');
       document.querySelectorAll('.tab-panel').forEach(p => p.hidden = true);
@@ -665,6 +690,28 @@
     });
   });
 
+  // Quiz/Flashcards need 'advanced'; Videos need 'medium' or 'advanced' (see tiers.js).
+  // Tabs for features the current tier doesn't include stay hidden until the
+  // owner picks a tier that includes them, rather than showing an always-on
+  // tab that just displays an upgrade notice.
+  function applyTierVisibility(tier) {
+    const quizTab = document.querySelector('.tab[data-tab="quiz"]');
+    const flashcardsTab = document.querySelector('.tab[data-tab="flashcards"]');
+    const videosTab = document.querySelector('.tab[data-tab="videos"]');
+    quizTab.hidden = tier !== 'advanced';
+    flashcardsTab.hidden = tier !== 'advanced';
+    videosTab.hidden = tier === 'basic';
+
+    const activeTab = document.querySelector('.tab.active');
+    if (activeTab && activeTab.hidden) {
+      document.querySelector('.tab[data-tab="settings"]').click();
+    }
+  }
+
+  document.getElementById('f-tier').addEventListener('change', (e) => {
+    applyTierVisibility(e.target.value);
+  });
+
   async function load() {
     try {
       const [{ project: p }, { characters: chars }] = await Promise.all([
@@ -678,6 +725,7 @@
       document.getElementById('f-welcome').value = p.welcomeMessage || '';
       document.getElementById('f-prompt').value = p.systemPrompt || '';
       document.getElementById('f-tier').value = p.capabilityTier || 'basic';
+      applyTierVisibility(p.capabilityTier || 'basic');
 
       const charSel = document.getElementById('f-character');
       charSel.innerHTML = chars.map(c =>
@@ -696,6 +744,9 @@
       document.getElementById('f-theme').value     = p.themeColor || '#7c6af5';
       document.getElementById('f-sources').value   = String(p.showSourceCards !== false);
       document.getElementById('f-quickreplies').value = String(p.showQuickReplies === true);
+      document.getElementById('f-fullscreen-desktop').value = String(p.fullScreenOnDesktop === true);
+      document.getElementById('f-fullscreen-mobile').value  = String(p.fullScreenOnMobile === true);
+      document.getElementById('f-fullscreen-toggle').value  = String(p.showFullScreenToggle === true);
       document.getElementById('f-branding').value  = String(p.showBranding !== false);
       document.getElementById('f-offset-x').value  = p.widgetOffsetX ?? 0;
       document.getElementById('f-offset-y').value  = p.widgetOffsetY ?? 0;
@@ -758,6 +809,7 @@
       project = p;
       document.getElementById('title').textContent = p.name;
       document.getElementById('test-webhook-btn').hidden = !p.webhookUrl;
+      applyTierVisibility(p.capabilityTier || 'basic');
       toast('Saved', 'success');
     } catch (e) { toast(e.message, 'error'); }
   });
@@ -795,6 +847,9 @@
         themeColor:           document.getElementById('f-theme').value,
         showSourceCards:      document.getElementById('f-sources').value === 'true',
         showQuickReplies:     document.getElementById('f-quickreplies').value === 'true',
+        fullScreenOnDesktop:  document.getElementById('f-fullscreen-desktop').value === 'true',
+        fullScreenOnMobile:   document.getElementById('f-fullscreen-mobile').value === 'true',
+        showFullScreenToggle: document.getElementById('f-fullscreen-toggle').value === 'true',
         showBranding:         document.getElementById('f-branding').value === 'true',
         widgetOffsetX:        parseInt(document.getElementById('f-offset-x').value, 10) || 0,
         widgetOffsetY:        parseInt(document.getElementById('f-offset-y').value, 10) || 0,
