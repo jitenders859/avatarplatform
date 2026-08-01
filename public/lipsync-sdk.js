@@ -1102,6 +1102,23 @@
       this._fire('onTranscript', 'user', text);
     }
 
+    /**
+     * Send an image into the live conversation. Mirrors sendText's
+     * realtime_input channel and the audio Blob shape already used for
+     * mic capture (data + mime_type) — see _startMicCapture below.
+     */
+    sendImage(base64Data, mimeType) {
+      if (!base64Data || !this._isConnected || !this._ws) {
+        throw new Error('Not connected — start the session before sending an image.');
+      }
+      this._ws.send(JSON.stringify({
+        realtime_input: { video: { data: base64Data, mime_type: mimeType } },
+      }));
+      this._ws.send(JSON.stringify({
+        realtime_input: { text: 'The user just shared an image. Briefly describe what you notice and ask a clarifying question about what they\'d like to know.' },
+      }));
+    }
+
     /** Start microphone capture (hold-to-speak) */
     async startMic() {
       if (!this._isConnected || this._isMicOn) return;
