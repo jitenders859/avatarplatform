@@ -46,6 +46,9 @@
             <span id="capture-pill" style="display:none;margin-left:8px;font-size:10px;background:rgba(255,255,255,.15);border-radius:10px;padding:2px 7px;letter-spacing:.02em"></span>
           </div>
         </div>
+        <button class="icon-btn" id="fullscreen-btn" title="Full screen" aria-label="Full screen" hidden>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>
+        </button>
         <button class="icon-btn" id="minimize-btn" title="Minimize" aria-label="Minimize">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12h14"/></svg>
         </button>
@@ -122,6 +125,7 @@
   let lastUserFinal = '';
   let unreadCount = 0;
   let panelOpen = true;
+  let fullscreenActive = false;
   let avatarCanvas = null;   // single Rive canvas element shuttled between slots
 
   const AVATAR_SIZES = { small: 80, medium: 120, large: 160, xlarge: 200 };
@@ -141,6 +145,7 @@
   const progressBtn       = document.getElementById('progress-btn');
   const textInput         = document.getElementById('text-input');
   const minimizeBtn       = document.getElementById('minimize-btn');
+  const fullscreenBtn     = document.getElementById('fullscreen-btn');
   const bootOverlay       = document.getElementById('boot-overlay');
   const branding          = document.getElementById('branding');
   const avatarRow         = document.getElementById('avatar-row');
@@ -170,6 +175,22 @@
     if (config.project.capabilityTier === 'advanced') {
       quizBtn.style.display = '';
       progressBtn.style.display = '';
+    }
+
+    // Full-screen mode: desktop/mobile decided by pointer type, not
+    // viewport width — the iframe's own rendered box is small (≤400px)
+    // regardless of the host device, so a width check would always
+    // read "mobile". Not applicable to 'inline' (already full-bleed).
+    if (position !== 'inline') {
+      const isMobileDevice = window.matchMedia('(pointer: coarse)').matches;
+      fullscreenActive = isMobileDevice
+        ? !!config.project.fullScreenOnMobile
+        : !!config.project.fullScreenOnDesktop;
+      root.dataset.fullscreen = fullscreenActive ? '1' : '0';
+      if (config.project.showFullScreenToggle) {
+        fullscreenBtn.hidden = false;
+        updateFullscreenIcon();
+      }
     }
 
     // Avatar placement settings
