@@ -60,26 +60,27 @@ POST /embed/:publicId/log  →  messages row: role=user, text="[Image shared]"
    (existing endpoint, reused as-is — no schema change to `messages`)
 ```
 
-### Known technical unknown
+### Technical unknown — resolved during implementation
 
-The Live API's exact wire format for a one-off (non-streaming) image isn't
-fully pinned down from public docs. Two candidates:
+The Live API's exact wire format for a one-off (non-streaming) image wasn't
+fully pinned down from public docs, so two candidates were considered:
 
 - **`realtimeInput.video`** — a `Blob` (`mimeType` + base64 `data`) sent on
   the same `realtime_input` channel `sendText()` (text) and the audio
-  streaming code already use in `lipsync-sdk.js`. Intended primarily for
-  continuous video/webcam frames, but a single frame is just one instance of
-  that stream.
+  streaming code already use in `lipsync-sdk.js`.
 - **`clientContent.turns[]`** — a discrete `Content` turn with an
   `inlineData` `Part`, closer to "attach this to the conversation" semantics.
 
-**Recommendation:** try `realtimeInput.video` first, since it's consistent
-with the existing `realtime_input.text`/`realtime_input.audio` pattern
-already proven to work in this codebase. Fall back to `clientContent.turns`
-if that doesn't behave like a discrete one-off attachment (e.g. if Gemini
-treats it as an ongoing video stream rather than a single frame). This
-should be verified with a quick manual spike against a live session as the
-first implementation task, before wiring up UI around it.
+**Resolution:** verified directly against the live Gemini API with a
+standalone Node script (bypassing the lack of browser automation in this
+environment) using a real generated test image. `realtimeInput.video` does
+**not** work for a single discrete image — Gemini acknowledged receiving
+"an image" but could not describe its contents, confirming the suspicion
+that this channel is treated as a continuous low-rate video stream, not a
+one-off attachment. `clientContent.turns` with an `inlineData` part **does**
+work — Gemini accurately described the test image's shapes and colors.
+`sendImage()` in `public/lipsync-sdk.js` implements the working
+`client_content.turns` form.
 
 ## Components
 
@@ -129,9 +130,14 @@ until the owner opts in.
     confirm/cancel step).
   - Call `avatar.sendImage(base64, mimeType)`.
   - `POST /embed/:publicId/log` with `{ role: 'user', text: '[Image shared]' }`.
-- If the Live WebSocket isn't connected, show an inline error ("Try again
-  once the chat has started") instead of silently dropping the image or
-  queuing it.
+- If the Live WebSocket isn't connected yet, mirror the existing mic-button
+  pattern: call `avatar.connect()` and wait for the connection (`waitForConnected`)
+  before sending, rather than erroring immediately — this is a deliberate
+  deviation from this doc's original "show an inline error" plan, made
+  during implementation to match how every other send-path in this widget
+  already behaves. The thumbnail dims (a `sending` state) while the
+  connection is pending so the wait isn't invisible, and an inline error
+  only appears if the send itself still fails once connected.
 
 ### 5. Widget SDK — `public/lipsync-sdk.js`
 
