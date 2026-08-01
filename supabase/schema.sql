@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS projects (
   show_branding            BOOLEAN DEFAULT true,
   show_source_cards        BOOLEAN DEFAULT true,
   show_quick_replies       BOOLEAN DEFAULT false,
+  full_screen_on_desktop   BOOLEAN DEFAULT false,
+  full_screen_on_mobile    BOOLEAN DEFAULT false,
+  show_full_screen_toggle  BOOLEAN DEFAULT false,
   widget_offset_x          INTEGER DEFAULT 0,
   widget_offset_y          INTEGER DEFAULT 0,
   -- Avatar placement
