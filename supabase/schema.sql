@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS projects (
   show_branding            BOOLEAN DEFAULT true,
   show_source_cards        BOOLEAN DEFAULT true,
   show_quick_replies       BOOLEAN DEFAULT false,
+  allow_drag_drop_upload   BOOLEAN DEFAULT false,
   full_screen_on_desktop   BOOLEAN DEFAULT false,
   full_screen_on_mobile    BOOLEAN DEFAULT false,
   show_full_screen_toggle  BOOLEAN DEFAULT false,
