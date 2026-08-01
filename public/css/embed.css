@@ -261,6 +261,20 @@ body.mode-inline .launcher { display: none; }
 }
 .msg.interim { opacity: .65; font-style: italic; }
 
+.msg.image-msg { padding: 6px; background: transparent; }
+.image-thumb {
+  display: block;
+  max-width: 160px;
+  max-height: 160px;
+  border-radius: 10px;
+  object-fit: cover;
+}
+
+.widget-root.drag-over-image .panel {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+
 [dir="rtl"] .msg.user { align-self: flex-start; border-radius: 14px 14px 14px 4px; }
 [dir="rtl"] .msg.bot  { align-self: flex-end;   border-radius: 14px 14px 4px 14px; }
 [dir="rtl"] .body { text-align: right; }
