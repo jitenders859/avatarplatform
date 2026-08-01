@@ -206,6 +206,14 @@
             <span class="help">When the assistant offers a short menu of choices, show them as tappable buttons.</span>
           </div>
           <div class="field">
+            <label>Allow drag &amp; drop image upload</label>
+            <select class="select" id="f-dragdrop">
+              <option value="false">No — click-to-upload button only (default)</option>
+              <option value="true">Yes — visitors can also drag an image onto the widget</option>
+            </select>
+            <span class="help">The image upload button is always available regardless of this setting; this only controls whether dropping a file onto the widget also works.</span>
+          </div>
+          <div class="field">
             <label>Full-screen on desktop</label>
             <select class="select" id="f-fullscreen-desktop">
               <option value="false">No — floating panel (default)</option>
@@ -744,6 +752,7 @@
       document.getElementById('f-theme').value     = p.themeColor || '#7c6af5';
       document.getElementById('f-sources').value   = String(p.showSourceCards !== false);
       document.getElementById('f-quickreplies').value = String(p.showQuickReplies === true);
+      document.getElementById('f-dragdrop').value = String(p.allowDragDropUpload === true);
       document.getElementById('f-fullscreen-desktop').value = String(p.fullScreenOnDesktop === true);
       document.getElementById('f-fullscreen-mobile').value  = String(p.fullScreenOnMobile === true);
       document.getElementById('f-fullscreen-toggle').value  = String(p.showFullScreenToggle === true);
@@ -847,6 +856,7 @@
         themeColor:           document.getElementById('f-theme').value,
         showSourceCards:      document.getElementById('f-sources').value === 'true',
         showQuickReplies:     document.getElementById('f-quickreplies').value === 'true',
+        allowDragDropUpload:  document.getElementById('f-dragdrop').value === 'true',
         fullScreenOnDesktop:  document.getElementById('f-fullscreen-desktop').value === 'true',
         fullScreenOnMobile:   document.getElementById('f-fullscreen-mobile').value === 'true',
         showFullScreenToggle: document.getElementById('f-fullscreen-toggle').value === 'true',
