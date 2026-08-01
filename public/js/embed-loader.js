@@ -16,6 +16,9 @@
  *      overlay captures pointermove/pointerup during the drag so events
  *      don't get swallowed by the iframe. Final position is persisted to
  *      localStorage keyed by publicId.
+ *   6. Expands the iframe to cover the whole viewport on a 'fullscreen'
+ *      postMessage (or an 'open' message carrying { fullscreen: true }),
+ *      snapshotting the prior inline styles so restoring is exact.
  */
 (function () {
   'use strict';
@@ -49,6 +52,7 @@
   let iframeReady = false;           // true once iframe fires the 'ready' postMessage
   let pendingOpen = false;           // user clicked placeholder before iframe was ready
   let placeholder = null;            // FAB shown while iframe loads
+  let preFullscreenStyle = null;     // snapshot of inline styles before entering full-screen
 
   // localStorage key for persisting drag position
   const POS_KEY = `ap-pos-${publicId}`;
@@ -238,6 +242,24 @@
   }
 
   // ── Helpers ────────────────────────────────────────────────────
+  // Snapshots live inline styles before overriding them, so restoring
+  // is exact even if the widget was dragged to a custom position first.
+  function setFullscreenIframe(enabled) {
+    if (enabled) {
+      if (!preFullscreenStyle) {
+        preFullscreenStyle = {
+          top: iframe.style.top, left: iframe.style.left,
+          right: iframe.style.right, bottom: iframe.style.bottom,
+          width: iframe.style.width, height: iframe.style.height,
+        };
+      }
+      Object.assign(iframe.style, { top: '0', left: '0', right: '0', bottom: '0', width: '', height: '' });
+    } else if (preFullscreenStyle) {
+      Object.assign(iframe.style, preFullscreenStyle);
+      preFullscreenStyle = null;
+    }
+  }
+
   function sendToIframe(data) {
     if (iframe && iframe.contentWindow) {
       iframe.contentWindow.postMessage({ source: 'avatar-platform-host', ...data }, '*');
@@ -288,12 +310,20 @@
 
     if (data.type === 'open') {
       panelOpen = true;
-      iframe.style.width  = `min(${OPEN_W}px, calc(100vw - ${OFFSET_X * 2 + 8}px))`;
-      iframe.style.height = `min(${OPEN_H}px, calc(100vh - ${OFFSET_Y + 8}px))`;
+      if (data.fullscreen) {
+        setFullscreenIframe(true);
+      } else {
+        iframe.style.width  = `min(${OPEN_W}px, calc(100vw - ${OFFSET_X * 2 + 8}px))`;
+        iframe.style.height = `min(${OPEN_H}px, calc(100vh - ${OFFSET_Y + 8}px))`;
+      }
     } else if (data.type === 'close') {
       panelOpen = false;
+      setFullscreenIframe(false);
       iframe.style.width  = CLOSED_W + 'px';
       iframe.style.height = CLOSED_H + 'px';
+    } else if (data.type === 'fullscreen') {
+      if (!panelOpen) return;
+      setFullscreenIframe(!!data.enabled);
     }
   });
 })();
