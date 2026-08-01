@@ -153,6 +153,9 @@
   const micBtn            = document.getElementById('mic-btn');
   const imageBtn           = document.getElementById('image-btn');
   const imageInput         = document.getElementById('image-input');
+  const imageLightbox      = document.getElementById('image-lightbox');
+  const lightboxImg        = document.getElementById('lightbox-img');
+  const lightboxClose      = document.getElementById('lightbox-close');
   const quizBtn           = document.getElementById('quiz-btn');
   const progressBtn       = document.getElementById('progress-btn');
   const textInput         = document.getElementById('text-input');
@@ -498,12 +501,30 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     img.className = 'image-thumb';
     img.src = dataUrl;
     img.alt = 'Uploaded image';
+    img.addEventListener('click', () => openLightbox(dataUrl));
     el.appendChild(img);
     messagesEl.appendChild(el);
     requestAnimationFrame(() => el.classList.add('visible'));
     scrollToBottom();
     return el;
   }
+
+  function openLightbox(src) {
+    lightboxImg.src = src;
+    imageLightbox.hidden = false;
+  }
+
+  function closeLightbox() {
+    imageLightbox.hidden = true;
+  }
+
+  lightboxClose.addEventListener('click', closeLightbox);
+  imageLightbox.addEventListener('click', (e) => {
+    if (e.target === imageLightbox) closeLightbox();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !imageLightbox.hidden) closeLightbox();
+  });
 
   let imageUploadInFlight = false;
   async function handleImageFile(file) {
