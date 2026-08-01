@@ -82,6 +82,9 @@ router.get('/:publicId/config', async (req, res) => {
         showBranding:          project.showBranding          !== false,
         showSourceCards:       project.showSourceCards       !== false,
         showQuickReplies:      project.showQuickReplies      === true,
+        fullScreenOnDesktop:   project.fullScreenOnDesktop   === true,
+        fullScreenOnMobile:    project.fullScreenOnMobile    === true,
+        showFullScreenToggle:  project.showFullScreenToggle  === true,
         widgetOffsetX:         project.widgetOffsetX         || 0,
         widgetOffsetY:         project.widgetOffsetY         || 0,
         // Avatar placement
