@@ -51,6 +51,7 @@ router.post('/', authRequired, async (req, res) => {
     showBranding: true,
     showSourceCards: true,
     showQuickReplies: false,
+    allowDragDropUpload: false,
     fullScreenOnDesktop: false,
     fullScreenOnMobile: false,
     showFullScreenToggle: false,
@@ -85,7 +86,7 @@ router.patch('/:id', authRequired, async (req, res) => {
   const allowed = [
     'name', 'characterId', 'systemPrompt', 'voice', 'welcomeMessage',
     'widgetPosition', 'widgetStartOpen', 'textDirection', 'themeColor',
-    'showBranding', 'showSourceCards', 'showQuickReplies', 'widgetOffsetX', 'widgetOffsetY',
+    'showBranding', 'showSourceCards', 'showQuickReplies', 'allowDragDropUpload', 'widgetOffsetX', 'widgetOffsetY',
     'fullScreenOnDesktop', 'fullScreenOnMobile', 'showFullScreenToggle',
     'avatarPosition', 'avatarSize', 'showAvatarInLauncher',
     'avatarOffsetX', 'avatarOffsetY', 'avatarKeepVisible', 'avatarCompactOnMobile',
