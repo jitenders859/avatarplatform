@@ -458,7 +458,6 @@ body.mode-inline .launcher { display: none; }
   display: flex;
   align-items: flex-end;
   justify-content: flex-end;    /* default: right */
-  background: linear-gradient(to top, var(--bg-2) 0%, transparent 100%);
   position: relative;
   overflow: visible;
   pointer-events: none;
