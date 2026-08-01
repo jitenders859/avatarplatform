@@ -91,6 +91,12 @@
     </section>
   </div>
 
+  <!-- Full-size image viewer, opened by clicking a chat thumbnail -->
+  <div class="image-lightbox" id="image-lightbox" role="dialog" aria-modal="true" aria-label="Image preview" hidden>
+    <button class="lightbox-close" id="lightbox-close" aria-label="Close" type="button">✕</button>
+    <img id="lightbox-img" alt="Uploaded image" />
+  </div>
+
   <!-- Off-screen host the SDK uses to build its canvas before we reparent it -->
   <div id="sdk-host" style="position:fixed;left:-99999px;top:-99999px;width:300px;height:300px;"></div>
 

@@ -277,6 +277,45 @@ body.mode-inline .launcher { display: none; }
   outline-offset: -2px;
 }
 
+/* ── Image lightbox ────────────────────────────────────────── */
+.image-thumb { cursor: pointer; }
+
+.image-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  background: rgba(0, 0, 0, .8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.image-lightbox[hidden] { display: none; }
+
+#lightbox-img {
+  max-width: 92%;
+  max-height: 92%;
+  object-fit: contain;
+  border-radius: 8px;
+}
+
+.lightbox-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255, 255, 255, .12);
+  color: #fff;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  transition: background .15s;
+}
+.lightbox-close:hover { background: rgba(255, 255, 255, .22); }
+
 [dir="rtl"] .msg.user { align-self: flex-start; border-radius: 14px 14px 14px 4px; }
 [dir="rtl"] .msg.bot  { align-self: flex-end;   border-radius: 14px 14px 4px 14px; }
 [dir="rtl"] .body { text-align: right; }
