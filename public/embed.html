@@ -496,6 +496,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     messagesEl.appendChild(el);
     requestAnimationFrame(() => el.classList.add('visible'));
     scrollToBottom();
+    return el;
   }
 
   let imageUploadInFlight = false;
@@ -512,9 +513,12 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       return;
     }
 
-    addImageMessage(prepared.dataUrl);
+    const bubble = addImageMessage(prepared.dataUrl);
+    const alreadyConnected = statusDot.classList.contains('connected');
+    if (!alreadyConnected) bubble.classList.add('sending');
 
     const send = () => {
+      bubble.classList.remove('sending');
       try {
         avatar.sendImage(prepared.base64, prepared.mimeType);
         logTurn('user', '[Image shared]');

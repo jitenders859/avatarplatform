@@ -268,7 +268,9 @@ body.mode-inline .launcher { display: none; }
   max-height: 160px;
   border-radius: 10px;
   object-fit: cover;
+  transition: opacity .2s;
 }
+.msg.image-msg.sending .image-thumb { opacity: .5; }
 
 .widget-root.drag-over-image .panel {
   outline: 2px dashed var(--accent);
