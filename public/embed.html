@@ -498,12 +498,17 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     scrollToBottom();
   }
 
+  let imageUploadInFlight = false;
   async function handleImageFile(file) {
+    if (imageUploadInFlight) return;
+    imageUploadInFlight = true;
+
     let prepared;
     try {
       prepared = await prepareImageForSend(file);
     } catch (e) {
       addMessage('bot', `⚠️ ${e.message}`);
+      imageUploadInFlight = false;
       return;
     }
 
@@ -515,6 +520,8 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         logTurn('user', '[Image shared]');
       } catch (e) {
         addMessage('bot', '⚠️ Could not send the image — try again once the chat has started.');
+      } finally {
+        imageUploadInFlight = false;
       }
     };
 
