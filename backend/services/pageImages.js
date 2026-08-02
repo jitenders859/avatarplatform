@@ -30,6 +30,10 @@ const PAGE_CLASSIFY_MODEL = process.env.PAGE_CLASSIFY_MODEL || 'gemini-3.5-flash
 const UPLOAD_ROOT = path.join(__dirname, '..', '..', 'data', 'uploads');
 // Cap per-document cost/latency — one Gemini vision call per page.
 const MAX_PAGES = parseInt(process.env.MAX_PAGE_IMAGE_PAGES || '200', 10);
+// Caps parsing of the vision response — a page with more than this many
+// distinct figures is vanishingly rare, and it bounds worst-case crop/embed
+// cost per page.
+const MAX_FIGURES_PER_PAGE = parseInt(process.env.MAX_FIGURES_PER_PAGE || '6', 10);
 
 /** Pulls the server-recommended wait out of a 429's structured RetryInfo, if present. */
 function retryDelayMs(err) {
@@ -73,7 +77,7 @@ function boxToPixelRect(box2d, pageWidth, pageHeight) {
  * off. Retries with the server's own suggested delay when given, since
  * that's more precise than blind exponential backoff for quota errors.
  */
-async function classifyAndCaption(pngBuffer) {
+async function detectFigures(pngBuffer) {
   const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
   const model = genai.getGenerativeModel({
     model: PAGE_CLASSIFY_MODEL,
@@ -82,17 +86,29 @@ async function classifyAndCaption(pngBuffer) {
       responseSchema: {
         type: 'object',
         properties: {
-          hasFigure: { type: 'boolean' },
-          caption: { type: 'string' },
+          figures: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                caption: { type: 'string' },
+                box_2d: { type: 'array', items: { type: 'integer' } },
+              },
+              required: ['caption', 'box_2d'],
+            },
+          },
         },
-        required: ['hasFigure', 'caption'],
+        required: ['figures'],
       },
     },
   });
   const prompt =
-    'Does this page contain a diagram, chart, technical illustration, table, or other meaningful ' +
-    'visual figure — as opposed to being plain paragraph text? Set hasFigure accordingly. If true, ' +
-    'write a one-sentence caption describing what the figure shows. If false, caption can be empty.';
+    'Identify every distinct diagram, chart, technical illustration, table, or other meaningful ' +
+    'visual figure on this page — as opposed to plain paragraph text. Treat each separate figure as ' +
+    'its own entry, even if several appear on the same page; do not merge unrelated figures into one ' +
+    'box. For each, provide a one-sentence caption describing what it shows and a bounding box as ' +
+    'box_2d: [ymin, xmin, ymax, xmax] with integers 0-1000 relative to the full page image. If the ' +
+    'page has no meaningful figures, return an empty figures array.';
   const parts = [
     { inlineData: { mimeType: 'image/png', data: pngBuffer.toString('base64') } },
     { text: prompt },
@@ -102,7 +118,8 @@ async function classifyAndCaption(pngBuffer) {
   while (true) {
     try {
       const result = await model.generateContent(parts);
-      return JSON.parse(result.response.text());
+      const parsed = JSON.parse(result.response.text());
+      return Array.isArray(parsed.figures) ? parsed.figures.slice(0, MAX_FIGURES_PER_PAGE) : [];
     } catch (e) {
       if (e.status !== 429 || attempt >= 4) throw e;
       const wait = retryDelayMs(e) ?? 500 * Math.pow(2, attempt);
