@@ -164,8 +164,10 @@ async function processPdfPageImages(pdfPath, fileId, projectId, numPages) {
   // the old ones every time, rather than replacing them (chunks already
   // get this treatment via db.remove('chunks', { fileId }) in process.js;
   // this mirrors that for page_images).
-  await fs.promises.rm(outDir, { recursive: true, force: true }).catch(() => {});
-  await db.remove('pageImages', { fileId }).catch(() => {});
+  await fs.promises.rm(outDir, { recursive: true, force: true })
+    .catch(e => logger.warn({ fileId, err: e.message }, 'failed to clear prior crop files, stale files may remain on disk'));
+  await db.remove('pageImages', { fileId })
+    .catch(e => logger.warn({ fileId, err: e.message }, 'failed to clear prior page_images rows, duplicates may accumulate'));
   await fs.promises.mkdir(outDir, { recursive: true });
 
   const pending = []; // { pageNumber, imagePath, caption, bbox: {x,y,w,h} normalized 0-1
