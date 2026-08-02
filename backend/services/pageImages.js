@@ -22,8 +22,10 @@
 const fs = require('fs');
 const path = require('path');
 const { v4: uuid } = require('uuid');
+const { createCanvas } = require('@napi-rs/canvas');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('../db');
+const { embedMany, MODEL: EMBED_MODEL, OUTPUT_DIM: EMBED_DIM } = require('./embed');
 const logger = require('../logger').child({ module: 'services/pageImages' });
 
 const PAGE_CLASSIFY_MODEL = process.env.PAGE_CLASSIFY_MODEL || 'gemini-3.5-flash';
@@ -67,6 +69,16 @@ function boxToPixelRect(box2d, pageWidth, pageHeight) {
 
   if (width <= 0 || height <= 0) return null;
   return { x, y, width, height };
+}
+
+/** Blits a sub-rectangle of an already-rendered page canvas onto a new,
+ * rect-sized canvas — no PNG re-decoding needed, it's a canvas-to-canvas
+ * copy. */
+function cropFigure(sourceCanvas, rect) {
+  const dest = createCanvas(rect.width, rect.height);
+  const ctx = dest.getContext('2d');
+  ctx.drawImage(sourceCanvas, rect.x, rect.y, rect.width, rect.height, 0, 0, rect.width, rect.height);
+  return dest;
 }
 
 /**
@@ -130,13 +142,15 @@ async function detectFigures(pngBuffer) {
 }
 
 /**
- * Renders and classifies every page of a PDF, persisting an image + DB
- * row only for pages with a qualifying figure. Returns a Map of
- * pageNumber -> pageImageId for chunkPages' chunks to reference.
+ * Renders every page of a PDF, detects figures on each via Gemini vision,
+ * crops and persists each qualifying figure as its own image + DB row, and
+ * embeds every figure's caption in one batched call per file. Returns a Map
+ * of pageNumber -> array of page_images row ids, for logging/diagnostics
+ * (retrieval itself queries page_images directly — see vector.js and
+ * routes/embed.js — rather than using this return value).
  */
 async function processPdfPageImages(pdfPath, fileId, projectId, numPages) {
   const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const { createCanvas } = require('@napi-rs/canvas');
 
   const pdfBuffer = await fs.promises.readFile(pdfPath);
   const doc = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), disableWorker: true }).promise;
@@ -144,7 +158,7 @@ async function processPdfPageImages(pdfPath, fileId, projectId, numPages) {
   const outDir = path.join(UPLOAD_ROOT, projectId, 'pages', fileId);
   await fs.promises.mkdir(outDir, { recursive: true });
 
-  const pageImageIdByNumber = new Map();
+  const pending = []; // { pageNumber, imagePath, caption, bbox: {x,y,w,h} normalized 0-1
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber++) {
     try {
       const page = await doc.getPage(pageNumber);
@@ -154,20 +168,73 @@ async function processPdfPageImages(pdfPath, fileId, projectId, numPages) {
       await page.render({ canvasContext: ctx, viewport, canvas }).promise;
       const png = await canvas.encode('png');
 
-      const { hasFigure, caption } = await classifyAndCaption(png);
-      if (!hasFigure) continue;
-
-      const imagePath = path.join(outDir, `page-${pageNumber}.png`);
-      await fs.promises.writeFile(imagePath, png);
-
-      const id = uuid();
-      await db.insert('pageImages', {
-        id, fileId, projectId, pageNumber, imagePath, caption: caption || null, createdAt: Date.now(),
-      });
-      pageImageIdByNumber.set(pageNumber, id);
+      const figures = await detectFigures(png);
+      let figureIndex = 0;
+      for (const fig of figures) {
+        const rect = boxToPixelRect(fig.box_2d, viewport.width, viewport.height);
+        if (!rect) {
+          logger.warn({ fileId, pageNumber, box2d: fig.box_2d }, 'skipping figure with invalid bounding box');
+          continue;
+        }
+        const cropCanvas = cropFigure(canvas, rect);
+        const cropPng = await cropCanvas.encode('png');
+        const imagePath = path.join(outDir, `page-${pageNumber}-fig-${figureIndex}.png`);
+        await fs.promises.writeFile(imagePath, cropPng);
+        pending.push({
+          pageNumber,
+          imagePath,
+          caption: (fig.caption || '').trim() || null,
+          bbox: {
+            x: rect.x / viewport.width,
+            y: rect.y / viewport.height,
+            w: rect.width / viewport.width,
+            h: rect.height / viewport.height,
+          },
+        });
+        figureIndex++;
+      }
     } catch (e) {
       logger.warn({ fileId, pageNumber, err: e.message }, 'page image processing failed, skipping page');
     }
+  }
+
+  if (!pending.length) return new Map();
+
+  // Batch-embed every figure caption for this file in one call. A batch
+  // failure still leaves figures persisted (without embeddings) rather than
+  // dropping them — they degrade to page-co-location-only reachability,
+  // matching this pipeline's "never fail the file over an enhancement"
+  // posture (see process.js's try/catch around this whole function).
+  let embeddings = [];
+  try {
+    const captionsForEmbedding = pending.map(p => p.caption || '(untitled figure)');
+    embeddings = await embedMany(captionsForEmbedding, 'RETRIEVAL_DOCUMENT');
+  } catch (e) {
+    logger.warn({ fileId, err: e.message }, 'figure caption embedding failed, figures stored without embeddings');
+  }
+
+  const rows = pending.map((p, i) => ({
+    id:             uuid(),
+    fileId,
+    projectId,
+    pageNumber:     p.pageNumber,
+    imagePath:      p.imagePath,
+    caption:        p.caption,
+    bboxX:          p.bbox.x,
+    bboxY:          p.bbox.y,
+    bboxW:          p.bbox.w,
+    bboxH:          p.bbox.h,
+    embeddingModel: embeddings[i] ? EMBED_MODEL : null,
+    embeddingDim:   embeddings[i] ? EMBED_DIM : null,
+    embedding:      embeddings[i] || null,
+    createdAt:      Date.now(),
+  }));
+  const inserted = await db.insertMany('pageImages', rows);
+
+  const pageImageIdByNumber = new Map();
+  for (const row of inserted) {
+    if (!pageImageIdByNumber.has(row.pageNumber)) pageImageIdByNumber.set(row.pageNumber, []);
+    pageImageIdByNumber.get(row.pageNumber).push(row.id);
   }
   return pageImageIdByNumber;
 }
