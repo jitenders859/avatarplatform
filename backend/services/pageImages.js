@@ -1,19 +1,22 @@
 /**
- * PDF page rasterization + Gemini vision classification.
+ * PDF page rasterization + Gemini vision figure detection/cropping.
  *
- * For each page: render to PNG (pdfjs-dist + @napi-rs/canvas — chosen
- * over node-canvas because it ships prebuilt binaries, no system Cairo
- * needed, which matters for arbitrary Node hosts like Railway/Render/
- * Fly.io), ask Gemini vision whether it contains a diagram/chart/figure
- * worth surfacing to students, and if so, generate a short caption. Only
- * qualifying pages get a stored image + DB row — a wall of plain text
- * doesn't need an inline screenshot in the chat.
+ * For each page: render the full page to PNG (pdfjs-dist + @napi-rs/canvas
+ * — chosen over node-canvas because it ships prebuilt binaries, no system
+ * Cairo needed, which matters for arbitrary Node hosts like Railway/Render/
+ * Fly.io), then ask Gemini vision to identify every distinct diagram,
+ * chart, or other meaningful figure on the page along with a bounding box
+ * and caption for each. Each detected figure is cropped out of the
+ * already-rendered page canvas and persisted as its own image + DB row —
+ * a single page can yield zero, one, or several figure rows. A wall of
+ * plain text with no figures yields none.
  *
- * Full-page rasterization (not cropping to just the figure) is
- * deliberate: many diagrams/charts in real documents are vector-drawn
- * directly in the PDF content stream, not embedded as raster images, so
- * "extract embedded images" alone would miss them entirely. Painting the
- * whole page as pixels captures both cases.
+ * The page is still rendered in full before cropping (rather than trying
+ * to extract only embedded raster images) because many diagrams/charts in
+ * real documents are vector-drawn directly in the PDF content stream, not
+ * embedded as raster images, so "extract embedded images" alone would miss
+ * them entirely. Painting the whole page as pixels first, then cropping to
+ * each figure's bounding box, captures both cases.
  *
  * pdfjs-dist ships ESM-only (no CJS build) — loaded via dynamic import()
  * from this otherwise-CommonJS module, the standard way to consume an
@@ -171,27 +174,31 @@ async function processPdfPageImages(pdfPath, fileId, projectId, numPages) {
       const figures = await detectFigures(png);
       let figureIndex = 0;
       for (const fig of figures) {
-        const rect = boxToPixelRect(fig.box_2d, viewport.width, viewport.height);
-        if (!rect) {
-          logger.warn({ fileId, pageNumber, box2d: fig.box_2d }, 'skipping figure with invalid bounding box');
-          continue;
+        try {
+          const rect = boxToPixelRect(fig.box_2d, viewport.width, viewport.height);
+          if (!rect) {
+            logger.warn({ fileId, pageNumber, box2d: fig.box_2d }, 'skipping figure with invalid bounding box');
+            continue;
+          }
+          const cropCanvas = cropFigure(canvas, rect);
+          const cropPng = await cropCanvas.encode('png');
+          const imagePath = path.join(outDir, `page-${pageNumber}-fig-${figureIndex}.png`);
+          await fs.promises.writeFile(imagePath, cropPng);
+          pending.push({
+            pageNumber,
+            imagePath,
+            caption: (fig.caption || '').trim() || null,
+            bbox: {
+              x: rect.x / viewport.width,
+              y: rect.y / viewport.height,
+              w: rect.width / viewport.width,
+              h: rect.height / viewport.height,
+            },
+          });
+          figureIndex++;
+        } catch (e) {
+          logger.warn({ fileId, pageNumber, figureIndex, err: e.message }, 'figure crop/write failed, skipping figure');
         }
-        const cropCanvas = cropFigure(canvas, rect);
-        const cropPng = await cropCanvas.encode('png');
-        const imagePath = path.join(outDir, `page-${pageNumber}-fig-${figureIndex}.png`);
-        await fs.promises.writeFile(imagePath, cropPng);
-        pending.push({
-          pageNumber,
-          imagePath,
-          caption: (fig.caption || '').trim() || null,
-          bbox: {
-            x: rect.x / viewport.width,
-            y: rect.y / viewport.height,
-            w: rect.width / viewport.width,
-            h: rect.height / viewport.height,
-          },
-        });
-        figureIndex++;
       }
     } catch (e) {
       logger.warn({ fileId, pageNumber, err: e.message }, 'page image processing failed, skipping page');
