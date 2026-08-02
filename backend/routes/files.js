@@ -142,6 +142,9 @@ router.delete('/projects/:projectId/files/:fileId', authRequired, ownsProject, a
   const file = await db.findOne('files', { id: req.params.fileId, projectId: req.project.id });
   if (!file) return res.status(404).json({ error: 'File not found' });
   if (file.storedPath) fs.unlink(file.storedPath, () => {});
+  // FK CASCADE removes page_images DB rows, but not their crop files on disk.
+  const pagesDir = path.join(UPLOAD_ROOT, req.params.projectId, 'pages', file.id);
+  fs.rm(pagesDir, { recursive: true, force: true }, () => {});
   // FK CASCADE on chunks; explicit remove for file itself
   await db.remove('files', { id: file.id });
   res.json({ ok: true });

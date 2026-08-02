@@ -159,6 +159,13 @@ async function processPdfPageImages(pdfPath, fileId, projectId, numPages) {
   const doc = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), disableWorker: true }).promise;
   const pageCount = Math.min(numPages, MAX_PAGES);
   const outDir = path.join(UPLOAD_ROOT, projectId, 'pages', fileId);
+  // Clear any prior run's figures for this file — reindex/reprocess would
+  // otherwise APPEND a full duplicate set of rows and crop files on top of
+  // the old ones every time, rather than replacing them (chunks already
+  // get this treatment via db.remove('chunks', { fileId }) in process.js;
+  // this mirrors that for page_images).
+  await fs.promises.rm(outDir, { recursive: true, force: true }).catch(() => {});
+  await db.remove('pageImages', { fileId }).catch(() => {});
   await fs.promises.mkdir(outDir, { recursive: true });
 
   const pending = []; // { pageNumber, imagePath, caption, bbox: {x,y,w,h} normalized 0-1
