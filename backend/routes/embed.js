@@ -11,6 +11,7 @@ const db = require('../db');
 const { CHARACTERS } = require('./projects');
 const { embedOne } = require('../services/embed');
 const { searchProject } = require('../services/vector');
+const { resolveFigures } = require('../services/figures');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const { projectCache, invalidateProjectCache } = require('../cache');
@@ -42,14 +43,21 @@ async function filesForHits(hits) {
 
 /**
  * Fetch page_images for a set of chunk hits in one round trip. Keyed by
- * "fileId:pageNumber" since chunks.page_hint (now accurate) is how a
- * chunk maps to its page's image — no FK column needed on chunks.
+ * "fileId:pageNumber" (chunks.page_hint is accurate — see chunk.js), mapped
+ * to an ARRAY of figure rows since a page can now have zero, one, or
+ * several distinct figures (see backend/services/pageImages.js).
  */
 async function pageImagesForHits(hits) {
   const fileIds = [...new Set(hits.map(h => h.chunk.fileId).filter(Boolean))];
   if (!fileIds.length) return new Map();
   const rows = await db.query('SELECT * FROM page_images WHERE file_id = ANY($1::uuid[])', [fileIds]);
-  return new Map(rows.map(r => [`${r.fileId}:${r.pageNumber}`, r]));
+  const map = new Map();
+  for (const r of rows) {
+    const key = `${r.fileId}:${r.pageNumber}`;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(r);
+  }
+  return map;
 }
 
 module.exports.invalidateProjectCache = invalidateProjectCache;
@@ -142,17 +150,12 @@ router.post('/:publicId/retrieve', async (req, res) => {
   const chunks = [];
   for (const hit of hits) {
     const file = fileCache.get(hit.chunk.fileId);
-    const pageImage = showFigures ? pageImageCache.get(`${hit.chunk.fileId}:${hit.chunk.pageHint}`) : null;
     chunks.push({
       text: hit.chunk.text,
       score: hit.score,
       fileId: hit.chunk.fileId,
       fileName: file ? file.originalName : null,
       kind: file ? file.kind : null,
-      pageImageUrl: pageImage ? `/embed/${project.publicId}/page-image/${pageImage.id}` : null,
-      pageImageCaption: pageImage ? pageImage.caption : null,
-      pdfUrl: (showFigures && file && file.kind === 'pdf') ? `/embed/${project.publicId}/file/${file.id}` : null,
-      pdfPage: hit.chunk.pageHint || null,
     });
     if (file && !sources.find(s => s.fileId === file.id)) {
       sources.push({
@@ -166,7 +169,11 @@ router.post('/:publicId/retrieve', async (req, res) => {
     }
   }
 
-  res.json({ chunks, sources });
+  const figures = showFigures
+    ? await resolveFigures({ projectId: project.id, queryEmbedding, hits, pageImageCache, publicId: project.publicId, fileCache })
+    : [];
+
+  res.json({ chunks, sources, figures });
 });
 
 /**
@@ -351,7 +358,6 @@ router.post('/:publicId/study', validate(schemas.study), async (req, res) => {
     // capabilityTier !== 'basic' already enforced above to even reach this route.
     const pageImageCache = await pageImagesForHits(hits);
     const sources = [];
-    const figures = [];
     const contextParts = [];
 
     for (const hit of hits) {
@@ -368,18 +374,9 @@ router.post('/:publicId/study', validate(schemas.study), async (req, res) => {
             : null,
         });
       }
-
-      const pageImage = pageImageCache.get(`${hit.chunk.fileId}:${hit.chunk.pageHint}`);
-      if (pageImage && !figures.find(f => f.pageImageUrl === `/embed/${project.publicId}/page-image/${pageImage.id}`)) {
-        figures.push({
-          pageImageUrl: `/embed/${project.publicId}/page-image/${pageImage.id}`,
-          caption: pageImage.caption,
-          fileName: file ? file.originalName : null,
-          pdfUrl: file && file.kind === 'pdf' ? `/embed/${project.publicId}/file/${file.id}` : null,
-          pdfPage: hit.chunk.pageHint || null,
-        });
-      }
     }
+
+    const figures = await resolveFigures({ projectId: project.id, queryEmbedding, hits, pageImageCache, publicId: project.publicId, fileCache });
 
     const basePrompt = project.systemPrompt ||
       'You are a helpful AI study assistant. Answer using the provided knowledge base context.';
