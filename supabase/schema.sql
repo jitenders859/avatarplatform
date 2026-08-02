@@ -128,13 +128,25 @@ CREATE TABLE IF NOT EXISTS chunks (
 -- no separate FK column on chunks is needed; retrieval joins on it
 -- directly (see backend/services/vector.js).
 CREATE TABLE IF NOT EXISTS page_images (
-  id          UUID    PRIMARY KEY,
-  file_id     UUID    NOT NULL REFERENCES files(id)    ON DELETE CASCADE,
-  project_id  UUID    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  page_number INTEGER NOT NULL,
-  image_path  TEXT    NOT NULL,
-  caption     TEXT,
-  created_at  BIGINT  NOT NULL
+  id              UUID    PRIMARY KEY,
+  file_id         UUID    NOT NULL REFERENCES files(id)    ON DELETE CASCADE,
+  project_id      UUID    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  page_number     INTEGER NOT NULL,
+  image_path      TEXT    NOT NULL,
+  caption         TEXT,
+  -- Normalized (0-1) crop region within the full rendered page. NULL means
+  -- this row is a whole-page screenshot from before per-figure cropping
+  -- existed (or the model didn't return a usable box) — it's still served
+  -- and displayed exactly as before, just not reachable via direct figure
+  -- search (embedding is NULL too in that case).
+  bbox_x          REAL,
+  bbox_y          REAL,
+  bbox_w          REAL,
+  bbox_h          REAL,
+  embedding_model TEXT,
+  embedding_dim   INTEGER,
+  embedding       vector(768),
+  created_at      BIGINT  NOT NULL
 );
 
 -- ── sessions ──────────────────────────────────────────────────────
@@ -322,6 +334,9 @@ CREATE INDEX IF NOT EXISTS idx_flashcard_reviews_learner ON flashcard_reviews(pr
 CREATE INDEX IF NOT EXISTS idx_video_resources_project   ON video_resources(project_id);
 CREATE INDEX IF NOT EXISTS idx_video_resources_tags      ON video_resources USING gin(topic_tags);
 CREATE INDEX IF NOT EXISTS idx_page_images_file_page     ON page_images(file_id, page_number);
+CREATE INDEX IF NOT EXISTS idx_page_images_embedding
+  ON page_images USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64);
 
 -- pgvector HNSW index for fast cosine similarity search.
 -- HNSW builds the index on all existing rows and supports incremental inserts.
@@ -329,3 +344,23 @@ CREATE INDEX IF NOT EXISTS idx_page_images_file_page     ON page_images(file_id,
 CREATE INDEX IF NOT EXISTS idx_chunks_embedding
   ON chunks USING hnsw (embedding vector_cosine_ops)
   WITH (m = 16, ef_construction = 64);
+
+
+-- ── Schema evolution ──────────────────────────────────────────────────
+-- CREATE TABLE IF NOT EXISTS above won't add columns to an already-deployed
+-- table. This file stays idempotent (safe to re-run) via ADD COLUMN IF NOT
+-- EXISTS for changes made after the table already existed in production.
+
+-- multi-figure PDF retrieval: page_images gains a per-figure bounding box
+-- (nullable — pre-existing rows are whole-page screenshots with no crop)
+-- and a caption embedding for direct figure-level semantic search (see
+-- backend/services/vector.js's searchFigures and backend/services/
+-- figures.js's resolveFigures). New uploads only — existing rows are not
+-- backfilled.
+ALTER TABLE page_images ADD COLUMN IF NOT EXISTS bbox_x          REAL;
+ALTER TABLE page_images ADD COLUMN IF NOT EXISTS bbox_y          REAL;
+ALTER TABLE page_images ADD COLUMN IF NOT EXISTS bbox_w          REAL;
+ALTER TABLE page_images ADD COLUMN IF NOT EXISTS bbox_h          REAL;
+ALTER TABLE page_images ADD COLUMN IF NOT EXISTS embedding_model TEXT;
+ALTER TABLE page_images ADD COLUMN IF NOT EXISTS embedding_dim   INTEGER;
+ALTER TABLE page_images ADD COLUMN IF NOT EXISTS embedding       vector(768);
