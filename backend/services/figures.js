@@ -14,6 +14,7 @@
  * so the merge logic isn't duplicated across routes.
  */
 const { searchFigures } = require('./vector');
+const db = require('../db');
 
 const FIGURE_MATCH_THRESHOLD = parseFloat(process.env.FIGURE_MATCH_THRESHOLD || '0.5');
 const MAX_FIGURES_PER_ANSWER = parseInt(process.env.MAX_FIGURES_PER_ANSWER || '4', 10);
@@ -61,11 +62,20 @@ function mergeFigures({ directHits, pageImageCache, hits, threshold, cap }) {
  * @param {Array<{chunk: {fileId, pageHint}, score: number}>} args.hits - searchProject() results
  * @param {Map<string, object[]>} args.pageImageCache - from pageImagesForHits()
  * @param {string} args.publicId - project's public id, for building URLs
- * @param {Map<string, object>} args.fileCache - fileId -> file row, from filesForHits()
+ * @param {Map<string, object>} args.fileCache - fileId -> file row, from filesForHits().
+ *   fileCache may be missing entries for figures that only matched via direct caption
+ *   search (not co-located with any hit's file) — those are fetched and added here
+ *   before building the response.
  */
 async function resolveFigures({ projectId, queryEmbedding, hits, pageImageCache, publicId, fileCache }) {
   const directHits = await searchFigures(projectId, queryEmbedding, MAX_FIGURES_PER_ANSWER);
   const merged = mergeFigures({ directHits, pageImageCache, hits, threshold: FIGURE_MATCH_THRESHOLD, cap: MAX_FIGURES_PER_ANSWER });
+
+  const missingFileIds = [...new Set(merged.map(f => f.fileId).filter(id => id && !fileCache.has(id)))];
+  if (missingFileIds.length) {
+    const rows = await db.query('SELECT * FROM files WHERE id = ANY($1::uuid[])', [missingFileIds]);
+    for (const row of rows) fileCache.set(row.id, row);
+  }
 
   return merged.map(figure => {
     const file = fileCache.get(figure.fileId);
