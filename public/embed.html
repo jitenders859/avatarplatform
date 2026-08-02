@@ -408,7 +408,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     textInput.style.height = 'auto';
     sendBtn.disabled = true;
 
-    let retrieved = { chunks: [], sources: [] };
+    let retrieved = { chunks: [], sources: [], figures: [] };
     try {
       statusText.textContent = 'Thinking…';
       const res = await fetch(`/embed/${publicId}/retrieve`, {
@@ -425,11 +425,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     } catch (e) { console.warn('[retrieve] failed:', e); }
 
     pendingSources = (config.project.showSourceCards !== false) ? retrieved.sources : null;
-
-    const seenPageImages = new Set();
-    pendingFigures = retrieved.chunks
-      .filter(c => c.pageImageUrl && !seenPageImages.has(c.pageImageUrl) && seenPageImages.add(c.pageImageUrl))
-      .map(c => ({ pageImageUrl: c.pageImageUrl, caption: c.pageImageCaption, fileName: c.fileName, pdfUrl: c.pdfUrl, pdfPage: c.pdfPage }));
+    pendingFigures = retrieved.figures || [];
 
     const kbText = retrieved.chunks.length === 0 ? ''
       : retrieved.chunks.map((c, i) =>
