@@ -1,0 +1,158 @@
+/**
+ * PDF page rasterization + Gemini vision classification.
+ *
+ * For each page: render to PNG (pdfjs-dist + @napi-rs/canvas — chosen
+ * over node-canvas because it ships prebuilt binaries, no system Cairo
+ * needed, which matters for arbitrary Node hosts like Railway/Render/
+ * Fly.io), ask Gemini vision whether it contains a diagram/chart/figure
+ * worth surfacing to students, and if so, generate a short caption. Only
+ * qualifying pages get a stored image + DB row — a wall of plain text
+ * doesn't need an inline screenshot in the chat.
+ *
+ * Full-page rasterization (not cropping to just the figure) is
+ * deliberate: many diagrams/charts in real documents are vector-drawn
+ * directly in the PDF content stream, not embedded as raster images, so
+ * "extract embedded images" alone would miss them entirely. Painting the
+ * whole page as pixels captures both cases.
+ *
+ * pdfjs-dist ships ESM-only (no CJS build) — loaded via dynamic import()
+ * from this otherwise-CommonJS module, the standard way to consume an
+ * ESM-only package from CJS without converting the whole project.
+ */
+const fs = require('fs');
+const path = require('path');
+const { v4: uuid } = require('uuid');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const db = require('../db');
+const logger = require('../logger').child({ module: 'services/pageImages' });
+
+const PAGE_CLASSIFY_MODEL = process.env.PAGE_CLASSIFY_MODEL || 'gemini-3.5-flash';
+const UPLOAD_ROOT = path.join(__dirname, '..', '..', 'data', 'uploads');
+// Cap per-document cost/latency — one Gemini vision call per page.
+const MAX_PAGES = parseInt(process.env.MAX_PAGE_IMAGE_PAGES || '200', 10);
+
+/** Pulls the server-recommended wait out of a 429's structured RetryInfo, if present. */
+function retryDelayMs(err) {
+  const info = (err.errorDetails || []).find(d => d['@type']?.includes('RetryInfo'));
+  const match = info?.retryDelay?.match(/^(\d+(?:\.\d+)?)s$/);
+  return match ? Math.ceil(parseFloat(match[1]) * 1000) : null;
+}
+
+/**
+ * Converts a Gemini box_2d [ymin, xmin, ymax, xmax] (integers 0-1000,
+ * normalized to the full page image) into a pixel rect { x, y, width,
+ * height } clamped to the page bounds. Returns null for malformed or
+ * degenerate (zero-size) boxes so callers can skip them without
+ * special-casing bad model output at every call site.
+ */
+function boxToPixelRect(box2d, pageWidth, pageHeight) {
+  if (!Array.isArray(box2d) || box2d.length !== 4 || box2d.some(n => typeof n !== 'number' || !Number.isFinite(n))) {
+    return null;
+  }
+  const [yminRaw, xminRaw, ymaxRaw, xmaxRaw] = box2d;
+  const clamp = n => Math.max(0, Math.min(1000, n));
+  const ymin = clamp(Math.min(yminRaw, ymaxRaw));
+  const ymax = clamp(Math.max(yminRaw, ymaxRaw));
+  const xmin = clamp(Math.min(xminRaw, xmaxRaw));
+  const xmax = clamp(Math.max(xminRaw, xmaxRaw));
+
+  const x = Math.round((xmin / 1000) * pageWidth);
+  const y = Math.round((ymin / 1000) * pageHeight);
+  const width = Math.round(((xmax - xmin) / 1000) * pageWidth);
+  const height = Math.round(((ymax - ymin) / 1000) * pageHeight);
+
+  if (width <= 0 || height <= 0) return null;
+  return { x, y, width, height };
+}
+
+/**
+ * Free-tier Gemini quotas for vision models are tight enough to hit in
+ * normal use (empirically: 5 requests/minute and 20/day on gemini-3.5-flash
+ * during testing) — a per-page classification loop WILL hit 429s on any
+ * document longer than a few pages, so this isn't an edge case to shrug
+ * off. Retries with the server's own suggested delay when given, since
+ * that's more precise than blind exponential backoff for quota errors.
+ */
+async function classifyAndCaption(pngBuffer) {
+  const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const model = genai.getGenerativeModel({
+    model: PAGE_CLASSIFY_MODEL,
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'object',
+        properties: {
+          hasFigure: { type: 'boolean' },
+          caption: { type: 'string' },
+        },
+        required: ['hasFigure', 'caption'],
+      },
+    },
+  });
+  const prompt =
+    'Does this page contain a diagram, chart, technical illustration, table, or other meaningful ' +
+    'visual figure — as opposed to being plain paragraph text? Set hasFigure accordingly. If true, ' +
+    'write a one-sentence caption describing what the figure shows. If false, caption can be empty.';
+  const parts = [
+    { inlineData: { mimeType: 'image/png', data: pngBuffer.toString('base64') } },
+    { text: prompt },
+  ];
+
+  let attempt = 0;
+  while (true) {
+    try {
+      const result = await model.generateContent(parts);
+      return JSON.parse(result.response.text());
+    } catch (e) {
+      if (e.status !== 429 || attempt >= 4) throw e;
+      const wait = retryDelayMs(e) ?? 500 * Math.pow(2, attempt);
+      await new Promise(r => setTimeout(r, wait));
+      attempt++;
+    }
+  }
+}
+
+/**
+ * Renders and classifies every page of a PDF, persisting an image + DB
+ * row only for pages with a qualifying figure. Returns a Map of
+ * pageNumber -> pageImageId for chunkPages' chunks to reference.
+ */
+async function processPdfPageImages(pdfPath, fileId, projectId, numPages) {
+  const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+  const { createCanvas } = require('@napi-rs/canvas');
+
+  const pdfBuffer = await fs.promises.readFile(pdfPath);
+  const doc = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), disableWorker: true }).promise;
+  const pageCount = Math.min(numPages, MAX_PAGES);
+  const outDir = path.join(UPLOAD_ROOT, projectId, 'pages', fileId);
+  await fs.promises.mkdir(outDir, { recursive: true });
+
+  const pageImageIdByNumber = new Map();
+  for (let pageNumber = 1; pageNumber <= pageCount; pageNumber++) {
+    try {
+      const page = await doc.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = createCanvas(viewport.width, viewport.height);
+      const ctx = canvas.getContext('2d');
+      await page.render({ canvasContext: ctx, viewport, canvas }).promise;
+      const png = await canvas.encode('png');
+
+      const { hasFigure, caption } = await classifyAndCaption(png);
+      if (!hasFigure) continue;
+
+      const imagePath = path.join(outDir, `page-${pageNumber}.png`);
+      await fs.promises.writeFile(imagePath, png);
+
+      const id = uuid();
+      await db.insert('pageImages', {
+        id, fileId, projectId, pageNumber, imagePath, caption: caption || null, createdAt: Date.now(),
+      });
+      pageImageIdByNumber.set(pageNumber, id);
+    } catch (e) {
+      logger.warn({ fileId, pageNumber, err: e.message }, 'page image processing failed, skipping page');
+    }
+  }
+  return pageImageIdByNumber;
+}
+
+module.exports = { processPdfPageImages, boxToPixelRect };
