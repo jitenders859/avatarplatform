@@ -334,9 +334,6 @@ CREATE INDEX IF NOT EXISTS idx_flashcard_reviews_learner ON flashcard_reviews(pr
 CREATE INDEX IF NOT EXISTS idx_video_resources_project   ON video_resources(project_id);
 CREATE INDEX IF NOT EXISTS idx_video_resources_tags      ON video_resources USING gin(topic_tags);
 CREATE INDEX IF NOT EXISTS idx_page_images_file_page     ON page_images(file_id, page_number);
-CREATE INDEX IF NOT EXISTS idx_page_images_embedding
-  ON page_images USING hnsw (embedding vector_cosine_ops)
-  WITH (m = 16, ef_construction = 64);
 
 -- pgvector HNSW index for fast cosine similarity search.
 -- HNSW builds the index on all existing rows and supports incremental inserts.
@@ -364,3 +361,12 @@ ALTER TABLE page_images ADD COLUMN IF NOT EXISTS bbox_h          REAL;
 ALTER TABLE page_images ADD COLUMN IF NOT EXISTS embedding_model TEXT;
 ALTER TABLE page_images ADD COLUMN IF NOT EXISTS embedding_dim   INTEGER;
 ALTER TABLE page_images ADD COLUMN IF NOT EXISTS embedding       vector(768);
+
+-- Placed after the ALTER above (not in the main index block up top) because
+-- on an already-deployed database the CREATE TABLE IF NOT EXISTS for
+-- page_images is a no-op and `embedding` doesn't exist until that ALTER
+-- runs — creating this index any earlier in the file fails with
+-- "column \"embedding\" does not exist" against such a database.
+CREATE INDEX IF NOT EXISTS idx_page_images_embedding
+  ON page_images USING hnsw (embedding vector_cosine_ops)
+  WITH (m = 16, ef_construction = 64);
