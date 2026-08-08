@@ -1,7 +1,7 @@
 /**
  * File → text extraction.
  *
- *   text / markdown    → fs read
+ *   text / markdown    → decode buffer
  *   pdf                → pdf-parse
  *   docx               → mammoth
  *   doc (legacy)       → best-effort (informs user to convert)
@@ -10,8 +10,10 @@
  *   video              → Gemini video transcription + scene description
  *
  * All uploads route through `extractFile()` which dispatches by mimetype/ext.
+ * Operates on in-memory Buffers (not local file paths) — files live in
+ * Supabase Storage, downloaded once by the caller (backend/services/
+ * process.js) and passed straight through.
  */
-const fs = require('fs');
 const path = require('path');
 const fetch = require('node-fetch');
 const pdfParse = require('pdf-parse');
@@ -51,8 +53,8 @@ function classify(filename) {
 
 // ── Text-based formats ────────────────────────────────────────
 
-async function extractText(filepath) {
-  return fs.promises.readFile(filepath, 'utf8');
+async function extractText(buffer) {
+  return buffer.toString('utf8');
 }
 
 /**
@@ -63,10 +65,9 @@ async function extractText(filepath) {
  * text). chunk.js's chunkPages() uses `pages` to tag chunks with accurate
  * page numbers; `text` is kept for callers that just want the flat string.
  */
-async function extractPdf(filepath) {
-  const buf = await fs.promises.readFile(filepath);
+async function extractPdf(buffer) {
   const pages = [];
-  await pdfParse(buf, {
+  await pdfParse(buffer, {
     pagerender: async pageData => {
       const content = await pageData.getTextContent();
       const text = content.items.map(item => item.str).join(' ');
@@ -77,12 +78,12 @@ async function extractPdf(filepath) {
   return { text: pages.map(p => p.text).join('\n\n'), pages };
 }
 
-async function extractDocx(filepath) {
-  const result = await mammoth.extractRawText({ path: filepath });
+async function extractDocx(buffer) {
+  const result = await mammoth.extractRawText({ buffer });
   return result.value || '';
 }
 
-async function extractDoc(filepath) {
+async function extractDoc(buffer) {
   // Legacy .doc requires a converter (e.g. libreoffice). Surface a clear
   // message so the upload pipeline can mark the file as failed-with-reason.
   throw new Error('.doc (legacy Word) is not supported. Please save as .docx and re-upload.');
@@ -95,14 +96,12 @@ async function extractDoc(filepath) {
  * captions, audio transcription, and video description. Inline data is
  * capped by Gemini at ~20MB; larger files would need the Files API.
  */
-async function geminiMultimodal(filepath, mimeType, prompt) {
+async function geminiMultimodal(buffer, mimeType, prompt) {
   if (!PLATFORM_KEY) throw new Error('GEMINI_API_KEY not configured on server');
-  const stat = await fs.promises.stat(filepath);
-  if (stat.size > 19 * 1024 * 1024) {
-    throw new Error(`File too large for inline processing (${(stat.size / 1024 / 1024).toFixed(1)}MB > 19MB). Split into smaller pieces.`);
+  if (buffer.length > 19 * 1024 * 1024) {
+    throw new Error(`File too large for inline processing (${(buffer.length / 1024 / 1024).toFixed(1)}MB > 19MB). Split into smaller pieces.`);
   }
-  const buf = await fs.promises.readFile(filepath);
-  const b64 = buf.toString('base64');
+  const b64 = buffer.toString('base64');
 
   const url = `${BASE}/models/${VISION_MODEL}:generateContent?key=${PLATFORM_KEY}`;
   const body = {
@@ -129,8 +128,8 @@ async function geminiMultimodal(filepath, mimeType, prompt) {
   return parts.map(p => p.text || '').join('\n').trim();
 }
 
-async function extractImage(filepath) {
-  const ext = path.extname(filepath).toLowerCase();
+async function extractImage(buffer, originalName) {
+  const ext = path.extname(originalName).toLowerCase();
   const mime = MIME_BY_EXT[ext] || 'image/jpeg';
   const prompt = `Describe this image in detail for a knowledge-base index. Include:
 - What is shown (objects, people, scene)
@@ -138,41 +137,41 @@ async function extractImage(filepath) {
 - Diagrams, charts, or technical content (explain what they represent)
 - Brand names, product names, logos
 Respond as plain prose, no markdown headers.`;
-  return geminiMultimodal(filepath, mime, prompt);
+  return geminiMultimodal(buffer, mime, prompt);
 }
 
-async function extractAudio(filepath) {
-  const ext = path.extname(filepath).toLowerCase();
+async function extractAudio(buffer, originalName) {
+  const ext = path.extname(originalName).toLowerCase();
   const mime = MIME_BY_EXT[ext] || 'audio/mpeg';
   const prompt = `Transcribe this audio verbatim. After the transcript, on a new line starting with "SUMMARY:", give a 2-3 sentence summary of what is discussed. Keep speaker names if you can identify them, otherwise use Speaker A/B.`;
-  return geminiMultimodal(filepath, mime, prompt);
+  return geminiMultimodal(buffer, mime, prompt);
 }
 
-async function extractVideo(filepath) {
-  const ext = path.extname(filepath).toLowerCase();
+async function extractVideo(buffer, originalName) {
+  const ext = path.extname(originalName).toLowerCase();
   const mime = MIME_BY_EXT[ext] || 'video/mp4';
   const prompt = `Process this video for a searchable knowledge base. Provide:
 1. A full transcript of any spoken content (with rough timestamps in [MM:SS] format).
 2. After the transcript, a "VISUAL DESCRIPTION:" section describing what is shown across the video — scenes, on-screen text, key visuals.
 3. A "SUMMARY:" section with 3-4 sentences capturing the overall content.`;
-  return geminiMultimodal(filepath, mime, prompt);
+  return geminiMultimodal(buffer, mime, prompt);
 }
 
 // ── Public dispatch ───────────────────────────────────────────
 
-async function extractFile(filepath, originalName) {
-  const kind = classify(originalName || filepath);
+async function extractFile(buffer, originalName) {
+  const kind = classify(originalName);
   switch (kind) {
-    case 'text':  return { kind, text: await extractText(filepath) };
+    case 'text':  return { kind, text: await extractText(buffer) };
     case 'pdf': {
-      const { text, pages } = await extractPdf(filepath);
+      const { text, pages } = await extractPdf(buffer);
       return { kind, text, pages };
     }
-    case 'docx':  return { kind, text: await extractDocx(filepath) };
-    case 'doc':   return { kind, text: await extractDoc(filepath) };
-    case 'image': return { kind, text: await extractImage(filepath) };
-    case 'audio': return { kind, text: await extractAudio(filepath) };
-    case 'video': return { kind, text: await extractVideo(filepath) };
+    case 'docx':  return { kind, text: await extractDocx(buffer) };
+    case 'doc':   return { kind, text: await extractDoc(buffer) };
+    case 'image': return { kind, text: await extractImage(buffer, originalName) };
+    case 'audio': return { kind, text: await extractAudio(buffer, originalName) };
+    case 'video': return { kind, text: await extractVideo(buffer, originalName) };
     default:
       throw new Error(`Unsupported file type: ${path.extname(originalName)}`);
   }

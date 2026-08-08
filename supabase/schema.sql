@@ -398,3 +398,16 @@ CREATE INDEX IF NOT EXISTS idx_users_reset_token
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 CREATE INDEX IF NOT EXISTS idx_chunks_text_trgm
   ON chunks USING gin (text gin_trgm_ops);
+
+-- ── Vercel serverless migration (see supabase/migrations/2026-08-08_add_storage_columns.sql) ──
+--
+-- files.storage_key: Supabase Storage object key, replacing stored_path's
+-- role now that uploads no longer live on local disk (Vercel's filesystem
+-- is ephemeral). stored_path stays in place, unused, rather than dropped.
+--
+-- files.stage / files.pct: fine-grained processing progress, previously
+-- pushed via Socket.io (serverless functions can't hold persistent
+-- connections) — now persisted here and polled via GET .../status instead.
+ALTER TABLE files ADD COLUMN IF NOT EXISTS storage_key TEXT;
+ALTER TABLE files ADD COLUMN IF NOT EXISTS stage       TEXT;
+ALTER TABLE files ADD COLUMN IF NOT EXISTS pct         INTEGER;

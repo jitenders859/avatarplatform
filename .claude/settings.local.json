@@ -2,7 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(graphify export *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(node -e \"console.log\\(JSON.parse\\(require\\('fs'\\).readFileSync\\('/tmp/login.json'\\)\\).token\\)\")",
+      "Bash(node -e \"console.log\\(JSON.parse\\(require\\('fs'\\).readFileSync\\('/tmp/project.json'\\)\\).project.id\\)\")",
+      "Bash(node -e \"console.log\\(JSON.parse\\(require\\('fs'\\).readFileSync\\('/tmp/init.json'\\)\\).files[0].id\\)\")",
+      "Bash(curl -s -D - -o /dev/null http://localhost:8080/api/projects/__TRACKED_VAR__/files/__TRACKED_VAR__/blob -H 'Authorization: Bearer __TRACKED_VAR__')"
     ]
   }
 }

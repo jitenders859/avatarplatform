@@ -672,7 +672,7 @@
     </section>
   </div>
 
-  <script src="/socket.io/socket.io.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="/js/theme.js"></script>
   <script src="/js/api.js"></script>
   <script>
@@ -941,18 +941,24 @@
         return;
       }
       try {
-        const { status, chunkCount, error } = await API.fileStatus(projectId, fileId);
+        const { status, stage, pct, chunkCount, error } = await API.fileStatus(projectId, fileId);
         const badge = document.querySelector(`[data-file-id="${fileId}"] .status-badge`);
-        if (badge) badge.innerHTML = statusBadge(status, chunkCount, error);
+        if (badge) badge.innerHTML = statusBadge(status, chunkCount, error, stage, pct);
         if (status === 'ready' || status === 'failed') stopPoller(fileId);
       } catch (_) {}
     }, 2000);
     filePollers.set(fileId, id);
   }
 
-  function statusBadge(status, chunkCount, error) {
+  const STAGE_LABEL = { extracting: 'Extracting…', chunking: 'Chunking…', embedding: 'Embedding…', saving: 'Saving…' };
+
+  function statusBadge(status, chunkCount, error, stage, pct) {
     if (status === 'pending')    return '<span class="pill pill-warn">Pending</span>';
-    if (status === 'processing') return '<span class="pill pill-info" style="display:inline-flex;align-items:center;gap:5px"><span class="spin" style="display:inline-block;width:10px;height:10px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite"></span>Processing…</span>';
+    if (status === 'processing') {
+      const label = STAGE_LABEL[stage] || 'Processing…';
+      const pctLabel = pct != null ? ` ${pct}%` : '';
+      return `<span class="pill pill-info" style="display:inline-flex;align-items:center;gap:5px"><span class="spin" style="display:inline-block;width:10px;height:10px;border:2px solid currentColor;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite"></span>${label}${pctLabel}</span>`;
+    }
     if (status === 'ready')      return `<span class="pill pill-success">✓ ${chunkCount} chunk${chunkCount === 1 ? '' : 's'}</span>`;
     if (status === 'failed')     return `<span class="pill pill-danger" title="${escape(error || 'Processing failed')}">Failed</span>`;
     return `<span class="pill">${escape(status)}</span>`;
@@ -987,7 +993,7 @@
             <div style="font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escape(name)}</div>
             <div class="muted text-sm" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escape(sub)}${f.error ? ` — <span style="color:var(--danger)">${escape(f.error)}</span>` : ''}</div>
           </div>
-          <span class="status-badge">${statusBadge(f.status, f.chunkCount, f.error)}</span>
+          <span class="status-badge">${statusBadge(f.status, f.chunkCount, f.error, f.stage, f.pct)}</span>
           ${f.status === 'ready' ? `<button class="btn btn-sm btn-ghost" onclick="viewChunks('${f.id}',${JSON.stringify(escape(name))})">Chunks</button>` : ''}
           <button class="btn btn-sm btn-ghost" onclick="reproc('${f.id}')">↻</button>
           <button class="btn btn-sm btn-danger" onclick="del('${f.id}')">×</button>
@@ -1097,10 +1103,13 @@
 
   document.getElementById('upload-btn').addEventListener('click', () => document.getElementById('file-input').click());
   document.getElementById('file-input').addEventListener('change', async (e) => {
-    const fd = new FormData();
-    for (const f of e.target.files) fd.append('files', f);
-    try { await API.uploadFiles(projectId, fd); toast('Uploaded — processing…', 'success'); loadFiles(); }
-    catch (err) { toast(err.message, 'error'); }
+    try {
+      const { files } = await API.uploadFiles(projectId, e.target.files);
+      const failed = files.filter(f => f.status === 'rejected');
+      if (failed.length) toast(`${failed.length} file${failed.length === 1 ? '' : 's'} failed: ${failed.map(f => f.error).join(', ')}`, 'error');
+      if (failed.length < files.length) toast('Uploaded — processing…', 'success');
+      loadFiles();
+    } catch (err) { toast(err.message, 'error'); }
     e.target.value = '';
   });
 
@@ -1125,8 +1134,8 @@
     btn.disabled = true;
     btn.textContent = '↺ Re-indexing…';
     try {
-      const { reindexed, failed } = await API.reindexProject(projectId);
-      toast(`Re-indexed ${reindexed} source${reindexed === 1 ? '' : 's'}${failed ? ` (${failed} failed)` : ''}`, failed ? 'error' : 'success');
+      const { queued } = await API.reindexProject(projectId);
+      toast(`Re-indexing ${queued} source${queued === 1 ? '' : 's'}…`, 'success');
       loadFiles();
     } catch (e) { toast(e.message, 'error'); }
     finally { btn.disabled = false; btn.textContent = '↺ Re-index'; }

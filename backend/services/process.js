@@ -8,10 +8,13 @@
  * Each chunk stores heading, pageHint, charCount, approxTokens,
  * embeddingModel, and embeddingDim in addition to the vector.
  *
- * Optional io + userId params enable real-time progress events via Socket.io.
+ * Progress is persisted to files.stage/files.pct (polled by the client via
+ * GET .../status) rather than pushed over Socket.io — serverless functions
+ * can't hold a persistent connection to push through.
  */
 const { v4: uuid } = require('uuid');
 const db = require('../db');
+const storage = require('./storage');
 const { extractFile } = require('./extract');
 const { fetchUrl } = require('./url');
 const { chunkText, chunkPages } = require('./chunk');
@@ -19,16 +22,15 @@ const { embedMany, MODEL: EMBED_MODEL, OUTPUT_DIM: EMBED_DIM } = require('./embe
 const { processPdfPageImages } = require('./pageImages');
 const logger = require('../logger').child({ module: 'services/process' });
 
-function emit(io, userId, fileId, stage, pct) {
-  if (io && userId) {
-    io.to(`user:${userId}`).emit('file:progress', { fileId, stage, pct });
-  }
+function setStage(fileId, stage, pct) {
+  return db.update('files', fileId, { stage, pct }).catch(e =>
+    logger.warn({ fileId, stage, err: e.message }, 'failed to persist progress'));
 }
 
-async function processFile(fileRecord, io, userId) {
+async function processFile(fileRecord) {
   const fileId = fileRecord.id;
   logger.info({ fileId, kind: fileRecord.kind, name: fileRecord.originalName }, 'processing start');
-  emit(io, userId, fileId, 'extracting', 10);
+  await setStage(fileId, 'extracting', 10);
 
   try {
     await db.update('files', fileId, { status: 'processing', error: null });
@@ -37,6 +39,7 @@ async function processFile(fileRecord, io, userId) {
     let extractedText;
     let pdfPages = null; // per-page text, PDFs only — enables accurate pageHint
     let metadata = {};
+    let fileBuffer = null; // reused below for page-image extraction, avoids a second Storage download
 
     if (fileRecord.kind === 'url') {
       const result = await fetchUrl(fileRecord.sourceUrl);
@@ -48,7 +51,8 @@ async function processFile(fileRecord, io, userId) {
         fetchedAt: result.fetchedAt,
       };
     } else {
-      const { text, pages } = await extractFile(fileRecord.storedPath, fileRecord.originalName);
+      fileBuffer = await storage.downloadBuffer(fileRecord.storageKey);
+      const { text, pages } = await extractFile(fileBuffer, fileRecord.originalName);
       extractedText = text;
       pdfPages = pages || null;
     }
@@ -61,7 +65,7 @@ async function processFile(fileRecord, io, userId) {
       ...metadata,
     });
 
-    emit(io, userId, fileId, 'chunking', 40);
+    await setStage(fileId, 'chunking', 40);
 
     // 2. Chunk — per-page for PDFs (accurate pageHint), flat otherwise
     const chunkObjs = pdfPages && pdfPages.length
@@ -69,7 +73,7 @@ async function processFile(fileRecord, io, userId) {
       : chunkText(cleaned, { chunkSize: 1200, overlap: 150 });
     if (chunkObjs.length === 0) throw new Error('Chunking produced no segments');
 
-    emit(io, userId, fileId, 'embedding', 60);
+    await setStage(fileId, 'embedding', 60);
 
     // 3. Embed
     const chunkTexts = chunkObjs.map(c => c.text);
@@ -78,7 +82,7 @@ async function processFile(fileRecord, io, userId) {
       throw new Error(`Embedding count mismatch: ${embeddings.length} vs ${chunkObjs.length}`);
     }
 
-    emit(io, userId, fileId, 'saving', 85);
+    await setStage(fileId, 'saving', 85);
 
     // 4. Persist — replace prior chunks, bulk-insert new ones
     await db.remove('chunks', { fileId });
@@ -111,7 +115,7 @@ async function processFile(fileRecord, io, userId) {
       processedAt: Date.now(),
     });
 
-    emit(io, userId, fileId, 'done', 100);
+    await setStage(fileId, 'done', 100);
     logger.info({ fileId, chunks: chunkObjs.length, model: EMBED_MODEL }, 'processing done');
 
     // 5. Page images (diagrams/figures) — enhancement, not core RAG, so it
@@ -121,7 +125,7 @@ async function processFile(fileRecord, io, userId) {
       try {
         const project = await db.findOne('projects', { id: fileRecord.projectId });
         if (project && project.capabilityTier !== 'basic') {
-          const created = await processPdfPageImages(fileRecord.storedPath, fileId, fileRecord.projectId, pdfPages.length);
+          const created = await processPdfPageImages(fileBuffer, fileId, fileRecord.projectId, pdfPages.length);
           logger.info({ fileId, pageImages: created.size }, 'page image processing done');
         }
       } catch (e) {
@@ -130,7 +134,7 @@ async function processFile(fileRecord, io, userId) {
     }
   } catch (err) {
     logger.error({ fileId, err: err.message }, 'processing failed');
-    emit(io, userId, fileId, 'failed', 0);
+    await setStage(fileId, 'failed', 0);
     await db.update('files', fileId, {
       status: 'failed',
       error: err.message || String(err),
@@ -138,8 +142,4 @@ async function processFile(fileRecord, io, userId) {
   }
 }
 
-function processFileAsync(fileRecord, io, userId) {
-  setImmediate(() => { processFile(fileRecord, io, userId).catch(() => {}); });
-}
-
-module.exports = { processFile, processFileAsync };
+module.exports = { processFile };

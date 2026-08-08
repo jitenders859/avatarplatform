@@ -22,17 +22,15 @@
  * from this otherwise-CommonJS module, the standard way to consume an
  * ESM-only package from CJS without converting the whole project.
  */
-const fs = require('fs');
-const path = require('path');
 const { v4: uuid } = require('uuid');
 const { createCanvas } = require('@napi-rs/canvas');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('../db');
+const storage = require('./storage');
 const { embedMany, MODEL: EMBED_MODEL, OUTPUT_DIM: EMBED_DIM } = require('./embed');
 const logger = require('../logger').child({ module: 'services/pageImages' });
 
 const PAGE_CLASSIFY_MODEL = process.env.PAGE_CLASSIFY_MODEL || 'gemini-3.5-flash';
-const UPLOAD_ROOT = path.join(__dirname, '..', '..', 'data', 'uploads');
 // Cap per-document cost/latency — one Gemini vision call per page.
 const MAX_PAGES = parseInt(process.env.MAX_PAGE_IMAGE_PAGES || '200', 10);
 // Caps parsing of the vision response — a page with more than this many
@@ -152,23 +150,21 @@ async function detectFigures(pngBuffer) {
  * (retrieval itself queries page_images directly — see vector.js and
  * routes/embed.js — rather than using this return value).
  */
-async function processPdfPageImages(pdfPath, fileId, projectId, numPages) {
+async function processPdfPageImages(pdfBuffer, fileId, projectId, numPages) {
   const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
 
-  const pdfBuffer = await fs.promises.readFile(pdfPath);
   const doc = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), disableWorker: true }).promise;
   const pageCount = Math.min(numPages, MAX_PAGES);
-  const outDir = path.join(UPLOAD_ROOT, projectId, 'pages', fileId);
+  const cropPrefix = `${projectId}/pages/${fileId}`;
   // Clear any prior run's figures for this file — reindex/reprocess would
   // otherwise APPEND a full duplicate set of rows and crop files on top of
   // the old ones every time, rather than replacing them (chunks already
   // get this treatment via db.remove('chunks', { fileId }) in process.js;
   // this mirrors that for page_images).
-  await fs.promises.rm(outDir, { recursive: true, force: true })
-    .catch(e => logger.warn({ fileId, err: e.message }, 'failed to clear prior crop files, stale files may remain on disk'));
+  await storage.removePrefix(cropPrefix)
+    .catch(e => logger.warn({ fileId, err: e.message }, 'failed to clear prior crop files, stale files may remain in storage'));
   await db.remove('pageImages', { fileId })
     .catch(e => logger.warn({ fileId, err: e.message }, 'failed to clear prior page_images rows, duplicates may accumulate'));
-  await fs.promises.mkdir(outDir, { recursive: true });
 
   const pending = []; // { pageNumber, imagePath, caption, bbox: {x,y,w,h} normalized 0-1
   for (let pageNumber = 1; pageNumber <= pageCount; pageNumber++) {
@@ -191,11 +187,11 @@ async function processPdfPageImages(pdfPath, fileId, projectId, numPages) {
           }
           const cropCanvas = cropFigure(canvas, rect);
           const cropPng = await cropCanvas.encode('png');
-          const imagePath = path.join(outDir, `page-${pageNumber}-fig-${figureIndex}.png`);
-          await fs.promises.writeFile(imagePath, cropPng);
+          const imageKey = `${cropPrefix}/page-${pageNumber}-fig-${figureIndex}.png`;
+          await storage.uploadBuffer(imageKey, cropPng, 'image/png');
           pending.push({
             pageNumber,
-            imagePath,
+            imagePath: imageKey,
             caption: (fig.caption || '').trim() || null,
             bbox: {
               x: rect.x / viewport.width,

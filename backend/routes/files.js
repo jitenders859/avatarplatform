@@ -1,36 +1,18 @@
 const express = require('express');
-const fs = require('fs');
 const path = require('path');
-const multer = require('multer');
 const { v4: uuid } = require('uuid');
 const db = require('../db');
+const storage = require('../services/storage');
+const inngest = require('../inngest/client');
 const { authRequired } = require('../middleware/auth');
 const { classify } = require('../services/extract');
-const { processFileAsync, processFile: processFileSync } = require('../services/process');
 const { checkLimit } = require('../services/usage');
 
 const router = express.Router();
 
-// Lazily get io so we don't create a circular import at module load time
-function getIo() {
-  try { return require('../server').io; } catch { return null; }
+function queueProcessing(fileId) {
+  return inngest.send({ name: 'file/process', data: { fileId } });
 }
-
-const UPLOAD_ROOT = path.join(__dirname, '..', '..', 'data', 'uploads');
-if (!fs.existsSync(UPLOAD_ROOT)) fs.mkdirSync(UPLOAD_ROOT, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination(req, file, cb) {
-    const dir = path.join(UPLOAD_ROOT, req.params.projectId);
-    fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename(req, file, cb) {
-    const ext = path.extname(file.originalname);
-    cb(null, `${uuid()}${ext}`);
-  },
-});
-const upload = multer({ storage, limits: { fileSize: 100 * 1024 * 1024 } });
 
 async function ownsProject(req, res, next) {
   try {
@@ -48,56 +30,82 @@ router.get('/projects/:projectId/files', authRequired, ownsProject, async (req, 
   res.json({ files: files.map(stripFile) });
 });
 
-router.post('/projects/:projectId/files',
-  authRequired, ownsProject, upload.array('files', 20),
-  async (req, res) => {
-    const uploaded = req.files || [];
-    if (uploaded.length === 0) return res.status(400).json({ error: 'No files uploaded' });
+/**
+ * POST /projects/:projectId/files/init
+ *
+ * Step 1 of the upload flow: run the same limit/type checks the old
+ * multipart upload did, create a 'pending' file row per accepted file, and
+ * return a Supabase Storage signed upload URL for each. The browser then
+ * uploads bytes straight to Storage (see public/js/api.js), bypassing this
+ * server entirely — required because Vercel serverless functions cap
+ * request bodies at 4.5MB, well under this app's 100MB upload limit.
+ */
+router.post('/projects/:projectId/files/init', authRequired, ownsProject, async (req, res) => {
+  const requested = Array.isArray(req.body?.files) ? req.body.files : [];
+  if (requested.length === 0) return res.status(400).json({ error: 'No files requested' });
+  if (requested.length > 20) return res.status(400).json({ error: 'Max 20 files per request' });
 
-    const fileCheck = await checkLimit(req.user.id, 'file', uploaded.length);
-    if (!fileCheck.ok) {
-      for (const f of uploaded) fs.unlink(f.path, () => {});
-      return res.status(402).json({ error: fileCheck.reason });
-    }
-    const totalMb = uploaded.reduce((s, f) => s + f.size, 0) / 1024 / 1024;
-    const storageCheck = await checkLimit(req.user.id, 'storageMb', totalMb);
-    if (!storageCheck.ok) {
-      for (const f of uploaded) fs.unlink(f.path, () => {});
-      return res.status(402).json({ error: storageCheck.reason });
-    }
+  const fileCheck = await checkLimit(req.user.id, 'file', requested.length);
+  if (!fileCheck.ok) return res.status(402).json({ error: fileCheck.reason });
 
-    const created = [];
-    for (const f of uploaded) {
-      const kind = classify(f.originalname);
-      if (kind === 'unknown') {
-        fs.unlink(f.path, () => {});
-        created.push({ originalName: f.originalname, status: 'rejected', error: `Unsupported type: ${path.extname(f.originalname)}` });
-        continue;
-      }
-      const record = await db.insert('files', {
-        id: uuid(),
-        projectId: req.project.id,
-        userId: req.user.id,
-        originalName: f.originalname,
-        storedPath: f.path,
-        size: f.size,
-        mimeType: f.mimetype,
-        kind,
-        status: 'pending',
-        chunkCount: 0,
-        createdAt: Date.now(),
-      });
-      processFileAsync(record, getIo(), req.user.id);
-      created.push(stripFile(record));
+  const totalMb = requested.reduce((s, f) => s + (Number(f.size) || 0), 0) / 1024 / 1024;
+  const storageCheck = await checkLimit(req.user.id, 'storageMb', totalMb);
+  if (!storageCheck.ok) return res.status(402).json({ error: storageCheck.reason });
+
+  const created = [];
+  for (const f of requested) {
+    const originalName = String(f.name || '').slice(0, 255);
+    const kind = classify(originalName);
+    if (kind === 'unknown') {
+      created.push({ originalName, status: 'rejected', error: `Unsupported type: ${path.extname(originalName)}` });
+      continue;
     }
-    res.json({ files: created });
-  });
+    const fileId = uuid();
+    const ext = path.extname(originalName);
+    const storageKey = `${req.project.id}/${fileId}${ext}`;
+
+    const record = await db.insert('files', {
+      id: fileId,
+      projectId: req.project.id,
+      userId: req.user.id,
+      originalName,
+      storageKey,
+      size: Number(f.size) || 0,
+      mimeType: f.mimeType || null,
+      kind,
+      status: 'pending',
+      chunkCount: 0,
+      createdAt: Date.now(),
+    });
+    const { signedUrl, token } = await storage.createSignedUploadUrl(storageKey);
+    created.push({ ...stripFile(record), uploadUrl: signedUrl, uploadToken: token, storageKey });
+  }
+  res.json({ files: created });
+});
+
+/**
+ * POST /projects/:projectId/files/:fileId/complete
+ *
+ * Step 2: called once the browser's direct-to-Storage upload finishes.
+ * Confirms the object actually landed in Storage (doesn't trust the client's
+ * report alone), then queues background processing.
+ */
+router.post('/projects/:projectId/files/:fileId/complete', authRequired, ownsProject, async (req, res) => {
+  const file = await db.findOne('files', { id: req.params.fileId, projectId: req.project.id });
+  if (!file) return res.status(404).json({ error: 'File not found' });
+
+  const exists = await storage.objectExists(file.storageKey);
+  if (!exists) return res.status(400).json({ error: 'Upload did not complete — object not found in storage' });
+
+  await queueProcessing(file.id);
+  res.json({ ok: true });
+});
 
 router.post('/projects/:projectId/files/:fileId/reprocess', authRequired, ownsProject, async (req, res) => {
   const file = await db.findOne('files', { id: req.params.fileId, projectId: req.project.id });
   if (!file) return res.status(404).json({ error: 'File not found' });
   await db.update('files', file.id, { status: 'pending', error: null });
-  processFileAsync(file, getIo(), req.user.id);
+  await queueProcessing(file.id);
   res.json({ ok: true });
 });
 
@@ -132,7 +140,7 @@ router.post('/projects/:projectId/sources/url', authRequired, ownsProject, async
       chunkCount: 0,
       createdAt: Date.now(),
     });
-    processFileAsync(record, getIo(), req.user.id);
+    await queueProcessing(record.id);
     created.push(stripFile(record));
   }
   res.json({ sources: created });
@@ -141,10 +149,9 @@ router.post('/projects/:projectId/sources/url', authRequired, ownsProject, async
 router.delete('/projects/:projectId/files/:fileId', authRequired, ownsProject, async (req, res) => {
   const file = await db.findOne('files', { id: req.params.fileId, projectId: req.project.id });
   if (!file) return res.status(404).json({ error: 'File not found' });
-  if (file.storedPath) fs.unlink(file.storedPath, () => {});
-  // FK CASCADE removes page_images DB rows, but not their crop files on disk.
-  const pagesDir = path.join(UPLOAD_ROOT, req.params.projectId, 'pages', file.id);
-  fs.rm(pagesDir, { recursive: true, force: true }, () => {});
+  if (file.storageKey) await storage.removeObject(file.storageKey).catch(() => {});
+  // FK CASCADE removes page_images DB rows, but not their crop files in Storage.
+  await storage.removePrefix(`${req.params.projectId}/pages/${file.id}`).catch(() => {});
   // FK CASCADE on chunks; explicit remove for file itself
   await db.remove('files', { id: file.id });
   res.json({ ok: true });
@@ -152,20 +159,13 @@ router.delete('/projects/:projectId/files/:fileId', authRequired, ownsProject, a
 
 router.post('/projects/:projectId/reindex', authRequired, ownsProject, async (req, res) => {
   const files = await db.findAll('files', { projectId: req.project.id, status: 'ready' });
-  if (files.length === 0) return res.json({ reindexed: 0, failed: 0 });
+  if (files.length === 0) return res.json({ queued: 0 });
 
-  let reindexed = 0;
-  let failed = 0;
-  for (const file of files) {
-    // processFile() catches its own errors internally (marks the file
-    // 'failed' and returns normally, it never rejects), so success must be
-    // read back from the row rather than inferred from a try/catch here.
-    await processFileSync(file, getIo(), req.user.id);
-    const updated = await db.findOne('files', { id: file.id });
-    if (updated && updated.status === 'ready') reindexed++;
-    else failed++;
-  }
-  res.json({ reindexed, failed });
+  await Promise.all(files.map(f => {
+    db.update('files', f.id, { status: 'pending', error: null });
+    return queueProcessing(f.id);
+  }));
+  res.json({ queued: files.length });
 });
 
 router.get('/projects/:projectId/files/:fileId/chunks', authRequired, ownsProject, async (req, res) => {
@@ -221,21 +221,26 @@ router.get('/projects/:projectId/files/:fileId/status', authRequired, ownsProjec
   const file = await db.findOne('files', { id: req.params.fileId, projectId: req.project.id });
   if (!file) return res.status(404).json({ error: 'File not found' });
   const countRow = await db.queryOne('SELECT COUNT(*) AS count FROM chunks WHERE file_id = $1', [file.id]);
-  res.json({ status: file.status, chunkCount: Number(countRow.count), error: file.error || null });
+  res.json({
+    status: file.status,
+    stage: file.stage || null,
+    pct: file.pct ?? null,
+    chunkCount: Number(countRow.count),
+    error: file.error || null,
+  });
 });
 
 router.get('/projects/:projectId/files/:fileId/blob', authRequired, ownsProject, async (req, res) => {
   const file = await db.findOne('files', { id: req.params.fileId, projectId: req.project.id });
   if (!file) return res.status(404).json({ error: 'File not found' });
-  if (!file.storedPath || !fs.existsSync(file.storedPath)) return res.status(410).json({ error: 'File blob missing' });
-  res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
-  res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(file.originalName)}"`);
-  fs.createReadStream(file.storedPath).pipe(res);
+  if (!file.storageKey) return res.status(410).json({ error: 'File blob missing' });
+  const url = await storage.getSignedDownloadUrl(file.storageKey);
+  res.redirect(302, url);
 });
 
 function stripFile(f) {
   if (!f) return f;
-  const { storedPath, extractedText, ...rest } = f;
+  const { storageKey, extractedText, ...rest } = f;
   return rest;
 }
 

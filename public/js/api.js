@@ -33,6 +33,20 @@ async function apiCall(path, opts = {}) {
   return body;
 }
 
+// Uploads go straight from the browser to Supabase Storage via a signed URL
+// (see /api/projects/:id/files/init) rather than through this server —
+// Vercel serverless functions cap request bodies at 4.5MB. Lazily creates
+// one Supabase client using publishable-safe config fetched from the server
+// (public/project.html loads the Supabase JS CDN script before api.js runs).
+let _supabaseClient = null;
+async function getSupabaseClient() {
+  if (_supabaseClient) return _supabaseClient;
+  const { supabaseUrl, supabaseAnonKey } = await apiCall('/api/config');
+  if (!supabaseUrl || !supabaseAnonKey) throw new Error('File storage is not configured on the server');
+  _supabaseClient = window.supabase.createClient(supabaseUrl, supabaseAnonKey);
+  return _supabaseClient;
+}
+
 const API = {
   // Auth
   signup:         (name, email, password) => apiCall('/api/auth/signup', { method: 'POST', body: { name, email, password } }),
@@ -53,7 +67,33 @@ const API = {
 
   // Sources
   listFiles: (pid) => apiCall(`/api/projects/${pid}/files`),
-  uploadFiles: (pid, formData) => apiCall(`/api/projects/${pid}/files`, { method: 'POST', body: formData }),
+  // files: a FileList/array of File objects (not FormData) — each is
+  // uploaded directly to Supabase Storage via a signed URL, not proxied
+  // through this server. Returns { files: [...] } shaped like the old
+  // multipart response (rejected entries included) so callers don't change.
+  uploadFiles: async (pid, files) => {
+    const fileArr = Array.from(files);
+    if (!fileArr.length) return { files: [] };
+    const { files: initFiles } = await apiCall(`/api/projects/${pid}/files/init`, {
+      method: 'POST',
+      body: { files: fileArr.map(f => ({ name: f.name, size: f.size, mimeType: f.type })) },
+    });
+    const results = [];
+    for (let i = 0; i < initFiles.length; i++) {
+      const meta = initFiles[i];
+      if (meta.status === 'rejected') { results.push(meta); continue; }
+      try {
+        const supabase = await getSupabaseClient();
+        const { error } = await supabase.storage.from('uploads').uploadToSignedUrl(meta.storageKey, meta.uploadToken, fileArr[i]);
+        if (error) throw error;
+        await apiCall(`/api/projects/${pid}/files/${meta.id}/complete`, { method: 'POST' });
+        results.push(meta);
+      } catch (err) {
+        results.push({ ...meta, status: 'rejected', error: err.message || 'Upload failed' });
+      }
+    }
+    return { files: results };
+  },
   reprocessFile: (pid, fid) => apiCall(`/api/projects/${pid}/files/${fid}/reprocess`, { method: 'POST' }),
   deleteFile:    (pid, fid) => apiCall(`/api/projects/${pid}/files/${fid}`, { method: 'DELETE' }),
   addUrl: (pid, url) => apiCall(`/api/projects/${pid}/sources/url`, { method: 'POST', body: { url } }),
@@ -183,56 +223,3 @@ function renderTopNav(active) {
   document.getElementById('logout-btn').addEventListener('click', () => Auth.logout());
 }
 
-// ── Socket.io — real-time file processing progress ────────────
-// Loaded only on authenticated pages that call renderTopNav().
-// Requires socket.io client served by the server at /socket.io/socket.io.js
-function initProgressSocket() {
-  if (typeof io === 'undefined') return; // socket.io client script not loaded
-  const user = Auth.user;
-  if (!user) return;
-
-  const socket = io({ transports: ['websocket', 'polling'] });
-  // Send the JWT, not the raw user id — the server verifies it and derives
-  // the room itself, so a client can no longer join another user's room by
-  // just passing their id (see backend/socketAuth.js).
-  socket.on('connect', () => socket.emit('join', Auth.token));
-
-  socket.on('file:progress', ({ fileId, stage, pct }) => {
-    // Update a progress bar if one exists for this file
-    const row = document.querySelector(`[data-file-id="${fileId}"]`);
-    if (!row) return;
-
-    let bar = row.querySelector('.progress-bar');
-    if (!bar) {
-      const wrap = document.createElement('div');
-      wrap.style.cssText = 'height:3px;background:rgba(255,255,255,0.08);border-radius:2px;margin-top:6px;overflow:hidden';
-      bar = document.createElement('div');
-      bar.className = 'progress-bar';
-      bar.style.cssText = 'height:100%;background:var(--accent,#7c6af5);border-radius:2px;transition:width 0.3s';
-      wrap.appendChild(bar);
-      row.appendChild(wrap);
-    }
-
-    bar.style.width = pct + '%';
-
-    const pill = row.querySelector('.file-status-pill');
-    if (pill) {
-      pill.textContent = stage === 'done' ? 'ready'
-        : stage === 'failed' ? 'failed'
-        : stage;
-    }
-
-    if (stage === 'done' || stage === 'failed') {
-      setTimeout(() => {
-        if (typeof refreshFileList === 'function') refreshFileList();
-      }, 600);
-    }
-  });
-}
-
-// Auto-init once DOM is ready on authenticated pages
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initProgressSocket);
-} else {
-  initProgressSocket();
-}

@@ -11,3 +11,5 @@ public/lipsync-sdk.min.js
 public/lipsync-sdk.min.js.map
 graphify-out/cache/
 graphify-out/.graphify_*.json
+.vercel
+.env*

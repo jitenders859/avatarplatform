@@ -27,7 +27,7 @@ const path = require('path');
 const helmet = require('helmet');
 const compression = require('compression');
 const { rateLimit } = require('express-rate-limit');
-const { Server: SocketServer } = require('socket.io');
+const { serve: serveInngest } = require('inngest/express');
 const pinoHttp = require('pino-http');
 const logger = require('./logger');
 
@@ -41,6 +41,8 @@ const captureFieldsRoutes = require('./routes/captureFields');
 const quizQuestionsRoutes = require('./routes/quizQuestions');
 const flashcardsRoutes = require('./routes/flashcards');
 const videoResourcesRoutes = require('./routes/videoResources');
+const inngestClient = require('./inngest/client');
+const { functions: inngestFunctions } = require('./inngest/functions');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -106,6 +108,25 @@ app.use(pinoHttp({
   customLogLevel: (_req, res) => res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
 }));
 
+// Publishable-safe config for the frontend: uploads go straight from the
+// browser to Supabase Storage (see routes/files.js's init/complete flow),
+// which needs the Supabase project URL + anon key client-side. Neither
+// value grants write access on its own — the actual upload authorization is
+// the per-file signed URL token issued by POST .../files/init. Static HTML
+// has no build-time env injection, so the frontend fetches this at runtime.
+app.get('/api/config', (_req, res) => {
+  res.json({
+    supabaseUrl: process.env.SUPABASE_URL || null,
+    supabaseAnonKey: process.env.SUPABASE_PUBLISHABLE_KEY || null,
+  });
+});
+
+// Inngest webhook — durable background jobs (file processing) call back
+// into this route per step. Mounted on the same Express app/Vercel function
+// rather than a separate one; simplest given there's no benefit here to
+// splitting it out.
+app.use('/api/inngest', serveInngest({ client: inngestClient, functions: inngestFunctions }));
+
 // ── API routes ────────────────────────────────────────────────
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/projects', apiLimiter, projectsRoutes);
@@ -159,64 +180,51 @@ app.use((err, req, res, _next) => {
   res.status(500).json({ error: err.message || 'Internal server error' });
 });
 
-const server = app.listen(PORT, () => {
-  logger.info(`AvatarPlatform running at http://localhost:${PORT}`);
-  if (!process.env.GEMINI_API_KEY) {
-    logger.warn('GEMINI_API_KEY not set — embeddings, multimodal extraction, and live chat will fail');
-  } else {
-    logger.info('GEMINI_API_KEY loaded');
-  }
-  if (!process.env.STRIPE_SECRET_KEY) {
-    logger.warn('STRIPE_SECRET_KEY not set — billing endpoints will return 503');
-  } else {
-    logger.info('Stripe configured');
-  }
-});
-
-// ── Socket.io — real-time file processing progress ────────────
-const io = new SocketServer(server, {
-  cors: { origin: '*' },
-  // Only use websocket transport in production; polling fallback for dev proxies
-  transports: ['websocket', 'polling'],
-});
-
-// Previously trusted a client-supplied userId directly (`socket.on('join',
-// userId => socket.join('user:' + userId))`), letting any connected client
-// join ANY user's room and receive their private file-processing events.
-// The room is now derived from a verified JWT (see socketAuth.js) instead
-// of a value the client can simply choose.
-const { resolveUserRoom } = require('./socketAuth');
-io.on('connection', socket => {
-  socket.on('join', token => {
-    const room = resolveUserRoom(token);
-    if (room) socket.join(room);
+// Vercel provides its own listener and process lifecycle around the
+// exported `app` (see api/index.js) — calling app.listen() there would just
+// bind a port nothing connects to, and process.exit() inside a serverless
+// invocation would kill the container out from under unrelated concurrent
+// invocations sharing the same warm instance. Vercel sets VERCEL=1 on every
+// function invocation, so local `npm run dev`/`npm start` (VERCEL unset)
+// behaves exactly as before.
+if (!process.env.VERCEL) {
+  const server = app.listen(PORT, () => {
+    logger.info(`AvatarPlatform running at http://localhost:${PORT}`);
+    if (!process.env.GEMINI_API_KEY) {
+      logger.warn('GEMINI_API_KEY not set — embeddings, multimodal extraction, and live chat will fail');
+    } else {
+      logger.info('GEMINI_API_KEY loaded');
+    }
+    if (!process.env.STRIPE_SECRET_KEY) {
+      logger.warn('STRIPE_SECRET_KEY not set — billing endpoints will return 503');
+    } else {
+      logger.info('Stripe configured');
+    }
   });
-});
 
-module.exports.io = io;
+  function shutdown(signal) {
+    logger.info({ signal }, 'shutdown received');
+    server.close(() => { logger.info('server closed'); process.exit(0); });
+    setTimeout(() => process.exit(1), 10000).unref();
+  }
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
 
-function shutdown(signal) {
-  logger.info({ signal }, 'shutdown received');
-  server.close(() => { logger.info('server closed'); process.exit(0); });
-  setTimeout(() => process.exit(1), 10000).unref();
+  // Last-resort nets for errors outside the request/response cycle (e.g. the
+  // fire-and-forget setImmediate(() => sendWelcome(...)) in routes/auth.js) —
+  // express-async-errors only covers rejections thrown inside route handlers.
+  // Logged and swallowed rather than crashing, so one bad background call
+  // (or a transient DB blip) doesn't take down every tenant's chatbot.
+  process.on('unhandledRejection', err => {
+    logger.error({ err }, 'unhandled rejection');
+  });
+  // An uncaught exception means something threw outside any promise/async
+  // context — state may be inconsistent, so exit and let the process manager
+  // restart rather than keep serving from a possibly-corrupted process.
+  process.on('uncaughtException', err => {
+    logger.error({ err }, 'uncaught exception — exiting');
+    process.exit(1);
+  });
 }
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT',  () => shutdown('SIGINT'));
 
-// Last-resort nets for errors outside the request/response cycle (e.g. the
-// fire-and-forget setImmediate(() => sendWelcome(...)) in routes/auth.js) —
-// express-async-errors only covers rejections thrown inside route handlers.
-// Logged and swallowed rather than crashing, so one bad background call
-// (or a transient DB blip) doesn't take down every tenant's chatbot.
-process.on('unhandledRejection', err => {
-  logger.error({ err }, 'unhandled rejection');
-});
-// An uncaught exception means something threw outside any promise/async
-// context — state may be inconsistent, so exit and let the process manager
-// restart rather than keep serving from a possibly-corrupted process.
-process.on('uncaughtException', err => {
-  logger.error({ err }, 'uncaught exception — exiting');
-  process.exit(1);
-});
-
-module.exports = { app, server };
+module.exports = { app };

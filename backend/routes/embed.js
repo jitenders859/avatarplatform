@@ -8,6 +8,7 @@ const express = require('express');
 const crypto = require('crypto');
 const { v4: uuid } = require('uuid');
 const db = require('../db');
+const storage = require('../services/storage');
 const { CHARACTERS } = require('./projects');
 const { embedOne } = require('../services/embed');
 const { searchProject } = require('../services/vector');
@@ -210,11 +211,9 @@ router.get('/:publicId/file/:fileId', async (req, res) => {
     if (!file) return res.status(404).end();
     const allowed = file.kind === 'image' || (file.kind === 'pdf' && project.capabilityTier !== 'basic');
     if (!allowed) return res.status(403).end();
-    const fs = require('fs');
-    if (!file.storedPath || !fs.existsSync(file.storedPath)) return res.status(410).end();
-    res.setHeader('Content-Type', file.mimeType || (file.kind === 'pdf' ? 'application/pdf' : 'image/jpeg'));
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    fs.createReadStream(file.storedPath).pipe(res);
+    if (!file.storageKey) return res.status(410).end();
+    const url = await storage.getSignedDownloadUrl(file.storageKey);
+    res.redirect(302, url);
   } catch (e) {
     res.status(500).end();
   }
@@ -232,11 +231,9 @@ router.get('/:publicId/page-image/:pageImageId', async (req, res) => {
 
     const pageImage = await db.findOne('pageImages', { id: req.params.pageImageId, projectId: project.id });
     if (!pageImage) return res.status(404).end();
-    const fs = require('fs');
-    if (!fs.existsSync(pageImage.imagePath)) return res.status(410).end();
-    res.setHeader('Content-Type', 'image/png');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
-    fs.createReadStream(pageImage.imagePath).pipe(res);
+    if (!pageImage.imagePath) return res.status(410).end();
+    const url = await storage.getSignedDownloadUrl(pageImage.imagePath);
+    res.redirect(302, url);
   } catch (e) {
     res.status(500).end();
   }
