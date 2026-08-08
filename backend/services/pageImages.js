@@ -22,7 +22,7 @@
  * from this otherwise-CommonJS module, the standard way to consume an
  * ESM-only package from CJS without converting the whole project.
  */
-const { v4: uuid } = require('uuid');
+const { randomUUID: uuid } = require('crypto');
 const { createCanvas } = require('@napi-rs/canvas');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('../db');

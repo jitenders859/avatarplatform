@@ -1,6 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
-const { v4: uuid } = require('uuid');
+const uuid = crypto.randomUUID;
 const db = require('../db');
 const { authRequired } = require('../middleware/auth');
 const { invalidateProjectCache } = require('../cache');

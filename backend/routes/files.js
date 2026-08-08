@@ -1,6 +1,6 @@
 const express = require('express');
 const path = require('path');
-const { v4: uuid } = require('uuid');
+const { randomUUID: uuid } = require('crypto');
 const db = require('../db');
 const storage = require('../services/storage');
 const inngest = require('../inngest/client');

@@ -12,7 +12,7 @@
  * GET .../status) rather than pushed over Socket.io — serverless functions
  * can't hold a persistent connection to push through.
  */
-const { v4: uuid } = require('uuid');
+const { randomUUID: uuid } = require('crypto');
 const db = require('../db');
 const storage = require('./storage');
 const { extractFile } = require('./extract');

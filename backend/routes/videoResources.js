@@ -4,7 +4,7 @@
  * AI generation or live search here; see tools.js for why.
  */
 const express = require('express');
-const { v4: uuid } = require('uuid');
+const { randomUUID: uuid } = require('crypto');
 const db = require('../db');
 const { authRequired } = require('../middleware/auth');
 

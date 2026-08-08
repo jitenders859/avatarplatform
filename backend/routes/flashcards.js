@@ -5,7 +5,7 @@
  */
 const express = require('express');
 const multer = require('multer');
-const { v4: uuid } = require('uuid');
+const { randomUUID: uuid } = require('crypto');
 const db = require('../db');
 const { authRequired } = require('../middleware/auth');
 const { parseFlashcardCsv } = require('../services/csvImport');
