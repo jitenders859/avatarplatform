@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Billing — AvatarPlatform</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
@@ -29,6 +33,7 @@
     <p class="muted text-sm text-center mt-lg" id="stripe-note"></p>
   </div>
 
+  <script src="/js/theme.js"></script>
   <script src="/js/api.js"></script>
   <script>
   Auth.requireLogin();
@@ -53,13 +58,25 @@
         ? `Powered by Stripe · Period: <strong>${usage.period}</strong>`
         : `<span class="pill pill-warn">Demo mode</span> — Stripe is not configured on this server. Contact the admin to enable paid plans.`;
 
-      // Show portal button if user has a Stripe customer (i.e., they've subscribed before)
-      if (sub && sub.subscription) {
+      // Show portal button if user has a Stripe customer (i.e., they've subscribed
+      // before) — not just when a subscription is currently active, so a churned
+      // user can still reach invoice history / resubscribe.
+      if (sub && sub.hasStripeCustomer) {
         document.getElementById('portal-btn').hidden = false;
       }
 
       renderUsage(usage);
       renderPlans(plans, stripeEnabled);
+
+      // Arrived here from the pricing page's "Get started" on a paid plan
+      // (via signup?plan=X → here) — finish the job by opening Checkout
+      // for that plan automatically, once, instead of dropping them on a
+      // page they still have to re-click through.
+      const requestedPlan = new URLSearchParams(location.search).get('plan');
+      if (requestedPlan && requestedPlan !== currentPlanId && stripeEnabled) {
+        history.replaceState(null, '', '/billing');
+        window.checkout(requestedPlan);
+      }
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -128,7 +145,14 @@
 
   document.getElementById('portal-btn').addEventListener('click', async () => {
     try { const { url } = await API.createPortalSession(); location.href = url; }
-    catch (e) { toast(e.message, 'error'); }
+    catch (e) {
+      if (e.code === 'no_customer') {
+        toast('Choose a plan below to get started', 'error');
+        document.getElementById('plans-grid').scrollIntoView({ behavior: 'smooth' });
+      } else {
+        toast(e.message, 'error');
+      }
+    }
   });
 
   load();

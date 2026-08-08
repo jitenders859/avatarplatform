@@ -48,6 +48,7 @@ router.post('/', authRequired, async (req, res) => {
     widgetStartOpen: false,
     textDirection: 'auto',
     themeColor: '#7c6af5',
+    widgetTheme: 'light',
     showBranding: true,
     showSourceCards: true,
     showQuickReplies: false,
@@ -85,7 +86,7 @@ router.patch('/:id', authRequired, async (req, res) => {
 
   const allowed = [
     'name', 'characterId', 'systemPrompt', 'voice', 'welcomeMessage',
-    'widgetPosition', 'widgetStartOpen', 'textDirection', 'themeColor',
+    'widgetPosition', 'widgetStartOpen', 'textDirection', 'themeColor', 'widgetTheme',
     'showBranding', 'showSourceCards', 'showQuickReplies', 'allowDragDropUpload', 'widgetOffsetX', 'widgetOffsetY',
     'fullScreenOnDesktop', 'fullScreenOnMobile', 'showFullScreenToggle',
     'avatarPosition', 'avatarSize', 'showAvatarInLauncher',

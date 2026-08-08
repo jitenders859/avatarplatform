@@ -18,6 +18,7 @@ const { projectCache, invalidateProjectCache } = require('../cache');
 const { validate, schemas } = require('../middleware/validate');
 const { toolsForTier } = require('../services/tools');
 const { resolveLearnerKey, backfillLearnerKey } = require('../services/learner');
+const { checkLimit, userPlanId } = require('../services/usage');
 const logger = require('../logger').child({ module: 'embed' });
 const router = express.Router();
 
@@ -73,6 +74,14 @@ router.get('/:publicId/config', async (req, res) => {
 
     const captureFields = await db.findAll('captureFields', { projectId: project.id }, { orderBy: 'order', order: 'asc' });
 
+    // Free-plan watermark: the "Powered by AvatarPlatform" badge is a paid
+    // feature to remove. showBranding is a per-project owner setting, but on
+    // the Free plan it must always render regardless of what's stored — this
+    // is the server-side gate; the project.html toggle also disables itself
+    // for Free-plan owners as a UX hint, but this is the enforcement point.
+    const planId = await userPlanId(project.userId);
+    const messageLimitCheck = await checkLimit(project.userId, 'message', 1);
+
     res.json({
       project: {
         id: project.id,
@@ -87,7 +96,8 @@ router.get('/:publicId/config', async (req, res) => {
         widgetStartOpen:       project.widgetStartOpen !== false ? !!project.widgetStartOpen : false,
         textDirection:         project.textDirection         || 'auto',
         themeColor:            project.themeColor            || '#7c6af5',
-        showBranding:          project.showBranding          !== false,
+        widgetTheme:           project.widgetTheme            || 'light',
+        showBranding:          planId === 'free' ? true : project.showBranding !== false,
         showSourceCards:       project.showSourceCards       !== false,
         showQuickReplies:      project.showQuickReplies      === true,
         allowDragDropUpload:   project.allowDragDropUpload   === true,
@@ -114,7 +124,15 @@ router.get('/:publicId/config', async (req, res) => {
         id: f.id, label: f.label, key: f.key,
         type: f.type, options: f.options, required: f.required, order: f.order,
       })),
-      apiKey: PUBLIC_API_KEY,
+      // The Live voice path connects browser → Gemini directly with this key
+      // (see lipsync-sdk.js), so our backend never sees those messages to
+      // gate them individually. Withholding the key once the owner's
+      // monthly message quota is exhausted is the enforcement point for
+      // that path; /ask and /study additionally check per-request since
+      // they do proxy through us.
+      apiKey: messageLimitCheck.ok ? PUBLIC_API_KEY : null,
+      limitReached: !messageLimitCheck.ok,
+      limitMessage: messageLimitCheck.ok ? null : messageLimitCheck.reason,
       model: 'gemini-3.1-flash-live-preview',
     });
   } catch (e) {
@@ -233,6 +251,9 @@ router.post('/:publicId/ask', validate(schemas.ask), async (req, res) => {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
 
+    const limitCheck = await checkLimit(project.userId, 'message', 1);
+    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason });
+
     const ip = req.ip || 'unknown';
     const { question, sessionId: incomingSessionId } = req.body;
 
@@ -340,6 +361,9 @@ router.post('/:publicId/study', validate(schemas.study), async (req, res) => {
         error: 'Study tools require the Medium or Advanced capability tier for this chatbot. Change it in project settings.',
       });
     }
+
+    const limitCheck = await checkLimit(project.userId, 'message', 1);
+    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason });
 
     const ip = req.ip || 'unknown';
     const { message, sessionId: incomingSessionId } = req.body;

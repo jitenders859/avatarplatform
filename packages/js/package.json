@@ -1,0 +1,32 @@
+{
+  "name": "@avatar-platform/js",
+  "version": "0.1.0",
+  "description": "Core JS SDK for AvatarPlatform — mount the embeddable talking-agent widget or call the headless ask API from any web page.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jitenders859/avatarplatform.git",
+    "directory": "packages/js"
+  },
+  "keywords": ["avatarplatform", "chatbot", "widget", "embed"]
+}

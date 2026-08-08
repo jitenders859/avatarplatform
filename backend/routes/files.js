@@ -157,12 +157,13 @@ router.post('/projects/:projectId/reindex', authRequired, ownsProject, async (re
   let reindexed = 0;
   let failed = 0;
   for (const file of files) {
-    try {
-      await processFileSync(file, getIo(), req.user.id);
-      reindexed++;
-    } catch (_) {
-      failed++;
-    }
+    // processFile() catches its own errors internally (marks the file
+    // 'failed' and returns normally, it never rejects), so success must be
+    // read back from the row rather than inferred from a try/catch here.
+    await processFileSync(file, getIo(), req.user.id);
+    const updated = await db.findOne('files', { id: file.id });
+    if (updated && updated.status === 'ready') reindexed++;
+    else failed++;
   }
   res.json({ reindexed, failed });
 });

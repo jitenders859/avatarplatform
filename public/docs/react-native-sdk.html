@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>React Native SDK — AvatarPlatform Docs</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
   <link rel="stylesheet" href="/css/docs.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
@@ -20,6 +24,7 @@
     <aside class="docs-sidebar" id="docs-sidebar">
       <div class="docs-sidebar-inner">
         <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <div id="theme-toggle-slot" style="padding:0 20px 12px"></div>
         <a class="docs-back" href="/dashboard">← Back to app</a>
         <nav class="docs-nav">
           <p class="docs-nav-section">Getting Started</p>
@@ -78,8 +83,7 @@ export default function HomeScreen() {
       &lt;AvatarWidget
         botId="YOUR_BOT_ID"
         serverUrl="https://your-deployment.com"
-        position="bottom-right"
-        theme="#6366f1"
+        style={{ position: 'absolute', bottom: 20, right: 20, width: 72, height: 72 }}
       /&gt;
     &lt;/View&gt;
   );
@@ -102,31 +106,18 @@ export default function HomeScreen() {
               <td><strong>Required.</strong> Base URL of your AvatarPlatform deployment (no trailing slash).</td>
             </tr>
             <tr>
-              <td><span class="prop-name">position</span></td>
-              <td><span class="prop-type">'bottom-right' | 'bottom-left'</span></td>
-              <td><span class="prop-default">'bottom-right'</span></td>
-              <td>Corner where the launcher button appears.</td>
-            </tr>
-            <tr>
-              <td><span class="prop-name">theme</span></td>
-              <td><span class="prop-type">string</span></td>
-              <td><span class="prop-default">'#7c6af5'</span></td>
-              <td>Accent colour passed to the embed widget.</td>
-            </tr>
-            <tr>
-              <td><span class="prop-name">startOpen</span></td>
-              <td><span class="prop-type">boolean</span></td>
-              <td><span class="prop-default">false</span></td>
-              <td>Open the panel on mount.</td>
-            </tr>
-            <tr>
               <td><span class="prop-name">style</span></td>
               <td><span class="prop-type">ViewStyle</span></td>
               <td>—</td>
-              <td>Additional styles for the container <code>View</code>. Defaults to <code>position: 'absolute'</code> over the screen.</td>
+              <td>Style for the container <code>View</code>. Position it yourself (e.g. <code>position: 'absolute'</code>) the same way you'd position any floating RN element. Defaults to filling its parent.</td>
             </tr>
           </tbody>
         </table>
+
+        <div class="callout callout-warn">
+          <span class="callout-icon">⚠️</span>
+          <div class="callout-body"><p>There's no <code>position</code>/<code>theme</code>/<code>startOpen</code> prop — those are configured per-project in your AvatarPlatform dashboard's Widget settings, not overridable per-mount. Size and placement of the WebView itself is entirely up to your own <code>style</code>.</p></div>
+        </div>
 
         <h2>Platform notes</h2>
         <h3>iOS</h3>
@@ -171,6 +162,10 @@ console.log(result.sources); // source citations</code></pre>
       </div>
     </main>
   </div>
+
+  <script src="/js/theme.js"></script>
+
+  <script>mountThemeToggle(document.getElementById('theme-toggle-slot'));</script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script>

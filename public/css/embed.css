@@ -8,6 +8,24 @@
 */
 
 :root {
+  --accent: #6C4FF0;
+  --accent-2: #8A72FF;
+  --bg: #FFF7EC;
+  --bg-2: #FFFFFF;
+  --bg-3: #FBF6EE;
+  --border: rgba(36,27,47,0.08);
+  --text: #241B2F;
+  --text-dim: #6B6178;
+  --user-bg: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+  --bot-bg: rgba(36,27,47,0.04);
+  --shadow-lg: 0 24px 60px rgba(36,27,47,.18), 0 4px 16px rgba(36,27,47,.12);
+  --text-rgb: 36,27,47;
+  --avatar-size: 160px;
+  --launcher-size: 72px;
+  --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+:root[data-theme="dark"] {
   --accent: #7c6af5;
   --accent-2: #a78bfa;
   --bg: #0e0f17;
@@ -16,11 +34,9 @@
   --border: rgba(255,255,255,0.08);
   --text: #e8e9ee;
   --text-dim: #9aa0b0;
-  --user-bg: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
   --bot-bg: rgba(255,255,255,0.04);
   --shadow-lg: 0 24px 60px rgba(0,0,0,0.45), 0 4px 16px rgba(0,0,0,0.35);
-  --avatar-size: 160px;
-  --launcher-size: 72px;
+  --text-rgb: 232,233,238;
 }
 
 * { box-sizing: border-box; }
@@ -29,7 +45,7 @@ html, body {
   margin: 0; padding: 0;
   background: transparent;
   color: var(--text);
-  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  font: 14px/1.5 var(--font-body);
   -webkit-font-smoothing: antialiased;
   height: 100%;
   overflow: hidden;

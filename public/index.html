@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>AvatarPlatform — AI Talking Agents for any website</title>
   <meta name="description" content="Host AI agents with animated Rive characters. Embed with one script tag. Customize looks, voice, and knowledge. Works async." />
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
   <style>
     /* ── Hero ──────────────────────────────────────────────────── */
@@ -383,6 +387,7 @@
         <a class="nav-link" href="/characters">Characters</a>
         <a class="nav-link" href="/blog">Blog</a>
       </div>
+      <div id="theme-toggle-slot"></div>
       <a class="nav-link" href="/login" style="font-size:13px;color:var(--text-2)">Log in</a>
       <a class="btn btn-primary btn-sm" href="/signup">Get started free</a>
     </div>
@@ -657,7 +662,10 @@ console.<span class="s-fn">log</span>(result.sources);
     </div>
   </footer>
 
+  <script src="/js/theme.js"></script>
   <script>
+  mountThemeToggle(document.getElementById('theme-toggle-slot'));
+
   function switchTab(e, name) {
     document.querySelectorAll('.demo-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.demo-panel').forEach(p => p.classList.remove('active'));

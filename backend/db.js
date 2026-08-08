@@ -24,11 +24,55 @@ const logger = require('./logger').child({ module: 'db' });
 types.setTypeParser(20, val => parseInt(val, 10));
 
 const ssl = process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false };
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl });
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl,
+  // Default max is 10 — thin for a single Node process fielding embed-widget
+  // traffic across every tenant's chatbot at once. Configurable since the
+  // right ceiling depends on the DB plan's own pooler connection limit
+  // (e.g. Supabase's pgbouncer tier limits) rather than app-side judgment.
+  //
+  // Sizing note (flagged during the perf audit, not changed here — this
+  // depends on infra the app can't see): DATABASE_URL points at Supabase's
+  // pgbouncer/Supavisor pooler (port 6543), so this Pool's `max` connections
+  // are themselves multiplexed by that pooler's own connection budget, which
+  // is a fixed, plan-dependent number shared across EVERY server instance
+  // talking to this database — not per-instance. Running N horizontally
+  // scaled instances each with max=20 opens up to 20*N connections against
+  // that shared budget; for a multi-tenant SaaS expecting many concurrent
+  // embed-widget visitors, `DB_POOL_MAX * (number of running instances)`
+  // should be checked against the actual Supabase project's pooler pool
+  // size before scaling out horizontally, not just raised blindly here.
+  max: parseInt(process.env.DB_POOL_MAX || '20', 10),
+  idleTimeoutMillis: 30_000,
+  // Without this, a saturated pool makes queries hang indefinitely instead
+  // of failing fast with a diagnosable error.
+  connectionTimeoutMillis: 10_000,
+  // Added during the perf audit: previously unset, so a slow/runaway query
+  // (e.g. the analytics join-fan-out fixed alongside this) could hold one of
+  // the pool's limited connections indefinitely — connectionTimeoutMillis
+  // only bounds how long a *new* request waits to acquire a client, not how
+  // long a client already checked out can run. A hard statement timeout
+  // guarantees a stuck query gives its connection back.
+  // Caveat: with Supabase's transaction-mode pgbouncer (pgbouncer=true in
+  // DATABASE_URL), a physical Postgres backend can be swapped out between
+  // queries on the same logical connection, so this client-level SET isn't
+  // a 100%-guaranteed backstop the way it would be against a direct
+  // (non-pooled) connection — pair it with a pool-level statement timeout
+  // in the Supabase dashboard for a hard guarantee.
+  statement_timeout: parseInt(process.env.DB_STATEMENT_TIMEOUT_MS || '15000', 10),
+});
 pool.on('error', err => logger.error({ err: err.message }, 'pool error'));
 
 // JS camelCase table name → Postgres snake_case table name
-const TABLE_MAP = { captureFields: 'capture_fields' };
+const TABLE_MAP = {
+  captureFields: 'capture_fields',
+  quizQuestions: 'quiz_questions',
+  quizAttempts: 'quiz_attempts',
+  flashcardReviews: 'flashcard_reviews',
+  videoResources: 'video_resources',
+  pageImages: 'page_images',
+};
 const tbl = name => TABLE_MAP[name] || name;
 
 const camelToSnake = s => s.replace(/[A-Z]/g, l => '_' + l.toLowerCase());
@@ -41,14 +85,22 @@ function toCamel(row) {
   return out;
 }
 
+// Columns that are genuine Postgres native array types (e.g. TEXT[]), not
+// JSONB. These need pg's own default array-literal serialization ("{a,b}"),
+// so ser() must NOT JSON.stringify them the way it does for JSONB arrays —
+// keyed by snake_case column name.
+const NATIVE_ARRAY_COLUMNS = new Set(['topic_tags']);
+
 // Arrays of numbers → pgvector literal string "[x,y,z]".
-// Other arrays → JSON string; pg's default array serialization produces
-// Postgres array-literal syntax ("{a,b}"), which is not valid JSON, so JSONB
-// array columns need an explicit JSON.stringify. Plain objects pass through —
-// pg's driver already JSON.stringifies those.
-function ser(v) {
+// Native Postgres array columns (see NATIVE_ARRAY_COLUMNS) → pass through;
+// pg's driver already serializes JS arrays as Postgres array literals.
+// Everything else → JSON string, since that same pg array-literal
+// serialization is NOT valid JSON, and JSONB array columns need actual
+// JSON syntax. Plain objects pass through — pg already JSON.stringifies those.
+function ser(v, key) {
   if (Array.isArray(v)) {
     if (v.length > 0 && typeof v[0] === 'number') return '[' + v.join(',') + ']';
+    if (key && NATIVE_ARRAY_COLUMNS.has(key)) return v;
     return JSON.stringify(v);
   }
   return v;
@@ -93,7 +145,10 @@ async function findAll(table, filter = {}, opts = {}) {
 
 async function insert(table, row) {
   const sr = {};
-  for (const [k, v] of Object.entries(row)) sr[camelToSnake(k)] = ser(v);
+  for (const [k, v] of Object.entries(row)) {
+    const sk = camelToSnake(k);
+    sr[sk] = ser(v, sk);
+  }
   const keys = Object.keys(sr);
   const vals = Object.values(sr);
   const cols = keys.map(k => `"${k}"`).join(', ');
@@ -122,7 +177,10 @@ async function insertMany(table, rows) {
       const params = [];
       for (const row of batch) {
         const sr = {};
-        for (const [k, v] of Object.entries(row)) sr[camelToSnake(k)] = ser(v);
+        for (const [k, v] of Object.entries(row)) {
+          const sk = camelToSnake(k);
+          sr[sk] = ser(v, sk);
+        }
         const set = keys.map(k => { params.push(sr[k]); return `$${idx++}`; });
         valueSets.push(`(${set.join(', ')})`);
       }
@@ -145,7 +203,8 @@ async function insertMany(table, rows) {
 async function update(table, id, patch) {
   const sr = {};
   for (const [k, v] of Object.entries({ ...patch, updatedAt: Date.now() })) {
-    sr[camelToSnake(k)] = ser(v);
+    const sk = camelToSnake(k);
+    sr[sk] = ser(v, sk);
   }
   const keys = Object.keys(sr);
   const vals = Object.values(sr);

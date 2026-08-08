@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Pricing — AvatarPlatform</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
@@ -17,6 +21,7 @@
         <a class="nav-link" href="/characters">Characters</a>
         <a class="nav-link" href="/login">Log in</a>
       </div>
+      <div id="theme-toggle-slot"></div>
       <a class="btn btn-primary btn-sm" href="/signup">Get started</a>
     </div>
   </nav>
@@ -30,11 +35,20 @@
     <div class="grid grid-4" id="plans-grid"></div>
   </div>
 
+  <script src="/js/theme.js"></script>
   <script src="/js/api.js"></script>
   <script>
+  mountThemeToggle(document.getElementById('theme-toggle-slot'));
+
   async function load() {
     try {
-      const { plans } = await API.plans();
+      const loggedIn = Auth.loggedIn();
+      const [{ plans, stripeEnabled }, sub] = await Promise.all([
+        API.plans(),
+        loggedIn ? API.subscription().catch(() => null) : Promise.resolve(null),
+      ]);
+      const currentPlanId = sub ? sub.plan.id : null;
+
       document.getElementById('plans-grid').innerHTML = plans.map(p => `
         <div class="card" style="position:relative;${p.popular ? 'border-color:var(--accent)' : ''}">
           ${p.popular ? '<span class="pill pill-info" style="position:absolute;top:-10px;left:20px">Most popular</span>' : ''}
@@ -44,13 +58,45 @@
           <ul style="list-style:none;padding:0;margin:0 0 20px;font-size:13px">
             ${p.features.map(f => `<li style="padding:4px 0">✓ ${f}</li>`).join('')}
           </ul>
-          <a class="btn ${p.popular ? 'btn-primary' : 'btn-ghost'}" href="/signup" style="width:100%;justify-content:center">Get started</a>
+          ${cta(p, loggedIn, currentPlanId, stripeEnabled)}
         </div>
       `).join('');
+
+      document.querySelectorAll('[data-checkout-plan]').forEach(btn => {
+        btn.addEventListener('click', () => checkout(btn.dataset.checkoutPlan));
+      });
     } catch (e) {
       document.getElementById('plans-grid').innerHTML = '<p class="muted">Could not load plans</p>';
     }
   }
+
+  function cta(p, loggedIn, currentPlanId, stripeEnabled) {
+    const btnStyle = 'width:100%;justify-content:center';
+
+    if (loggedIn && p.id === currentPlanId) {
+      return `<button class="btn btn-ghost" disabled style="${btnStyle}">Current plan</button>`;
+    }
+    if (p.id === 'free') {
+      return loggedIn
+        ? `<a class="btn btn-ghost" href="/billing" style="${btnStyle}">Downgrade</a>`
+        : `<a class="btn btn-ghost" href="/signup" style="${btnStyle}">Get started</a>`;
+    }
+    if (!p.hasStripe || !stripeEnabled) {
+      return `<a class="btn btn-ghost" href="/contact" style="${btnStyle}">Contact sales</a>`;
+    }
+    if (loggedIn) {
+      return `<button class="btn ${p.popular ? 'btn-primary' : 'btn-ghost'}" style="${btnStyle}" data-checkout-plan="${p.id}">${currentPlanId && currentPlanId !== 'free' ? 'Switch plan' : 'Upgrade'} →</button>`;
+    }
+    return `<a class="btn ${p.popular ? 'btn-primary' : 'btn-ghost'}" href="/signup?plan=${p.id}" style="${btnStyle}">Get started →</a>`;
+  }
+
+  window.checkout = async (planId) => {
+    try {
+      const { url } = await API.createCheckout(planId);
+      location.href = url;
+    } catch (e) { toast(e.message, 'error'); }
+  };
+
   load();
   </script>
 </body>

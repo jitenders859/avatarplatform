@@ -19,14 +19,14 @@ const PLANS = [
     description: 'Try it out — 3 chatbots, basic limits',
     stripePriceId: null,
     limits: {
-      projects: 29,
+      projects: 3,
       filesPerProject: 5,
       storageMb: 50,
       monthlyMessages: 100,
       monthlyEmbeddingChars: 100_000,
       urlSources: 3,
     },
-    features: ['3 chatbots', '5 files per chatbot', '100 messages / month', 'Watermarked widget'],
+    features: ['3 chatbots', '5 files total', '100 messages / month', 'Watermarked widget'],
   },
   {
     id: 'starter',
@@ -42,7 +42,7 @@ const PLANS = [
       monthlyEmbeddingChars: 2_000_000,
       urlSources: 25,
     },
-    features: ['3 chatbots', '25 files each', '2,000 messages / month', 'No watermark', 'Email support'],
+    features: ['3 chatbots', '25 files total', '2,000 messages / month', 'No watermark', 'Email support'],
   },
   {
     id: 'pro',
@@ -58,7 +58,7 @@ const PLANS = [
       monthlyEmbeddingChars: 10_000_000,
       urlSources: 200,
     },
-    features: ['10 chatbots', '100 files each', '10,000 messages / month', 'Custom themes', 'Priority support'],
+    features: ['10 chatbots', '100 files total', '10,000 messages / month', 'Custom themes', 'Priority support'],
     popular: true,
   },
   {
@@ -75,7 +75,7 @@ const PLANS = [
       monthlyEmbeddingChars: 100_000_000,
       urlSources: 2_000,
     },
-    features: ['50 chatbots', '500 files each', '100,000 messages / month', 'Analytics export', 'Slack/email support'],
+    features: ['50 chatbots', '500 files total', '100,000 messages / month', 'Analytics export', 'Slack/email support'],
   },
 ];
 

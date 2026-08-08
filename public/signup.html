@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Sign up — AvatarPlatform</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
@@ -30,7 +34,7 @@
           <input class="input" type="password" id="password" required minlength="8" autocomplete="new-password" />
           <span class="help">At least 8 characters</span>
         </div>
-        <div id="error" class="text-sm" style="color:#fca5a5;display:none"></div>
+        <div id="error" class="text-sm" style="color:var(--danger);display:none"></div>
         <button class="btn btn-primary btn-lg" type="submit" id="submit">Create account</button>
       </form>
 
@@ -58,7 +62,8 @@
       );
       Auth.token = res.token;
       Auth.user = res.user;
-      location.href = '/dashboard';
+      const plan = new URLSearchParams(location.search).get('plan');
+      location.href = (plan && plan !== 'free') ? `/billing?plan=${encodeURIComponent(plan)}` : '/dashboard';
     } catch (e2) {
       err.textContent = e2.message;
       err.style.display = 'block';

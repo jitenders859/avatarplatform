@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Terms of Service — AvatarPlatform</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
   <style>
     .terms-body {
@@ -76,6 +80,7 @@
         <a class="nav-link" href="/contact">Contact</a>
         <a class="nav-link" href="/login">Log in</a>
       </div>
+      <div id="theme-toggle-slot"></div>
       <a class="btn btn-primary btn-sm" href="/signup">Get started free</a>
     </div>
   </nav>
@@ -249,5 +254,8 @@
       <a href="/docs" style="color:var(--text-dim)">Docs</a>
     </p>
   </footer>
+
+  <script src="/js/theme.js"></script>
+  <script>mountThemeToggle(document.getElementById('theme-toggle-slot'));</script>
 </body>
 </html>

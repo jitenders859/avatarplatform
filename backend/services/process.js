@@ -14,8 +14,9 @@ const { v4: uuid } = require('uuid');
 const db = require('../db');
 const { extractFile } = require('./extract');
 const { fetchUrl } = require('./url');
-const { chunkText } = require('./chunk');
+const { chunkText, chunkPages } = require('./chunk');
 const { embedMany, MODEL: EMBED_MODEL, OUTPUT_DIM: EMBED_DIM } = require('./embed');
+const { processPdfPageImages } = require('./pageImages');
 const logger = require('../logger').child({ module: 'services/process' });
 
 function emit(io, userId, fileId, stage, pct) {
@@ -34,6 +35,7 @@ async function processFile(fileRecord, io, userId) {
 
     // 1. Extract or fetch content
     let extractedText;
+    let pdfPages = null; // per-page text, PDFs only — enables accurate pageHint
     let metadata = {};
 
     if (fileRecord.kind === 'url') {
@@ -46,8 +48,9 @@ async function processFile(fileRecord, io, userId) {
         fetchedAt: result.fetchedAt,
       };
     } else {
-      const { text } = await extractFile(fileRecord.storedPath, fileRecord.originalName);
+      const { text, pages } = await extractFile(fileRecord.storedPath, fileRecord.originalName);
       extractedText = text;
+      pdfPages = pages || null;
     }
 
     const cleaned = (extractedText || '').trim();
@@ -60,8 +63,10 @@ async function processFile(fileRecord, io, userId) {
 
     emit(io, userId, fileId, 'chunking', 40);
 
-    // 2. Chunk
-    const chunkObjs = chunkText(cleaned, { chunkSize: 1200, overlap: 150 });
+    // 2. Chunk — per-page for PDFs (accurate pageHint), flat otherwise
+    const chunkObjs = pdfPages && pdfPages.length
+      ? chunkPages(pdfPages, { chunkSize: 1200, overlap: 150 })
+      : chunkText(cleaned, { chunkSize: 1200, overlap: 150 });
     if (chunkObjs.length === 0) throw new Error('Chunking produced no segments');
 
     emit(io, userId, fileId, 'embedding', 60);
@@ -108,6 +113,21 @@ async function processFile(fileRecord, io, userId) {
 
     emit(io, userId, fileId, 'done', 100);
     logger.info({ fileId, chunks: chunkObjs.length, model: EMBED_MODEL }, 'processing done');
+
+    // 5. Page images (diagrams/figures) — enhancement, not core RAG, so it
+    // runs after the file is already marked 'ready' and never fails the
+    // whole file if it errors. Medium/advanced tier only, PDFs only.
+    if (pdfPages && pdfPages.length) {
+      try {
+        const project = await db.findOne('projects', { id: fileRecord.projectId });
+        if (project && project.capabilityTier !== 'basic') {
+          const created = await processPdfPageImages(fileRecord.storedPath, fileId, fileRecord.projectId, pdfPages.length);
+          logger.info({ fileId, pageImages: created.size }, 'page image processing done');
+        }
+      } catch (e) {
+        logger.warn({ fileId, err: e.message }, 'page image processing failed, file remains ready without it');
+      }
+    }
   } catch (err) {
     logger.error({ fileId, err: err.message }, 'processing failed');
     emit(io, userId, fileId, 'failed', 0);

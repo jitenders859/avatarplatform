@@ -1,0 +1,44 @@
+{
+  "name": "@avatar-platform/react-native",
+  "version": "0.1.0",
+  "description": "React Native SDK for AvatarPlatform — embed the AI talking-agent widget in your iOS and Android app via a WebView.",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@avatar-platform/js": "^0.1.0"
+  },
+  "peerDependencies": {
+    "react": ">=16.8.0",
+    "react-native": ">=0.70.0",
+    "react-native-webview": ">=13.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "@types/react": "^18.3.0",
+    "react": "^18.3.0",
+    "react-native": "^0.76.0",
+    "react-native-webview": "^13.13.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jitenders859/avatarplatform.git",
+    "directory": "packages/react-native"
+  },
+  "keywords": ["avatarplatform", "react-native", "chatbot", "widget", "embed"]
+}

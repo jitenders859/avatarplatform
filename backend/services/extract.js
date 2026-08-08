@@ -55,10 +55,26 @@ async function extractText(filepath) {
   return fs.promises.readFile(filepath, 'utf8');
 }
 
+/**
+ * Returns { text, pages } — pages is per-page text with real page numbers,
+ * captured via a custom pagerender callback rather than pdf-parse's own
+ * text concatenation (which joins pages with a plain blank line, not a
+ * form feed, so page boundaries aren't otherwise recoverable from the
+ * text). chunk.js's chunkPages() uses `pages` to tag chunks with accurate
+ * page numbers; `text` is kept for callers that just want the flat string.
+ */
 async function extractPdf(filepath) {
   const buf = await fs.promises.readFile(filepath);
-  const data = await pdfParse(buf);
-  return data.text || '';
+  const pages = [];
+  await pdfParse(buf, {
+    pagerender: async pageData => {
+      const content = await pageData.getTextContent();
+      const text = content.items.map(item => item.str).join(' ');
+      pages.push({ pageNumber: pageData.pageNumber, text });
+      return text;
+    },
+  });
+  return { text: pages.map(p => p.text).join('\n\n'), pages };
 }
 
 async function extractDocx(filepath) {
@@ -148,7 +164,10 @@ async function extractFile(filepath, originalName) {
   const kind = classify(originalName || filepath);
   switch (kind) {
     case 'text':  return { kind, text: await extractText(filepath) };
-    case 'pdf':   return { kind, text: await extractPdf(filepath) };
+    case 'pdf': {
+      const { text, pages } = await extractPdf(filepath);
+      return { kind, text, pages };
+    }
     case 'docx':  return { kind, text: await extractDocx(filepath) };
     case 'doc':   return { kind, text: await extractDoc(filepath) };
     case 'image': return { kind, text: await extractImage(filepath) };

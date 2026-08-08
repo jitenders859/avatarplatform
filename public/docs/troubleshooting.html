@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Troubleshooting — AvatarPlatform Docs</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
   <link rel="stylesheet" href="/css/docs.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
@@ -20,6 +24,7 @@
     <aside class="docs-sidebar" id="docs-sidebar">
       <div class="docs-sidebar-inner">
         <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <div id="theme-toggle-slot" style="padding:0 20px 12px"></div>
         <a class="docs-back" href="/dashboard">← Back to app</a>
         <nav class="docs-nav">
           <p class="docs-nav-section">Getting Started</p>
@@ -193,6 +198,10 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"</code><
       </div>
     </main>
   </div>
+
+  <script src="/js/theme.js"></script>
+
+  <script>mountThemeToggle(document.getElementById('theme-toggle-slot'));</script>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script>

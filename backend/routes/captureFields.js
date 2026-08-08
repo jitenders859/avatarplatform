@@ -29,9 +29,21 @@ router.post('/:projectId/capture/reorder', authRequired, ownsProject, async (req
   const { ids } = req.body || {};
   if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids array required' });
 
-  for (let i = 0; i < ids.length; i++) {
-    const field = await db.findOne('captureFields', { id: ids[i], projectId: req.project.id });
-    if (field) await db.update('captureFields', field.id, { order: i });
+  // Previously did one findOne + one update PER id — up to 2N round trips
+  // to reorder N fields. A single UPDATE ... FROM unnest(...) applies every
+  // new position in one round trip. "cf.project_id = $1" keeps it
+  // tenant-scoped exactly like the old per-row findOne did: an id from a
+  // different project just doesn't match any row and is silently skipped,
+  // not updated.
+  if (ids.length) {
+    const orders = ids.map((_, i) => i);
+    await db.query(
+      `UPDATE capture_fields AS cf
+       SET "order" = v.ord, updated_at = $2
+       FROM (SELECT * FROM unnest($3::uuid[], $4::int[]) AS t(id, ord)) AS v
+       WHERE cf.id = v.id AND cf.project_id = $1`,
+      [req.project.id, Date.now(), ids, orders]
+    );
   }
   const fields = await db.findAll('captureFields', { projectId: req.project.id }, { orderBy: 'order', order: 'asc' });
   res.json({ fields });

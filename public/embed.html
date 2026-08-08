@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/embed.css" />
   <script src="https://unpkg.com/@rive-app/canvas@2.21.0/rive.js"></script>
   <script src="/lipsync-sdk.min.js"></script>
@@ -43,7 +46,7 @@
           <div class="header-status">
             <span class="status-dot" id="status-dot"></span>
             <span id="status-text">Connecting…</span>
-            <span id="capture-pill" style="display:none;margin-left:8px;font-size:10px;background:rgba(255,255,255,.15);border-radius:10px;padding:2px 7px;letter-spacing:.02em"></span>
+            <span id="capture-pill" style="display:none;margin-left:8px;font-size:10px;background:rgba(var(--text-rgb),.15);border-radius:10px;padding:2px 7px;letter-spacing:.02em"></span>
           </div>
         </div>
         <button class="icon-btn" id="fullscreen-btn" title="Full screen" aria-label="Full screen" hidden>
@@ -80,7 +83,7 @@
       </div>
 
       <!-- Collapsible "Your details" panel -->
-      <div id="details-panel" style="display:none;border-top:1px solid rgba(255,255,255,.12);padding:8px 12px 4px;background:rgba(0,0,0,.15)">
+      <div id="details-panel" style="display:none;border-top:1px solid rgba(var(--text-rgb),.12);padding:8px 12px 4px;background:rgba(0,0,0,.15)">
         <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:2px 0 6px" onclick="toggleDetailsPanel()">
           <span style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;opacity:.7">Your details</span>
           <span id="details-chevron" style="font-size:10px;opacity:.6">▲</span>
@@ -180,6 +183,7 @@
     if (config.project.themeColor) {
       document.documentElement.style.setProperty('--accent', config.project.themeColor);
     }
+    document.documentElement.dataset.theme = config.project.widgetTheme || 'light';
 
     const position = urlMode === 'inline' ? 'inline' : (config.project.widgetPosition || 'bottom-right');
     root.dataset.position = position;
@@ -225,6 +229,7 @@
       launcher.classList.add('has-avatar');
     }
 
+    if (config.limitReached) { showFatal(config.limitMessage || 'This assistant has reached its usage limit for this month. Please check back later.'); return; }
     if (!config.apiKey) { showFatal('This chatbot is not yet configured (no API key).'); return; }
 
     initSDK();

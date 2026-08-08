@@ -52,6 +52,7 @@ CREATE TABLE IF NOT EXISTS projects (
   widget_start_open        BOOLEAN DEFAULT false,
   text_direction           TEXT    DEFAULT 'auto',
   theme_color              TEXT    DEFAULT '#7c6af5',
+  widget_theme             TEXT    DEFAULT 'light',
   show_branding            BOOLEAN DEFAULT true,
   show_source_cards        BOOLEAN DEFAULT true,
   show_quick_replies       BOOLEAN DEFAULT false,
@@ -342,11 +343,15 @@ CREATE INDEX IF NOT EXISTS idx_chunks_embedding
   ON chunks USING hnsw (embedding vector_cosine_ops)
   WITH (m = 16, ef_construction = 64);
 
-
 -- ── Schema evolution ──────────────────────────────────────────────────
 -- CREATE TABLE IF NOT EXISTS above won't add columns to an already-deployed
 -- table. This file stays idempotent (safe to re-run) via ADD COLUMN IF NOT
 -- EXISTS for changes made after the table already existed in production.
+--
+-- widget_theme: per-project embed widget light/dark theme (mascot.bot-style
+-- light theme rollout). Defaults every project — existing and new — to
+-- 'light', matching the new default look.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS widget_theme TEXT DEFAULT 'light';
 
 -- multi-figure PDF retrieval: page_images gains a per-figure bounding box
 -- (nullable — pre-existing rows are whole-page screenshots with no crop)
@@ -370,3 +375,26 @@ ALTER TABLE page_images ADD COLUMN IF NOT EXISTS embedding       vector(768);
 CREATE INDEX IF NOT EXISTS idx_page_images_embedding
   ON page_images USING hnsw (embedding vector_cosine_ops)
   WITH (m = 16, ef_construction = 64);
+
+-- ── Performance audit follow-up (see supabase/migrations/2026-08-03_add_missing_indexes.sql) ──
+--
+-- users.reset_token: `SELECT * FROM users WHERE reset_token = $1 AND
+-- reset_token_expiry > $2` (backend/routes/auth.js, POST /reset-password)
+-- had no index on reset_token — every reset-password submission was a full
+-- table scan of users. Partial index (most rows have reset_token = NULL,
+-- since it's only set during an active forgot-password flow) keeps the
+-- index small and covers exactly the rows this query can ever match.
+CREATE INDEX IF NOT EXISTS idx_users_reset_token
+  ON users(reset_token)
+  WHERE reset_token IS NOT NULL;
+
+-- chunks.text: `SELECT * FROM chunks WHERE file_id = $1 AND text ILIKE $2`
+-- (backend/routes/files.js, GET /files/:fileId/chunks?search=) can't use a
+-- plain btree index for a '%...%' pattern — it was falling back to
+-- sequentially scanning every chunk row for the file. pg_trgm's GIN index
+-- supports ILIKE with leading wildcards; combined with the existing
+-- file_id index (idx_chunks_file_id), Postgres can bitmap-AND the two
+-- instead.
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE INDEX IF NOT EXISTS idx_chunks_text_trgm
+  ON chunks USING gin (text gin_trgm_ops);

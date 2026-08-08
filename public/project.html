@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Project — AvatarPlatform</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
   <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
 </head>
@@ -189,6 +193,14 @@
             <label>Theme color</label>
             <input class="input" type="color" id="f-theme" style="height:42px;padding:4px;cursor:pointer" />
             <span class="help">Primary color for buttons and gradients.</span>
+          </div>
+          <div class="field">
+            <label>Widget theme</label>
+            <select class="select" id="f-widget-theme">
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+            <span class="help">Light/dark look of the chat panel itself.</span>
           </div>
           <div class="field">
             <label>Show source cards</label>
@@ -457,7 +469,7 @@
             <label>Options <span class="muted text-sm">(one per line)</span></label>
             <textarea class="textarea" id="cf-options" rows="4" placeholder="Option A&#10;Option B&#10;Option C"></textarea>
           </div>
-          <div id="capture-form-error" class="text-sm" style="color:#fca5a5;display:none"></div>
+          <div id="capture-form-error" class="text-sm" style="color:var(--danger);display:none"></div>
           <div class="row" style="gap:8px">
             <button class="btn btn-primary" id="cf-save-btn" onclick="saveField()">Save field</button>
             <button class="btn btn-ghost" onclick="closeFieldForm()">Cancel</button>
@@ -516,7 +528,7 @@
           <div class="row" style="gap:8px">
             <button class="btn btn-ghost btn-sm" onclick="suggestDistractors()" id="qz-suggest-btn">✨ Suggest wrong answers</button>
           </div>
-          <div id="quiz-form-error" class="text-sm" style="color:#fca5a5;display:none"></div>
+          <div id="quiz-form-error" class="text-sm" style="color:var(--danger);display:none"></div>
           <div class="row" style="gap:8px">
             <button class="btn btn-primary" id="qz-save-btn" onclick="saveQuizQuestion()">Save question</button>
             <button class="btn btn-ghost" onclick="closeQuizForm()">Cancel</button>
@@ -571,7 +583,7 @@
             <label>Topic tag <span class="muted text-sm">(optional — helps match visitor requests to this card)</span></label>
             <input class="input" id="fc-topic" placeholder="traffic patterns" />
           </div>
-          <div id="flashcard-form-error" class="text-sm" style="color:#fca5a5;display:none"></div>
+          <div id="flashcard-form-error" class="text-sm" style="color:var(--danger);display:none"></div>
           <div class="row" style="gap:8px">
             <button class="btn btn-primary" id="fc-save-btn" onclick="saveFlashcard()">Save card</button>
             <button class="btn btn-ghost" onclick="closeFlashcardForm()">Cancel</button>
@@ -621,7 +633,7 @@
             <label>Topic tags <span class="muted text-sm">(comma-separated — matched against visitor requests)</span></label>
             <input class="input" id="vr-tags" placeholder="weather, metar, taf" />
           </div>
-          <div id="video-form-error" class="text-sm" style="color:#fca5a5;display:none"></div>
+          <div id="video-form-error" class="text-sm" style="color:var(--danger);display:none"></div>
           <div class="row" style="gap:8px">
             <button class="btn btn-primary" id="vr-save-btn" onclick="saveVideo()">Save video</button>
             <button class="btn btn-ghost" onclick="closeVideoForm()">Cancel</button>
@@ -661,6 +673,7 @@
   </div>
 
   <script src="/socket.io/socket.io.js"></script>
+  <script src="/js/theme.js"></script>
   <script src="/js/api.js"></script>
   <script>
   Auth.requireLogin();
@@ -722,8 +735,8 @@
 
   async function load() {
     try {
-      const [{ project: p }, { characters: chars }] = await Promise.all([
-        API.getProject(projectId), API.characters(),
+      const [{ project: p }, { characters: chars }, sub] = await Promise.all([
+        API.getProject(projectId), API.characters(), API.subscription().catch(() => null),
       ]);
       project = p; characters = chars;
 
@@ -750,6 +763,7 @@
       document.getElementById('f-startopen').value = String(!!p.widgetStartOpen);
       document.getElementById('f-direction').value = p.textDirection || 'auto';
       document.getElementById('f-theme').value     = p.themeColor || '#7c6af5';
+      document.getElementById('f-widget-theme').value = p.widgetTheme || 'light';
       document.getElementById('f-sources').value   = String(p.showSourceCards !== false);
       document.getElementById('f-quickreplies').value = String(p.showQuickReplies === true);
       document.getElementById('f-dragdrop').value = String(p.allowDragDropUpload === true);
@@ -757,6 +771,25 @@
       document.getElementById('f-fullscreen-mobile').value  = String(p.fullScreenOnMobile === true);
       document.getElementById('f-fullscreen-toggle').value  = String(p.showFullScreenToggle === true);
       document.getElementById('f-branding').value  = String(p.showBranding !== false);
+
+      // Removing the "Powered by" badge is a paid-plan feature (see
+      // GET /embed/:publicId/config, which forces it back on server-side for
+      // Free-plan owners regardless of this setting). Disable the control
+      // here too so Free-plan users aren't shown a choice that silently
+      // doesn't take effect.
+      const brandingField = document.getElementById('f-branding');
+      if (sub && sub.plan.id === 'free') {
+        brandingField.value = 'true';
+        brandingField.disabled = true;
+        if (!document.getElementById('f-branding-lock-help')) {
+          const help = document.createElement('span');
+          help.id = 'f-branding-lock-help';
+          help.className = 'help';
+          help.innerHTML = 'Removing branding requires a paid plan. <a href="/billing">Upgrade →</a>';
+          brandingField.insertAdjacentElement('afterend', help);
+        }
+      }
+
       document.getElementById('f-offset-x').value  = p.widgetOffsetX ?? 0;
       document.getElementById('f-offset-y').value  = p.widgetOffsetY ?? 0;
 
@@ -854,6 +887,7 @@
         widgetStartOpen:      document.getElementById('f-startopen').value === 'true',
         textDirection:        document.getElementById('f-direction').value,
         themeColor:           document.getElementById('f-theme').value,
+        widgetTheme:          document.getElementById('f-widget-theme').value,
         showSourceCards:      document.getElementById('f-sources').value === 'true',
         showQuickReplies:     document.getElementById('f-quickreplies').value === 'true',
         allowDragDropUpload:  document.getElementById('f-dragdrop').value === 'true',
@@ -951,7 +985,7 @@
           <div style="font-size:22px">${icon}</div>
           <div style="flex:1;min-width:0">
             <div style="font-weight:500;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escape(name)}</div>
-            <div class="muted text-sm" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escape(sub)}${f.error ? ` — <span style="color:#fca5a5">${escape(f.error)}</span>` : ''}</div>
+            <div class="muted text-sm" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escape(sub)}${f.error ? ` — <span style="color:var(--danger)">${escape(f.error)}</span>` : ''}</div>
           </div>
           <span class="status-badge">${statusBadge(f.status, f.chunkCount, f.error)}</span>
           ${f.status === 'ready' ? `<button class="btn btn-sm btn-ghost" onclick="viewChunks('${f.id}',${JSON.stringify(escape(name))})">Chunks</button>` : ''}
@@ -1431,7 +1465,7 @@
             <div style="font-weight:500;font-size:14px">${escape(q.question)}</div>
             <div class="muted text-sm mt-sm">
               ${q.options.map((o, i) => i === q.correctIndex
-                ? `<span style="color:#4ade80">✓ ${escape(o)}</span>`
+                ? `<span style="color:var(--success)">✓ ${escape(o)}</span>`
                 : escape(o)).join(' · ')}
             </div>
             ${q.topicTag ? `<div class="muted text-sm mt-sm">Topic: <code style="font-size:11px">${escape(q.topicTag)}</code></div>` : ''}

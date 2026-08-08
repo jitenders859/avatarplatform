@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Account — AvatarPlatform</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
 </head>
 <body>
@@ -54,7 +58,7 @@
 
     <!-- ── Danger zone ─────────────────────────────────────── -->
     <div class="card" style="border-color:rgba(239,68,68,.3)">
-      <h2 class="card-title mb-md" style="color:#fca5a5">Danger zone</h2>
+      <h2 class="card-title mb-md" style="color:var(--danger)">Danger zone</h2>
       <p class="muted text-sm" style="margin:0 0 16px">
         Permanently delete your account and all data — chatbots, knowledge bases, and conversation history.
         This cannot be undone.
@@ -63,6 +67,7 @@
     </div>
   </div>
 
+  <script src="/js/theme.js"></script>
   <script src="/js/api.js"></script>
   <script>
   Auth.requireLogin();

@@ -37,20 +37,52 @@ router.get('/overview', authRequired, async (req, res) => {
          (SELECT COUNT(*) FROM leads l JOIN projects p ON p.id = l.project_id WHERE p.user_id = $1)    AS leads`,
       [userId]
     ),
+    // Was: LEFT JOIN messages/sessions/files/leads directly onto projects in
+    // one query. Four one-to-many joins chained together fan out
+    // multiplicatively BEFORE the GROUP BY collapses them — a project with
+    // 1,000 messages, 200 sessions, 50 files and 20 leads briefly produces
+    // up to 1,000 x 200 x 50 x 20 intermediate rows. COUNT(DISTINCT …) still
+    // returns the right number, but the planner has to build and discard
+    // that entire cross product to get there. Fixed by pre-aggregating each
+    // child table by project_id in its own CTE (each already scoped to just
+    // this user's projects), so every CTE contributes at most one row per
+    // project — the outer joins are then 1:1, not fan-out.
     db.query(
-      `SELECT p.id, p.name,
-              COUNT(DISTINCT m.id) AS messages,
-              COUNT(DISTINCT s.id) AS sessions,
-              COUNT(DISTINCT f.id) AS files,
-              COUNT(DISTINCT l.id) AS leads
+      `WITH my_projects AS (
+         SELECT id FROM projects WHERE user_id = $1
+       ),
+       msg_counts AS (
+         SELECT m.project_id, COUNT(*) AS messages
+         FROM messages m JOIN my_projects mp ON mp.id = m.project_id
+         GROUP BY m.project_id
+       ),
+       sess_counts AS (
+         SELECT s.project_id, COUNT(*) AS sessions
+         FROM sessions s JOIN my_projects mp ON mp.id = s.project_id
+         GROUP BY s.project_id
+       ),
+       file_counts AS (
+         SELECT f.project_id, COUNT(*) AS files
+         FROM files f JOIN my_projects mp ON mp.id = f.project_id
+         GROUP BY f.project_id
+       ),
+       lead_counts AS (
+         SELECT l.project_id, COUNT(*) AS leads
+         FROM leads l JOIN my_projects mp ON mp.id = l.project_id
+         GROUP BY l.project_id
+       )
+       SELECT p.id, p.name,
+              COALESCE(mc.messages, 0) AS messages,
+              COALESCE(sc.sessions, 0) AS sessions,
+              COALESCE(fc.files, 0)    AS files,
+              COALESCE(lc.leads, 0)    AS leads
        FROM projects p
-       LEFT JOIN messages m ON m.project_id = p.id
-       LEFT JOIN sessions s ON s.project_id = p.id
-       LEFT JOIN files    f ON f.project_id = p.id
-       LEFT JOIN leads    l ON l.project_id = p.id
-       WHERE p.user_id = $1
-       GROUP BY p.id, p.name
-       ORDER BY COUNT(DISTINCT m.id) DESC`,
+       LEFT JOIN msg_counts  mc ON mc.project_id = p.id
+       LEFT JOIN sess_counts sc ON sc.project_id = p.id
+       LEFT JOIN file_counts fc ON fc.project_id = p.id
+       LEFT JOIN lead_counts lc ON lc.project_id = p.id
+       WHERE p.id IN (SELECT id FROM my_projects)
+       ORDER BY messages DESC`,
       [userId]
     ),
     db.query(
@@ -143,6 +175,74 @@ router.get('/project/:id', authRequired, async (req, res) => {
     },
     daily: buildDailyBuckets(msgDaily, sessDaily),
     topQuestions: topQ.map(r => ({ text: r.text, createdAt: r.createdAt })),
+  });
+});
+
+/**
+ * GET /api/analytics/project/:id/progress
+ * Owner-facing aggregate across all learners: per-learner summary (only
+ * for attempts/reviews with a resolved learner_key — see
+ * backend/services/learner.js) plus a project-wide topic breakdown that
+ * includes anonymous (session-only) activity too.
+ */
+router.get('/project/:id/progress', authRequired, async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const [learnerRows, anonCounts, topicRows] = await Promise.all([
+    db.query(
+      `SELECT learners.learner_key,
+              COALESCE(q.quiz_total, 0)    AS quiz_total,
+              COALESCE(q.quiz_correct, 0)  AS quiz_correct,
+              COALESCE(f.cards_total, 0)   AS cards_total,
+              GREATEST(COALESCE(q.last_at, 0), COALESCE(f.last_at, 0)) AS last_active
+       FROM (
+         SELECT DISTINCT learner_key FROM quiz_attempts WHERE project_id = $1 AND learner_key IS NOT NULL
+         UNION
+         SELECT DISTINCT learner_key FROM flashcard_reviews WHERE project_id = $1 AND learner_key IS NOT NULL
+       ) learners
+       LEFT JOIN (
+         SELECT learner_key, COUNT(*) AS quiz_total,
+                SUM(CASE WHEN is_correct THEN 1 ELSE 0 END) AS quiz_correct, MAX(created_at) AS last_at
+         FROM quiz_attempts WHERE project_id = $1 AND learner_key IS NOT NULL GROUP BY learner_key
+       ) q ON q.learner_key = learners.learner_key
+       LEFT JOIN (
+         SELECT learner_key, COUNT(*) AS cards_total, MAX(created_at) AS last_at
+         FROM flashcard_reviews WHERE project_id = $1 AND learner_key IS NOT NULL GROUP BY learner_key
+       ) f ON f.learner_key = learners.learner_key
+       ORDER BY last_active DESC`,
+      [project.id]
+    ),
+    db.queryOne(
+      `SELECT
+         (SELECT COUNT(*) FROM quiz_attempts WHERE project_id = $1 AND learner_key IS NULL) AS quiz,
+         (SELECT COUNT(*) FROM flashcard_reviews WHERE project_id = $1 AND learner_key IS NULL) AS cards`,
+      [project.id]
+    ),
+    db.query(
+      `SELECT topic, COUNT(*) AS quiz_total, SUM(CASE WHEN is_correct THEN 1 ELSE 0 END) AS quiz_correct
+       FROM quiz_attempts WHERE project_id = $1 GROUP BY topic`,
+      [project.id]
+    ),
+  ]);
+
+  res.json({
+    learners: learnerRows.map(r => ({
+      learnerKey: r.learnerKey,
+      quizTotal: Number(r.quizTotal),
+      quizAccuracy: r.quizTotal > 0 ? Math.round((Number(r.quizCorrect) / Number(r.quizTotal)) * 100) : null,
+      cardsReviewed: Number(r.cardsTotal),
+      lastActive: Number(r.lastActive) || null,
+    })),
+    anonymousActivity: {
+      quizAttempts: Number(anonCounts.quiz),
+      cardsReviewed: Number(anonCounts.cards),
+    },
+    byTopic: topicRows.map(r => ({
+      topic: r.topic || 'General',
+      quizTotal: Number(r.quizTotal),
+      quizAccuracy: Number(r.quizTotal) > 0 ? Math.round((Number(r.quizCorrect) / Number(r.quizTotal)) * 100) : null,
+    })),
   });
 });
 

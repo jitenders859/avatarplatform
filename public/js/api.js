@@ -26,7 +26,9 @@ async function apiCall(path, opts = {}) {
   try { body = await res.json(); } catch { body = {}; }
   if (!res.ok) {
     if (res.status === 401) { Auth.logout(); throw new Error('Session expired'); }
-    throw new Error(body.error || `Request failed (${res.status})`);
+    const err = new Error(body.error || `Request failed (${res.status})`);
+    if (body.code) err.code = body.code;
+    throw err;
   }
   return body;
 }
@@ -72,6 +74,24 @@ const API = {
   deleteCaptureField:  (pid, fid) => apiCall(`/api/projects/${pid}/capture/${fid}`, { method: 'DELETE' }),
   reorderCaptureFields:(pid, ids) => apiCall(`/api/projects/${pid}/capture/reorder`, { method: 'POST', body: { ids } }),
 
+  // Quiz questions
+  listQuizQuestions:  (pid) => apiCall(`/api/projects/${pid}/quiz-questions`),
+  createQuizQuestion: (pid, data) => apiCall(`/api/projects/${pid}/quiz-questions`, { method: 'POST', body: data }),
+  deleteQuizQuestion: (pid, qid) => apiCall(`/api/projects/${pid}/quiz-questions/${qid}`, { method: 'DELETE' }),
+  suggestDistractors: (pid, question, correctAnswer) => apiCall(`/api/projects/${pid}/quiz-questions/suggest-distractors`, { method: 'POST', body: { question, correctAnswer } }),
+  importQuizCsv: (pid, file) => { const fd = new FormData(); fd.append('file', file); return apiCall(`/api/projects/${pid}/quiz-questions/import-csv`, { method: 'POST', body: fd }); },
+
+  // Flashcards
+  listFlashcards:  (pid) => apiCall(`/api/projects/${pid}/flashcards`),
+  createFlashcard: (pid, data) => apiCall(`/api/projects/${pid}/flashcards`, { method: 'POST', body: data }),
+  deleteFlashcard: (pid, cid) => apiCall(`/api/projects/${pid}/flashcards/${cid}`, { method: 'DELETE' }),
+  importFlashcardsCsv: (pid, file) => { const fd = new FormData(); fd.append('file', file); return apiCall(`/api/projects/${pid}/flashcards/import-csv`, { method: 'POST', body: fd }); },
+
+  // Video resources
+  listVideoResources:  (pid) => apiCall(`/api/projects/${pid}/video-resources`),
+  createVideoResource: (pid, data) => apiCall(`/api/projects/${pid}/video-resources`, { method: 'POST', body: data }),
+  deleteVideoResource: (pid, vid) => apiCall(`/api/projects/${pid}/video-resources/${vid}`, { method: 'DELETE' }),
+
   // Leads
   listLeads: (pid, params = {}) => {
     const q = new URLSearchParams(params).toString();
@@ -89,6 +109,7 @@ const API = {
   // Analytics
   analytics:        () => apiCall('/api/analytics/overview'),
   projectAnalytics: (id) => apiCall(`/api/analytics/project/${id}`),
+  projectProgress:  (id) => apiCall(`/api/analytics/project/${id}/progress`),
 
   // Billing
   plans:               () => apiCall('/api/billing/plans'),
@@ -133,6 +154,7 @@ function renderTopNav(active) {
           ${links.map(l => `<a class="nav-link${l.id === active ? ' active' : ''}" href="${l.href}">${l.label}</a>`).join('')}
         </div>
         <div class="spacer"></div>
+        <div id="theme-toggle-slot"></div>
         <div class="user-menu-wrap" style="position:relative">
           <div class="user-menu" id="user-menu" style="cursor:pointer;display:flex;align-items:center;gap:8px">
             <span class="user-avatar">${initial}</span>
@@ -141,13 +163,15 @@ function renderTopNav(active) {
           </div>
           <div id="user-dropdown" style="display:none;position:absolute;right:0;top:calc(100% + 8px);background:var(--bg-2);border:1px solid var(--border);border-radius:10px;min-width:160px;z-index:9999;box-shadow:0 8px 24px rgba(0,0,0,.35);overflow:hidden">
             <a href="/account" style="display:block;padding:10px 16px;font-size:13px;color:var(--text);text-decoration:none;border-bottom:1px solid var(--border)">Account settings</a>
-            <button id="logout-btn" style="width:100%;text-align:left;padding:10px 16px;font-size:13px;color:#fca5a5;background:none;border:none;cursor:pointer">Log out</button>
+            <button id="logout-btn" style="width:100%;text-align:left;padding:10px 16px;font-size:13px;color:var(--danger);background:none;border:none;cursor:pointer">Log out</button>
           </div>
         </div>
       </div>
     </nav>
   `;
   document.body.insertAdjacentHTML('afterbegin', html);
+
+  mountThemeToggle(document.getElementById('theme-toggle-slot'));
 
   const menu = document.getElementById('user-menu');
   const dropdown = document.getElementById('user-dropdown');
@@ -168,7 +192,10 @@ function initProgressSocket() {
   if (!user) return;
 
   const socket = io({ transports: ['websocket', 'polling'] });
-  socket.on('connect', () => socket.emit('join', user.id));
+  // Send the JWT, not the raw user id — the server verifies it and derives
+  // the room itself, so a client can no longer join another user's room by
+  // just passing their id (see backend/socketAuth.js).
+  socket.on('connect', () => socket.emit('join', Auth.token));
 
   socket.on('file:progress', ({ fileId, stage, pct }) => {
     // Update a progress bar if one exists for this file

@@ -6,32 +6,42 @@
  *   2. Within a paragraph group, split on sentence endings when needed.
  *   3. Never cut mid-word; always back up to the nearest space.
  *   4. Detect and attach headings from surrounding context.
- *   5. Detect PDF page markers and carry the page number forward.
- *   6. Apply configurable overlap (carry the last N chars of the previous chunk).
+ *   5. Apply configurable overlap (carry the last N chars of the previous chunk).
  *
  * Returns an array of chunk objects instead of plain strings:
  *   { text, idx, heading, pageHint, charCount, approxTokens }
  *
  * approxTokens uses the common 4-chars-per-token heuristic.
+ *
+ * Page numbers are NOT detected from the text itself — a prior version
+ * tried to sniff form-feed characters, but pdf-parse never emits them (it
+ * joins pages with a plain blank line), so that detection silently never
+ * fired and every chunk got pageHint=1 regardless of its real page. Real
+ * page numbers now come from chunkPages() below, which calls this function
+ * once per page (via extractFile's structured `pages` output) and passes
+ * the true page number in directly.
  */
 
 const HEADING_RE   = /^(#{1,6})\s+(.+)$/m;           // Markdown headings
 const PLAIN_HEAD_RE = /^([A-Z][A-Z\s]{3,60})$/m;     // ALL-CAPS plain text heading
-const PAGE_MARKER_RE = /(?:^|\n)[-–—]{3,}\s*[Pp]age\s+(\d+)\s*[-–—]{3,}/;
-const FORM_FEED_RE   = /\f/g;
+const PLAIN_HEAD_MAX_LEN = 70;                       // whole paragraph must be short to count
 
-/** Replace form-feed page breaks with explicit markers so we can track pages. */
-function normalizePageBreaks(text) {
-  let page = 1;
-  return text.replace(FORM_FEED_RE, () => `\n\n--- Page ${++page} ---\n\n`);
-}
-
-/** Extract current heading from a block of text (first heading line wins). */
+/**
+ * Extract a heading from a block of text — but only when the heading
+ * effectively IS the whole paragraph, not merely present somewhere inside
+ * it. A prior version used text.match(PLAIN_HEAD_RE) directly, which
+ * matches if ANY line in a large paragraph happens to look like an
+ * ALL-CAPS heading (common in dense forms/spec sheets with embedded
+ * labels) — chunkText() then discarded the entire paragraph as
+ * "heading-only", silently losing real body content. Gating on paragraph
+ * length first fixes that: a genuine heading-only paragraph is short by
+ * definition.
+ */
 function extractHeading(text) {
-  const md = text.match(HEADING_RE);
+  const trimmed = text.trim();
+  const md = trimmed.match(HEADING_RE);
   if (md) return md[2].trim();
-  const plain = text.match(PLAIN_HEAD_RE);
-  if (plain) return plain[1].trim();
+  if (trimmed.length <= PLAIN_HEAD_MAX_LEN && PLAIN_HEAD_RE.test(trimmed)) return trimmed;
   return null;
 }
 
@@ -64,15 +74,16 @@ function splitOnSentences(text, maxLen) {
 /**
  * Main export.
  *
- * @param {string} raw - Full extracted text
+ * @param {string} raw - Full extracted text (one page's worth, for PDFs — see chunkPages)
  * @param {object} opts
  * @param {number} [opts.chunkSize=1200]   - Target chars per chunk
  * @param {number} [opts.overlap=150]      - Overlap chars carried into next chunk
  * @param {number} [opts.minChunkSize=100] - Discard chunks shorter than this
+ * @param {number} [opts.pageHint=1]       - Page number to tag every chunk with
  * @returns {Array<{text, idx, heading, pageHint, charCount, approxTokens}>}
  */
-function chunkText(raw, { chunkSize = 1200, overlap = 150, minChunkSize = 100 } = {}) {
-  const text = normalizePageBreaks(String(raw || '').replace(/\r\n/g, '\n').trim());
+function chunkText(raw, { chunkSize = 1200, overlap = 150, minChunkSize = 100, pageHint = 1 } = {}) {
+  const text = String(raw || '').replace(/\r\n/g, '\n').trim();
   if (!text) return [];
 
   // Split into paragraph blocks (double newline)
@@ -80,25 +91,17 @@ function chunkText(raw, { chunkSize = 1200, overlap = 150, minChunkSize = 100 } 
 
   let currentChunk = '';
   let currentHeading = null;
-  let currentPage = 1;
-  const segments = []; // { text, heading, pageHint }
+  const segments = []; // { text, heading }
 
   function flush() {
     const t = currentChunk.trim();
     if (t.length >= minChunkSize) {
-      segments.push({ text: t, heading: currentHeading, pageHint: currentPage });
+      segments.push({ text: t, heading: currentHeading });
     }
     currentChunk = '';
   }
 
   for (const para of paragraphs) {
-    // Detect page marker paragraph
-    const pageMatch = para.match(/---\s*[Pp]age\s+(\d+)\s*---/);
-    if (pageMatch) {
-      currentPage = parseInt(pageMatch[1], 10);
-      continue;
-    }
-
     // Detect heading paragraph
     const heading = extractHeading(para);
     if (heading) {
@@ -146,21 +149,21 @@ function chunkText(raw, { chunkSize = 1200, overlap = 150, minChunkSize = 100 } 
   // Apply overlap: prepend the last `overlap` chars of the previous chunk
   const chunks = [];
   for (let i = 0; i < segments.length; i++) {
-    let chunkText = segments[i].text;
+    let chunkTextOut = segments[i].text;
     if (overlap > 0 && i > 0) {
       const prev = segments[i - 1].text;
       const carry = prev.slice(-overlap).trimStart();
       // Only carry if it won't push us massively over chunkSize
-      if (carry && chunkText.length + carry.length + 1 < chunkSize * 1.3) {
-        chunkText = carry + '\n' + chunkText;
+      if (carry && chunkTextOut.length + carry.length + 1 < chunkSize * 1.3) {
+        chunkTextOut = carry + '\n' + chunkTextOut;
       }
     }
-    const charCount = chunkText.length;
+    const charCount = chunkTextOut.length;
     chunks.push({
-      text:          chunkText,
+      text:          chunkTextOut,
       idx:           i,
       heading:       segments[i].heading || null,
-      pageHint:      segments[i].pageHint,
+      pageHint,
       charCount,
       approxTokens:  Math.ceil(charCount / 4),
     });
@@ -169,4 +172,24 @@ function chunkText(raw, { chunkSize = 1200, overlap = 150, minChunkSize = 100 } 
   return chunks;
 }
 
-module.exports = { chunkText };
+/**
+ * Chunk PDF content page-by-page, so each chunk gets an accurate real
+ * page number (from extractFile's structured `pages` output) instead of
+ * pageHint always being 1.
+ *
+ * @param {Array<{pageNumber: number, text: string}>} pages
+ * @param {object} opts - same as chunkText's opts (minus pageHint)
+ */
+function chunkPages(pages, opts = {}) {
+  const allChunks = [];
+  let globalIdx = 0;
+  for (const page of pages) {
+    const pageChunks = chunkText(page.text, { ...opts, pageHint: page.pageNumber });
+    for (const c of pageChunks) {
+      allChunks.push({ ...c, idx: globalIdx++ });
+    }
+  }
+  return allChunks;
+}
+
+module.exports = { chunkText, chunkPages };
