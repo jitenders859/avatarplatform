@@ -24,8 +24,8 @@ router.get('/me', adminAuthRequired, (req, res) => {
 
 // ── Users ─────────────────────────────────────────────────────
 router.get('/users', adminAuthRequired, async (req, res) => {
-  const search = (req.query.search || '').trim();
-  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const search = String(req.query.search || '').trim();
+  const page = Math.min(100000, Math.max(1, parseInt(req.query.page) || 1));
   const pageSize = 25;
   const offset = (page - 1) * pageSize;
 
@@ -36,7 +36,11 @@ router.get('/users', adminAuthRequired, async (req, res) => {
     `SELECT u.id, u.email, u.name, u.created_at, u.suspended, u.admin_plan_id,
             s.plan_id AS stripe_plan_id, s.status AS sub_status
        FROM users u
-       LEFT JOIN subscriptions s ON s.user_id = u.id AND s.status = 'active'
+       LEFT JOIN LATERAL (
+         SELECT plan_id, status FROM subscriptions
+          WHERE user_id = u.id AND status = 'active'
+          ORDER BY created_at DESC LIMIT 1
+       ) s ON true
        ${where}
        ORDER BY u.created_at DESC
        LIMIT ${pageSize} OFFSET ${offset}`,
