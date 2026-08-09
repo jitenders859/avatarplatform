@@ -6,6 +6,7 @@ const db = require('../db');
 const { signToken, authRequired } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const { sendPasswordReset, sendWelcome } = require('../services/email');
+const { deleteUserAccount } = require('../services/accountDelete');
 const logger = require('../logger').child({ module: 'auth' });
 
 const router = express.Router();
@@ -118,28 +119,7 @@ router.post('/reset-password', validate(schemas.resetPassword), async (req, res)
 });
 
 router.delete('/me', authRequired, async (req, res) => {
-  // Cancel any live Stripe subscription first — FK CASCADE will delete our
-  // local subscriptions row along with the user, but Stripe itself keeps
-  // billing the customer until told to stop. Without this, a deleted
-  // account keeps getting charged with no way to log back in and cancel.
-  const user = await db.findOne('users', { id: req.user.id });
-  if (user?.stripeCustomerId) {
-    try {
-      const { getStripe } = require('../services/stripe');
-      const stripe = getStripe();
-      if (stripe) {
-        const subs = await stripe.subscriptions.list({ customer: user.stripeCustomerId, status: 'active', limit: 10 });
-        await Promise.all(subs.data.map(s => stripe.subscriptions.cancel(s.id)));
-      }
-    } catch (e) {
-      logger.warn({ err: e.message, userId: user.id }, 'failed to cancel Stripe subscription on account delete');
-    }
-  }
-
-  // FK CASCADE in Postgres handles deleting all related data automatically.
-  // Deleting the user row cascades: projects → files, chunks, sessions,
-  // messages, capture_fields, leads; also subscriptions, usage.
-  await db.remove('users', { id: req.user.id });
+  await deleteUserAccount(req.user.id);
   res.json({ ok: true });
 });
 
