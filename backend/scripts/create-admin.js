@@ -9,6 +9,10 @@ async function main() {
     console.error('Usage: node backend/scripts/create-admin.js <email> <password>');
     process.exit(1);
   }
+  if (password.length < 12) {
+    console.error('Password must be at least 12 characters.');
+    process.exit(1);
+  }
   const existing = await db.findOne('admin_users', { email: email.toLowerCase().trim() });
   if (existing) {
     console.error('An admin with that email already exists.');

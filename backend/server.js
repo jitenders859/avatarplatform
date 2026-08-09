@@ -75,6 +75,22 @@ const embedLimiter = rateLimit({
   message: { error: 'Too many requests, slow down' },
 });
 
+// Separate from authLimiter: express-rate-limit's default MemoryStore keys
+// purely by IP with no path awareness when the same limiter instance is
+// mounted at two different paths, so sharing authLimiter here would let
+// customer login failures from an IP eat into the admin login budget for
+// that same IP (and vice versa), and would prevent admin login from ever
+// being stricter than customer login even though a compromised admin
+// credential is far higher blast-radius.
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts, please try again later' },
+});
+
 // ── Health check (before all middleware + logging) ────────────
 app.get('/healthz', (_req, res) => res.json({ ok: true, uptime: process.uptime() }));
 
@@ -139,7 +155,7 @@ app.use('/api/projects', apiLimiter, videoResourcesRoutes);
 app.use('/api', apiLimiter, filesRoutes); // files routes are project-nested
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/analytics', apiLimiter, analyticsRoutes);
-app.use('/api/admin/login', authLimiter);
+app.use('/api/admin/login', adminLoginLimiter);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/embed', embedLimiter, embedRoutes);
 
