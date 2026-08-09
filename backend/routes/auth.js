@@ -7,7 +7,6 @@ const { signToken, authRequired } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const { sendPasswordReset, sendWelcome } = require('../services/email');
 const { deleteUserAccount } = require('../services/accountDelete');
-const logger = require('../logger').child({ module: 'auth' });
 
 const router = express.Router();
 

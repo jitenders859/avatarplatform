@@ -8,6 +8,9 @@ const logger = require('../logger').child({ module: 'accountDelete' });
 // FK CASCADE in Postgres handles deleting all related data automatically.
 // Deleting the user row cascades: projects → files, chunks, sessions,
 // messages, capture_fields, leads; also subscriptions, usage.
+//
+// Callers are responsible for authorization — this function performs NO
+// permission check. It permanently deletes whichever user id it is given.
 async function deleteUserAccount(userId) {
   const user = await db.findOne('users', { id: userId });
   if (!user) return;
