@@ -1,7 +1,9 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
-const { adminAuthRequired, signAdminToken } = require('../middleware/auth');
+const { adminAuthRequired, signAdminToken, signToken } = require('../middleware/auth');
+const { deleteUserAccount } = require('../services/accountDelete');
+const { logAdminAction } = require('../services/auditLog');
 const { validate, schemas } = require('../middleware/validate');
 const { getUsageSnapshot } = require('../services/usage');
 
@@ -80,6 +82,73 @@ router.get('/users/:id', adminAuthRequired, async (req, res) => {
     projects,
     subscriptions: subs,
   });
+});
+
+router.patch('/users/:id', adminAuthRequired, async (req, res) => {
+  const user = await db.findOne('users', { id: req.params.id });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  const { suspended, adminPlanId } = req.body || {};
+  const patch = {};
+
+  if (suspended !== undefined) patch.suspended = !!suspended;
+
+  if (adminPlanId !== undefined) {
+    if (adminPlanId) {
+      const tier = await db.findOne('plan_tiers', { id: adminPlanId });
+      if (!tier) return res.status(400).json({ error: 'Unknown plan tier' });
+    }
+    patch.adminPlanId = adminPlanId || null;
+  }
+
+  if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
+  const updated = await db.update('users', user.id, patch);
+
+  if (suspended !== undefined) {
+    await logAdminAction({
+      adminId: req.admin.id,
+      action: suspended ? 'suspend' : 'unsuspend',
+      targetUserId: user.id,
+      targetEmail: user.email,
+    });
+  }
+  if (adminPlanId !== undefined) {
+    await logAdminAction({
+      adminId: req.admin.id,
+      action: adminPlanId ? 'assign_tier' : 'clear_tier',
+      targetUserId: user.id,
+      targetEmail: user.email,
+      meta: { adminPlanId },
+    });
+  }
+
+  res.json({ user: { id: updated.id, suspended: updated.suspended, adminPlanId: updated.adminPlanId } });
+});
+
+router.delete('/users/:id', adminAuthRequired, async (req, res) => {
+  const user = await db.findOne('users', { id: req.params.id });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  await logAdminAction({
+    adminId: req.admin.id,
+    action: 'delete_user',
+    targetUserId: user.id,
+    targetEmail: user.email,
+  });
+  await deleteUserAccount(user.id);
+  res.json({ ok: true });
+});
+
+router.post('/users/:id/impersonate', adminAuthRequired, async (req, res) => {
+  const user = await db.findOne('users', { id: req.params.id });
+  if (!user) return res.status(404).json({ error: 'User not found' });
+  if (user.suspended) return res.status(400).json({ error: 'Cannot impersonate a suspended account' });
+  const token = signToken(user.id, { expiresIn: '15m' });
+  await logAdminAction({
+    adminId: req.admin.id,
+    action: 'impersonate',
+    targetUserId: user.id,
+    targetEmail: user.email,
+  });
+  res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
 });
 
 module.exports = router;
