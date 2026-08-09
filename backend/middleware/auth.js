@@ -28,6 +28,7 @@ async function authRequired(req, res, next) {
     const user = await db.findOne('users', { id: payload.uid });
     if (!user) return res.status(401).json({ error: 'User not found' });
     if (user.suspended) return res.status(403).json({ error: 'This account has been suspended' });
+    req.impersonated = !!payload.imp;
     req.user = user;
     next();
   } catch (e) {
@@ -36,7 +37,7 @@ async function authRequired(req, res, next) {
 }
 
 function signToken(userId, opts = {}) {
-  return jwt.sign({ uid: userId }, JWT_SECRET, { expiresIn: opts.expiresIn ?? '30d' });
+  return jwt.sign({ uid: userId, ...(opts.imp ? { imp: true } : {}) }, JWT_SECRET, { expiresIn: opts.expiresIn ?? '30d' });
 }
 
 // Admin auth is structurally disjoint from customer auth: admin tokens carry

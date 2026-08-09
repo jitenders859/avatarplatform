@@ -1,5 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const { rateLimit } = require('express-rate-limit');
 const db = require('../db');
 const { adminAuthRequired, signAdminToken, signToken } = require('../middleware/auth');
 const { deleteUserAccount } = require('../services/accountDelete');
@@ -8,6 +9,28 @@ const { validate, schemas } = require('../middleware/validate');
 const { getUsageSnapshot } = require('../services/usage');
 
 const router = express.Router();
+
+// Malformed (non-UUID) :id params otherwise reach db.findOne/db.query, where
+// Postgres rejects the invalid uuid cast and the request 500s instead of
+// cleanly 404ing. Validate once here for every route on this router that
+// takes an :id param, rather than repeating the check in each handler.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+router.param('id', (req, res, next, id) => {
+  if (!UUID_RE.test(id)) return res.status(404).json({ error: 'User not found' });
+  next();
+});
+
+// Stricter than the general apiLimiter (200/min) already applied to
+// /api/admin at the server level — this route is irreversible and cascades
+// across all of a user's data, so a stolen admin token shouldn't be able to
+// mass-delete accounts. Scoped to this route only (see route-level use below).
+const adminDeleteLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, slow down' },
+});
 
 // ── Auth ──────────────────────────────────────────────────────
 router.post('/login', validate(schemas.adminLogin), async (req, res) => {
@@ -102,6 +125,7 @@ router.patch('/users/:id', adminAuthRequired, async (req, res) => {
 
   if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
   const updated = await db.update('users', user.id, patch);
+  if (!updated) return res.status(404).json({ error: 'User not found' });
 
   if (suspended !== undefined) {
     await logAdminAction({
@@ -124,9 +148,11 @@ router.patch('/users/:id', adminAuthRequired, async (req, res) => {
   res.json({ user: { id: updated.id, suspended: updated.suspended, adminPlanId: updated.adminPlanId } });
 });
 
-router.delete('/users/:id', adminAuthRequired, async (req, res) => {
+router.delete('/users/:id', adminDeleteLimiter, adminAuthRequired, async (req, res) => {
   const user = await db.findOne('users', { id: req.params.id });
   if (!user) return res.status(404).json({ error: 'User not found' });
+  const { confirmEmail } = req.body || {};
+  if (confirmEmail !== user.email) return res.status(400).json({ error: 'Email confirmation does not match' });
   await logAdminAction({
     adminId: req.admin.id,
     action: 'delete_user',
@@ -141,7 +167,7 @@ router.post('/users/:id/impersonate', adminAuthRequired, async (req, res) => {
   const user = await db.findOne('users', { id: req.params.id });
   if (!user) return res.status(404).json({ error: 'User not found' });
   if (user.suspended) return res.status(400).json({ error: 'Cannot impersonate a suspended account' });
-  const token = signToken(user.id, { expiresIn: '15m' });
+  const token = signToken(user.id, { expiresIn: '15m', imp: true });
   await logAdminAction({
     adminId: req.admin.id,
     action: 'impersonate',

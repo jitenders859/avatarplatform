@@ -47,6 +47,7 @@ router.get('/me', authRequired, (req, res) => {
 });
 
 router.patch('/me', authRequired, async (req, res) => {
+  if (req.impersonated) return res.status(403).json({ error: 'This action is not available while impersonating a user' });
   const { name, email, currentPassword, newPassword } = req.body || {};
   const user = req.user;
   const patch = {};
@@ -118,6 +119,7 @@ router.post('/reset-password', validate(schemas.resetPassword), async (req, res)
 });
 
 router.delete('/me', authRequired, async (req, res) => {
+  if (req.impersonated) return res.status(403).json({ error: 'This action is not available while impersonating a user' });
   await deleteUserAccount(req.user.id);
   res.json({ ok: true });
 });

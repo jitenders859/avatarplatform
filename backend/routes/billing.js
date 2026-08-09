@@ -105,6 +105,7 @@ router.post('/create-checkout-session', authRequired, async (req, res) => {
 
 // ── Stripe Customer Portal session ────────────────────────────
 router.post('/create-portal-session', authRequired, async (req, res) => {
+  if (req.impersonated) return res.status(403).json({ error: 'This action is not available while impersonating a user' });
   const stripe = getStripe();
   if (!stripe) return res.status(503).json({ error: 'Billing is not configured.' });
 
