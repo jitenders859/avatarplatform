@@ -91,7 +91,7 @@ const schemas = {
   }),
 
   tierUpsert: z.object({
-    name: z.string().min(1, 'Name is required').max(80, 'Name too long').trim(),
+    name: z.string().trim().min(1, 'Name is required').max(80, 'Name too long'),
     limits: z.object({
       projects: z.number().int().positive(),
       filesPerProject: z.number().int().positive(),
@@ -99,7 +99,7 @@ const schemas = {
       monthlyMessages: z.number().int().positive(),
       monthlyEmbeddingChars: z.number().int().positive(),
       urlSources: z.number().int().positive(),
-    }),
+    }).strict(),
   }),
 };
 
