@@ -15,10 +15,11 @@ function periodKey(d = new Date()) {
 }
 
 async function userPlanId(userId) {
-  const user = await db.findOne('users', { id: userId });
-  if (user?.adminPlanId) return user.adminPlanId;
-  const sub = await db.findOne('subscriptions', { userId, status: 'active' });
-  return sub ? sub.planId : 'free';
+  const [user, sub] = await Promise.all([
+    db.findOne('users', { id: userId }),
+    db.findOne('subscriptions', { userId, status: 'active' }),
+  ]);
+  return user?.adminPlanId || (sub ? sub.planId : 'free');
 }
 
 async function trackMessage(userId) {

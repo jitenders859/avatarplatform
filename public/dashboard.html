@@ -77,7 +77,20 @@
 
       if (sub) {
         const plan = sub.plan;
-        planLine.innerHTML = `Plan: <span class="pill pill-info">${plan.name}</span> · <a href="/billing">Manage billing</a>`;
+        // plan.name can now be admin-defined free text (custom plan tiers),
+        // not just one of the 4 hardcoded plan strings — build the pill via
+        // textContent instead of interpolating into innerHTML to avoid a
+        // stored-XSS path, matching billing.html's handling of plan.name.
+        planLine.textContent = 'Plan: ';
+        const pill = document.createElement('span');
+        pill.className = 'pill pill-info';
+        pill.textContent = plan.name;
+        planLine.appendChild(pill);
+        planLine.appendChild(document.createTextNode(' · '));
+        const link = document.createElement('a');
+        link.href = '/billing';
+        link.textContent = 'Manage billing';
+        planLine.appendChild(link);
       }
 
       if (projects.length === 0) { emptyEl.hidden = false; grid.hidden = true; return; }

@@ -86,7 +86,7 @@ async function getPlan(id) {
   if (stat) return stat;
   if (id) {
     const custom = await db.findOne('plan_tiers', { id });
-    if (custom) return { id: custom.id, name: custom.name, priceMonthly: 0, limits: custom.limits, features: [], custom: true };
+    if (custom) return { id: custom.id, name: custom.name, priceMonthly: 0, limits: { ...PLANS[0].limits, ...custom.limits }, features: [], custom: true };
   }
   return PLANS[0]; // free
 }
