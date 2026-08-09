@@ -84,6 +84,23 @@ const schemas = {
     text: z.string().min(1, 'text is required').max(2000),
     sessionId: z.string().optional().nullable(),
   }),
+
+  adminLogin: z.object({
+    email,
+    password: z.string().min(1, 'Password is required'),
+  }),
+
+  tierUpsert: z.object({
+    name: z.string().min(1, 'Name is required').max(80, 'Name too long').trim(),
+    limits: z.object({
+      projects: z.number().int().positive(),
+      filesPerProject: z.number().int().positive(),
+      storageMb: z.number().int().positive(),
+      monthlyMessages: z.number().int().positive(),
+      monthlyEmbeddingChars: z.number().int().positive(),
+      urlSources: z.number().int().positive(),
+    }),
+  }),
 };
 
 module.exports = { validate, schemas, z };
