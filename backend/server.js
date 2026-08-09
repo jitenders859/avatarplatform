@@ -11,6 +11,7 @@
  *   /api/projects/:id/sources/url   URL ingestion
  *   /api/billing/*            plans, checkout, portal, webhook
  *   /api/analytics/*          usage charts
+ *   /api/admin/*              admin panel (separate auth, see routes/admin.js)
  *   /embed/:publicId/*        public embed config + RAG retrieval
  *   /                         static frontend
  */
@@ -41,6 +42,7 @@ const captureFieldsRoutes = require('./routes/captureFields');
 const quizQuestionsRoutes = require('./routes/quizQuestions');
 const flashcardsRoutes = require('./routes/flashcards');
 const videoResourcesRoutes = require('./routes/videoResources');
+const adminRoutes = require('./routes/admin');
 const inngestClient = require('./inngest/client');
 const { functions: inngestFunctions } = require('./inngest/functions');
 
@@ -137,6 +139,8 @@ app.use('/api/projects', apiLimiter, videoResourcesRoutes);
 app.use('/api', apiLimiter, filesRoutes); // files routes are project-nested
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/analytics', apiLimiter, analyticsRoutes);
+app.use('/api/admin/login', authLimiter);
+app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/embed', embedLimiter, embedRoutes);
 
 // ── Static frontend ───────────────────────────────────────────
@@ -154,7 +158,7 @@ app.use(express.static(PUBLIC_DIR, {
   },
 }));
 
-const PAGES = ['login', 'signup', 'dashboard', 'project', 'embed', 'billing', 'analytics', 'pricing', 'characters', 'account', 'forgot-password', 'reset-password', 'terms', 'contact'];
+const PAGES = ['login', 'signup', 'dashboard', 'project', 'embed', 'billing', 'analytics', 'pricing', 'characters', 'account', 'forgot-password', 'reset-password', 'terms', 'contact', 'admin'];
 for (const page of PAGES) {
   app.get(`/${page}`, (_req, res) => res.sendFile(path.join(PUBLIC_DIR, `${page}.html`)));
 }
