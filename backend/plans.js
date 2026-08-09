@@ -11,6 +11,8 @@
  *   4. Configure /api/billing/webhook in Stripe webhook endpoints.
  */
 
+const db = require('./db');
+
 const PLANS = [
   {
     id: 'free',
@@ -79,8 +81,14 @@ const PLANS = [
   },
 ];
 
-function getPlan(id) {
-  return PLANS.find(p => p.id === id) || PLANS[0];
+async function getPlan(id) {
+  const stat = PLANS.find(p => p.id === id);
+  if (stat) return stat;
+  if (id) {
+    const custom = await db.findOne('plan_tiers', { id });
+    if (custom) return { id: custom.id, name: custom.name, priceMonthly: 0, limits: custom.limits, features: [], custom: true };
+  }
+  return PLANS[0]; // free
 }
 
 function planByStripePriceId(priceId) {

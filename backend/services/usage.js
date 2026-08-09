@@ -15,6 +15,8 @@ function periodKey(d = new Date()) {
 }
 
 async function userPlanId(userId) {
+  const user = await db.findOne('users', { id: userId });
+  if (user?.adminPlanId) return user.adminPlanId;
   const sub = await db.findOne('subscriptions', { userId, status: 'active' });
   return sub ? sub.planId : 'free';
 }
@@ -74,7 +76,7 @@ async function getUsageSnapshot(userId) {
     ),
   ]);
 
-  const plan = getPlan(planId);
+  const plan = await getPlan(planId);
   const storageMb = +((Number(stats.storageBytes) || 0) / 1024 / 1024).toFixed(2);
 
   return {
