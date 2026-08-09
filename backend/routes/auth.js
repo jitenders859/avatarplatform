@@ -36,6 +36,7 @@ router.post('/login', validate(schemas.login), async (req, res) => {
   if (!user) return res.status(401).json({ error: 'Invalid credentials' });
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return res.status(401).json({ error: 'Invalid credentials' });
+  if (user.suspended) return res.status(403).json({ error: 'This account has been suspended' });
   const token = signToken(user.id);
   res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
 });

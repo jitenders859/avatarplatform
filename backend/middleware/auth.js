@@ -16,7 +16,15 @@ async function authRequired(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Missing auth token' });
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    // Explicit here rather than relying on db.findOne('users', { id: payload.uid })
+    // to fail closed when payload.uid is undefined (as it does today only because
+    // db.js's buildFilter turns a missing filter value into `WHERE id = NULL`,
+    // which never matches). That's an implementation detail of a different file;
+    // a future refactor of buildFilter could silently make this query unfiltered.
+    // Reject admin tokens (and any token missing uid) up front, locally, so the
+    // customer/admin isolation doesn't depend on another module's behavior.
+    if (!payload.uid || payload.isAdmin) return res.status(401).json({ error: 'Invalid or expired token' });
     const user = await db.findOne('users', { id: payload.uid });
     if (!user) return res.status(401).json({ error: 'User not found' });
     if (user.suspended) return res.status(403).json({ error: 'This account has been suspended' });
@@ -28,7 +36,7 @@ async function authRequired(req, res, next) {
 }
 
 function signToken(userId, opts = {}) {
-  return jwt.sign({ uid: userId }, JWT_SECRET, { expiresIn: opts.expiresIn || '30d' });
+  return jwt.sign({ uid: userId }, JWT_SECRET, { expiresIn: opts.expiresIn ?? '30d' });
 }
 
 // Admin auth is structurally disjoint from customer auth: admin tokens carry
@@ -41,7 +49,7 @@ async function adminAuthRequired(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Missing admin auth token' });
   try {
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
     if (!payload.isAdmin) return res.status(401).json({ error: 'Invalid admin token' });
     const admin = await db.findOne('admin_users', { id: payload.aid });
     if (!admin) return res.status(401).json({ error: 'Admin not found' });

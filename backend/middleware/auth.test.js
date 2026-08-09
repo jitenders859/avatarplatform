@@ -9,7 +9,41 @@ const jwt = require('jsonwebtoken');
 // verifies from a clean process).
 process.env.JWT_SECRET = 'test-only-secret-do-not-use-in-prod';
 
-const { signToken, signAdminToken, JWT_SECRET } = require('./auth');
+// `auth.js` does `const db = require('../db')` and calls `db.findOne(...)`.
+// Node caches modules by resolved path, so requiring '../db' here first and
+// monkey-patching its `findOne` gives us the exact same singleton object
+// `auth.js` holds a reference to — no live DATABASE_URL needed (pg's Pool
+// doesn't connect eagerly on require). Same technique as plans.test.js.
+const db = require('../db');
+
+let findOneCalls;
+let findOneImpl;
+db.findOne = (...args) => {
+  findOneCalls.push(args);
+  return findOneImpl(...args);
+};
+
+const { signToken, signAdminToken, authRequired, adminAuthRequired, JWT_SECRET } = require('./auth');
+
+function makeRes() {
+  const res = {
+    status(code) { this.code = code; return this; },
+    json(body) { this.body = body; return this; },
+  };
+  return res;
+}
+
+function makeNext() {
+  const calls = [];
+  const next = (...args) => calls.push(args);
+  next.calls = calls;
+  return next;
+}
+
+test.beforeEach(() => {
+  findOneCalls = [];
+  findOneImpl = () => { throw new Error('db.findOne should not have been called for this case'); };
+});
 
 test('module throws at load time when JWT_SECRET is unset (no hardcoded fallback secret)', () => {
   // Regression test: this module used to do
@@ -59,4 +93,48 @@ test('a customer token (signToken) has no isAdmin flag, so it cannot pass as an 
   const customerToken = signToken('user-123');
   const payload = jwt.verify(customerToken, JWT_SECRET);
   assert.equal(payload.isAdmin, undefined);
+});
+
+test('adminAuthRequired rejects a customer token (401, next not called, no DB lookup)', async () => {
+  const customerToken = signToken('user-123');
+  const req = { headers: { authorization: 'Bearer ' + customerToken } };
+  const res = makeRes();
+  const next = makeNext();
+
+  await adminAuthRequired(req, res, next);
+
+  assert.equal(res.code, 401);
+  assert.equal(next.calls.length, 0);
+  assert.equal(findOneCalls.length, 0);
+});
+
+test('authRequired rejects a token missing uid (e.g. an admin token) with 401, next not called, no DB lookup', async () => {
+  const adminToken = signAdminToken('admin-1');
+  const req = { headers: { authorization: 'Bearer ' + adminToken } };
+  const res = makeRes();
+  const next = makeNext();
+
+  await authRequired(req, res, next);
+
+  assert.equal(res.code, 401);
+  assert.equal(next.calls.length, 0);
+  assert.equal(findOneCalls.length, 0);
+});
+
+test('authRequired rejects a suspended user with 403 and does not call next', async () => {
+  findOneImpl = (table, where) => {
+    assert.equal(table, 'users');
+    assert.equal(where.id, 'user-123');
+    return { id: 'user-123', email: 'user@example.com', suspended: true };
+  };
+  const token = signToken('user-123');
+  const req = { headers: { authorization: 'Bearer ' + token } };
+  const res = makeRes();
+  const next = makeNext();
+
+  await authRequired(req, res, next);
+
+  assert.equal(res.code, 403);
+  assert.deepEqual(res.body, { error: 'This account has been suspended' });
+  assert.equal(next.calls.length, 0);
 });
