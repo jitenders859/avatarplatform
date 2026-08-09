@@ -1,5 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const { rateLimit } = require('express-rate-limit');
 const db = require('../db');
 const { adminAuthRequired, signAdminToken, signToken } = require('../middleware/auth');
@@ -175,6 +176,48 @@ router.post('/users/:id/impersonate', adminAuthRequired, async (req, res) => {
     targetEmail: user.email,
   });
   res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+});
+
+// ── Plan tiers ────────────────────────────────────────────────
+router.get('/tiers', adminAuthRequired, async (req, res) => {
+  res.json({ tiers: await db.query('SELECT * FROM plan_tiers ORDER BY created_at DESC') });
+});
+
+router.post('/tiers', adminAuthRequired, validate(schemas.tierUpsert), async (req, res) => {
+  const { name, limits } = req.body;
+  const id = 'custom-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') + '-' + crypto.randomBytes(3).toString('hex');
+  const tier = await db.insert('plan_tiers', { id, name, limits, createdBy: req.admin.id, createdAt: Date.now() });
+  await logAdminAction({
+    adminId: req.admin.id,
+    action: 'tier_create',
+    meta: { tierId: id, name },
+  });
+  res.json({ tier });
+});
+
+router.patch('/tiers/:tierId', adminAuthRequired, validate(schemas.tierUpsert), async (req, res) => {
+  const existing = await db.findOne('plan_tiers', { id: req.params.tierId });
+  if (!existing) return res.status(404).json({ error: 'Tier not found' });
+  const { name, limits } = req.body;
+  const tier = await db.update('plan_tiers', existing.id, { name, limits });
+  await logAdminAction({
+    adminId: req.admin.id,
+    action: 'tier_update',
+    meta: { tierId: existing.id, name },
+  });
+  res.json({ tier });
+});
+
+router.delete('/tiers/:tierId', adminAuthRequired, async (req, res) => {
+  const inUse = await db.findOne('users', { adminPlanId: req.params.tierId });
+  if (inUse) return res.status(409).json({ error: 'Tier is still assigned to at least one user' });
+  await db.remove('plan_tiers', { id: req.params.tierId });
+  await logAdminAction({
+    adminId: req.admin.id,
+    action: 'tier_delete',
+    meta: { tierId: req.params.tierId },
+  });
+  res.json({ ok: true });
 });
 
 module.exports = router;
