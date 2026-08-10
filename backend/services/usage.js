@@ -15,8 +15,11 @@ function periodKey(d = new Date()) {
 }
 
 async function userPlanId(userId) {
-  const sub = await db.findOne('subscriptions', { userId, status: 'active' });
-  return sub ? sub.planId : 'free';
+  const [user, sub] = await Promise.all([
+    db.findOne('users', { id: userId }),
+    db.findOne('subscriptions', { userId, status: 'active' }),
+  ]);
+  return user?.adminPlanId || (sub ? sub.planId : 'free');
 }
 
 async function trackMessage(userId) {
@@ -74,7 +77,7 @@ async function getUsageSnapshot(userId) {
     ),
   ]);
 
-  const plan = getPlan(planId);
+  const plan = await getPlan(planId);
   const storageMb = +((Number(stats.storageBytes) || 0) / 1024 / 1024).toFixed(2);
 
   return {

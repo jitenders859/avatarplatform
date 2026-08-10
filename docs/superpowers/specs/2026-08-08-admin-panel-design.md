@@ -84,7 +84,7 @@ async function getPlan(id) {
   if (stat) return stat;
   if (id) {
     const custom = await db.findOne('plan_tiers', { id });
-    if (custom) return { id: custom.id, name: custom.name, priceMonthly: 0, limits: custom.limits, features: [], custom: true };
+    if (custom) return { id: custom.id, name: custom.name, priceMonthly: 0, limits: { ...PLANS[0].limits, ...custom.limits }, features: [], custom: true };
   }
   return PLANS[0]; // free
 }
@@ -101,14 +101,15 @@ Call sites get `await`:
 
 ```js
 async function userPlanId(userId) {
-  const user = await db.findOne('users', { id: userId });
-  if (user?.adminPlanId) return user.adminPlanId;
-  const sub = await db.findOne('subscriptions', { userId, status: 'active' });
-  return sub ? sub.planId : 'free';
+  const [user, sub] = await Promise.all([
+    db.findOne('users', { id: userId }),
+    db.findOne('subscriptions', { userId, status: 'active' }),
+  ]);
+  return user?.adminPlanId || (sub ? sub.planId : 'free');
 }
 ```
 
-This is an intentional extra `users` lookup (previously this function only queried `subscriptions`) — acceptable given `getUsageSnapshot` already does a similar-cost query per call and this isn't a hot path (called on billing/usage page loads and limit checks, not per-chat-message). `admin_plan_id` deliberately lives outside the `subscriptions`/Stripe-webhook flow entirely (not as a synthetic `subscriptions` row) — `billing.js`'s webhook handler does `DELETE FROM subscriptions WHERE user_id = $1 AND status = 'active' AND id != $2` when a real Stripe subscription activates, which would silently wipe out a synthetic admin row if it lived in that table. Keeping it as a separate column on `users` means an admin grant survives Stripe billing changes and is only ever cleared explicitly from the admin panel.
+This is an intentional extra `users` lookup (previously this function only queried `subscriptions`) — and this **is** a hot path: `userPlanId` → `getUsageSnapshot` → `checkLimit` runs on every chat message send (`backend/routes/embed.js` calls `checkLimit(project.userId, 'message', 1)` on each incoming message), not just on billing/usage page loads. That's exactly why the two lookups above run via `Promise.all` rather than sequentially — issuing them concurrently avoids adding a full extra DB round-trip to the per-message critical path. `admin_plan_id` deliberately lives outside the `subscriptions`/Stripe-webhook flow entirely (not as a synthetic `subscriptions` row) — `billing.js`'s webhook handler does `DELETE FROM subscriptions WHERE user_id = $1 AND status = 'active' AND id != $2` when a real Stripe subscription activates, which would silently wipe out a synthetic admin row if it lived in that table. Keeping it as a separate column on `users` means an admin grant survives Stripe billing changes and is only ever cleared explicitly from the admin panel.
 
 ---
 
@@ -211,12 +212,16 @@ router.delete('/me', authRequired, async (req, res) => {
 const crypto = require('crypto');
 const db = require('../db');
 
-async function logAdminAction(adminId, action, targetUserId, meta = {}) {
+// Both targetUserId and targetEmail are stored: target_user_id is set to
+// NULL via ON DELETE SET NULL when the user is deleted, so target_email
+// keeps the audit row self-describing after the account is gone.
+async function logAdminAction({ adminId, action, targetUserId = null, targetEmail = null, meta = {} }) {
   await db.insert('admin_audit_log', {
     id: crypto.randomUUID(),
     adminId,
     action,
-    targetUserId: targetUserId || null,
+    targetUserId,
+    targetEmail,
     meta,
     createdAt: Date.now(),
   });
@@ -224,6 +229,8 @@ async function logAdminAction(adminId, action, targetUserId, meta = {}) {
 
 module.exports = { logAdminAction };
 ```
+
+Call style: `logAdminAction({ adminId: req.admin.id, action: 'suspend', targetUserId: user.id, targetEmail: user.email })`. Actions with no target (e.g. `tier_create`/`tier_update`/`tier_delete`) simply omit `targetUserId`/`targetEmail` and get `null` from the defaults.
 
 ---
 

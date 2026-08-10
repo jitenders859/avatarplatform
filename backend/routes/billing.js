@@ -35,7 +35,7 @@ router.get('/plans', (_req, res) => {
 // ── Authenticated: subscription + usage ───────────────────────
 router.get('/subscription', authRequired, async (req, res) => {
   const planId = await userPlanId(req.user.id);
-  const plan = getPlan(planId);
+  const plan = await getPlan(planId);
   const user = await db.findOne('users', { id: req.user.id });
   const activeSub = await db.findOne('subscriptions', { userId: req.user.id, status: 'active' });
   // Most recent subscription of any status — lets a churned user still see
@@ -71,7 +71,7 @@ router.post('/create-checkout-session', authRequired, async (req, res) => {
   if (!stripe) return res.status(503).json({ error: 'Billing is not configured on this server (STRIPE_SECRET_KEY missing).' });
 
   const { planId } = req.body || {};
-  const plan = getPlan(planId);
+  const plan = await getPlan(planId);
   if (!plan || plan.id === 'free') return res.status(400).json({ error: 'Invalid plan' });
   if (!plan.stripePriceId) return res.status(400).json({ error: `No Stripe price configured for plan "${plan.id}"` });
 
@@ -105,6 +105,7 @@ router.post('/create-checkout-session', authRequired, async (req, res) => {
 
 // ── Stripe Customer Portal session ────────────────────────────
 router.post('/create-portal-session', authRequired, async (req, res) => {
+  if (req.impersonated) return res.status(403).json({ error: 'This action is not available while impersonating a user' });
   const stripe = getStripe();
   if (!stripe) return res.status(503).json({ error: 'Billing is not configured.' });
 

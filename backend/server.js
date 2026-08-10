@@ -11,6 +11,7 @@
  *   /api/projects/:id/sources/url   URL ingestion
  *   /api/billing/*            plans, checkout, portal, webhook
  *   /api/analytics/*          usage charts
+ *   /api/admin/*              admin panel (separate auth, see routes/admin.js)
  *   /embed/:publicId/*        public embed config + RAG retrieval
  *   /                         static frontend
  */
@@ -41,6 +42,7 @@ const captureFieldsRoutes = require('./routes/captureFields');
 const quizQuestionsRoutes = require('./routes/quizQuestions');
 const flashcardsRoutes = require('./routes/flashcards');
 const videoResourcesRoutes = require('./routes/videoResources');
+const adminRoutes = require('./routes/admin');
 const inngestClient = require('./inngest/client');
 const { functions: inngestFunctions } = require('./inngest/functions');
 
@@ -71,6 +73,22 @@ const embedLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, slow down' },
+});
+
+// Separate from authLimiter: express-rate-limit's default MemoryStore keys
+// purely by IP with no path awareness when the same limiter instance is
+// mounted at two different paths, so sharing authLimiter here would let
+// customer login failures from an IP eat into the admin login budget for
+// that same IP (and vice versa), and would prevent admin login from ever
+// being stricter than customer login even though a compromised admin
+// credential is far higher blast-radius.
+const adminLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many attempts, please try again later' },
 });
 
 // ── Health check (before all middleware + logging) ────────────
@@ -137,6 +155,8 @@ app.use('/api/projects', apiLimiter, videoResourcesRoutes);
 app.use('/api', apiLimiter, filesRoutes); // files routes are project-nested
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/analytics', apiLimiter, analyticsRoutes);
+app.use('/api/admin/login', adminLoginLimiter);
+app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/embed', embedLimiter, embedRoutes);
 
 // ── Static frontend ───────────────────────────────────────────
@@ -154,7 +174,7 @@ app.use(express.static(PUBLIC_DIR, {
   },
 }));
 
-const PAGES = ['login', 'signup', 'dashboard', 'project', 'embed', 'billing', 'analytics', 'pricing', 'characters', 'account', 'forgot-password', 'reset-password', 'terms', 'contact'];
+const PAGES = ['login', 'signup', 'dashboard', 'project', 'embed', 'billing', 'analytics', 'pricing', 'characters', 'account', 'forgot-password', 'reset-password', 'terms', 'contact', 'admin'];
 for (const page of PAGES) {
   app.get(`/${page}`, (_req, res) => res.sendFile(path.join(PUBLIC_DIR, `${page}.html`)));
 }
