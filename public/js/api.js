@@ -2,6 +2,14 @@
  * Frontend API helpers + auth state + shared layout.
  * Loaded by every authenticated page.
  */
+// Admin "View as user" opens /dashboard#imp=<token> in a new tab — pick up
+// the impersonation token into the normal session key and scrub the URL so
+// it doesn't linger in history/address bar.
+if (location.hash.startsWith('#imp=')) {
+  localStorage.setItem('apToken', decodeURIComponent(location.hash.slice(5)));
+  history.replaceState(null, '', location.pathname);
+}
+
 const Auth = {
   get token() { return localStorage.getItem('apToken'); },
   set token(v) { v ? localStorage.setItem('apToken', v) : localStorage.removeItem('apToken'); },

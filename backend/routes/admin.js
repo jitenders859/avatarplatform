@@ -220,4 +220,18 @@ router.delete('/tiers/:tierId', adminAuthRequired, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Audit log ─────────────────────────────────────────────────
+router.get('/audit-log', adminAuthRequired, async (req, res) => {
+  const page = Math.min(100000, Math.max(1, parseInt(req.query.page) || 1));
+  const pageSize = 50;
+  const entries = await db.query(
+    `SELECT l.*, a.email AS admin_email
+       FROM admin_audit_log l
+       LEFT JOIN admin_users a ON a.id = l.admin_id
+      ORDER BY l.created_at DESC LIMIT $1 OFFSET $2`,
+    [pageSize, (page - 1) * pageSize]
+  );
+  res.json({ entries, page, pageSize });
+});
+
 module.exports = router;

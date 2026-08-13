@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Admin — AvatarPlatform</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <div class="container mt-md">
+    <div id="login-view" class="card" style="max-width:360px;margin:80px auto">
+      <div class="card-header"><h2 class="card-title">Admin sign in</h2></div>
+      <form id="login-form" class="col gap-md">
+        <input type="email" id="login-email" placeholder="Email" required class="input" />
+        <input type="password" id="login-password" placeholder="Password" required class="input" />
+        <button type="submit" class="btn btn-primary">Sign in</button>
+      </form>
+    </div>
+
+    <div id="admin-view" hidden>
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Admin</h1>
+          <p class="page-sub" id="admin-whoami"></p>
+        </div>
+        <button class="btn btn-ghost" id="logout-btn">Log out</button>
+      </div>
+
+      <div class="row gap-sm mb-lg" id="tab-bar">
+        <button class="btn btn-ghost tab-btn active" data-tab="users">Users</button>
+        <button class="btn btn-ghost tab-btn" data-tab="tiers">Tiers</button>
+        <button class="btn btn-ghost tab-btn" data-tab="audit">Audit Log</button>
+      </div>
+
+      <section id="tab-users"></section>
+      <section id="tab-tiers" hidden></section>
+      <section id="tab-audit" hidden></section>
+    </div>
+  </div>
+
+  <script src="/js/theme.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>
