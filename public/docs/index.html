@@ -163,7 +163,7 @@ External services
             <tr><td><span class="prop-name">DATABASE_URL</span></td><td>Yes</td><td>Postgres connection string (Supabase or self-hosted)</td></tr>
             <tr><td><span class="prop-name">GEMINI_API_KEY</span></td><td>Yes</td><td>Server-side Gemini key for embeddings and async /ask</td></tr>
             <tr><td><span class="prop-name">JWT_SECRET</span></td><td>Yes</td><td>Random string for signing JWT tokens. Change before deploying.</td></tr>
-            <tr><td><span class="prop-name">PUBLIC_GEMINI_API_KEY</span></td><td>Recommended</td><td>Browser-safe Gemini key for Gemini Live WebSocket. Falls back to GEMINI_API_KEY.</td></tr>
+            <tr><td><span class="prop-name">PUBLIC_GEMINI_API_KEY</span></td><td>Recommended</td><td>Browser-safe Gemini key for the Gemini Live WebSocket. Must be a SEPARATE key from <code>GEMINI_API_KEY</code> (never exposed server key). If unset, widgets degrade to text-only mode via the server-side <code>/ask</code> path.</td></tr>
             <tr><td><span class="prop-name">PORT</span></td><td>No</td><td>Server port. Defaults to <code>8080</code>.</td></tr>
             <tr><td><span class="prop-name">EMBEDDING_MODEL</span></td><td>No</td><td>Gemini embedding model. Default: <code>gemini-embedding-exp-03-07</code></td></tr>
             <tr><td><span class="prop-name">EMBEDDING_DIMENSIONS</span></td><td>No</td><td>Output dimension. Default: <code>768</code>. Match to schema.</td></tr>

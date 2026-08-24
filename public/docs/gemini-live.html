@@ -77,7 +77,7 @@ WebSocket ──────────────────────► 
         <pre><code class="language-bash"># .env
 PUBLIC_GEMINI_API_KEY=AIza...  # browser-safe key (set quotas + referrer restrictions)
 GEMINI_API_KEY=AIza...         # server-side key for embeddings and async /ask</code></pre>
-        <p>The server returns <code>PUBLIC_GEMINI_API_KEY</code> (falling back to <code>GEMINI_API_KEY</code>) in the <code>GET /embed/:publicId/config</code> response. The embed widget uses this key to authenticate the WebSocket.</p>
+        <p>The server returns <code>PUBLIC_GEMINI_API_KEY</code> in the <code>GET /embed/:publicId/config</code> response, and the embed widget uses this key to authenticate the WebSocket. It <strong>never</strong> falls back to <code>GEMINI_API_KEY</code> — the server key stays server-side. If <code>PUBLIC_GEMINI_API_KEY</code> is unset (or set equal to the server key), the config response carries no key and the widget runs in text-only mode, answering typed questions through the server-side <code>/ask</code> path instead.</p>
         <div class="callout callout-warn">
           <span class="callout-icon">⚠️</span>
           <div class="callout-body"><p><strong>In production:</strong> Create a separate API key in Google AI Studio and restrict it to the <code>generativelanguage.googleapis.com</code> service with HTTP referrer restrictions matching your embed domains.</p></div>

@@ -135,7 +135,7 @@ See `.env.example` for the full annotated list. Key variables:
 | `DATABASE_URL` | **Yes** | Postgres connection string (`postgresql://user:pass@host:port/db`) |
 | `DATABASE_SSL` | No | Set to `false` to disable SSL (local Postgres). Default: SSL enabled. |
 | `GEMINI_API_KEY` | **Yes** | Server-side key for embeddings and multimodal extraction |
-| `PUBLIC_GEMINI_API_KEY` | Recommended | Separate restricted key exposed to embed pages for Gemini Live. Falls back to `GEMINI_API_KEY`. |
+| `PUBLIC_GEMINI_API_KEY` | Recommended | Separate restricted key exposed to embed pages for Gemini Live. Must not equal `GEMINI_API_KEY` (no fallback — if unset, widgets run text-only via `/ask`). Restrict it to the Live API + referrers. |
 | `JWT_SECRET` | **Yes** | Secret for signing auth tokens (30-day expiry). Use a strong random string. |
 | `PORT` | No | HTTP port. Default: `8080` |
 | `EMBEDDING_MODEL` | No | Default: `gemini-embedding-exp-03-07` |
@@ -150,6 +150,8 @@ See `.env.example` for the full annotated list. Key variables:
 | `SMTP_USER` / `SMTP_PASS` | No | SMTP credentials |
 | `SMTP_FROM` | No | From address for outbound emails |
 | `APP_URL` | No | Public URL for password-reset links. Default: `http://localhost:8080` |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | No (recommended on Vercel) | Upstash Redis over REST — shared rate-limit store. See [Rate limiting](#rate-limiting). Without it, limiters are in-memory only. |
+| `REDIS_URL` | No | Generic Redis over TCP — alternative rate-limit store. See [Rate limiting](#rate-limiting). |
 
 ---
 
@@ -381,9 +383,24 @@ The `pg` driver is configured with `{ rejectUnauthorized: false }` by default to
 
 Uploaded files are stored on the local filesystem at `data/uploads/<projectId>/`. In a multi-instance deployment, point this path at a shared volume or swap `multer.diskStorage` for S3/GCS storage.
 
+### Rate limiting
+
+All express-rate-limit instances (`authLimiter`, `apiLimiter`, `embedLimiter`, `adminLoginLimiter` in `backend/server.js`, plus the per-visitor AI-cost limiters on `/embed/:publicId/ask`, `/study`, and `/retrieve` in `backend/routes/embed.js`) share one Redis-backed store via `backend/services/rateLimitStore.js` when one is configured. Without it they fall back to per-process MemoryStore and a loud warning is logged at boot — on Vercel that means limits reset on every cold invocation and are effectively disabled, so **configure a store before serving real traffic**:
+
+| Variable | Purpose |
+|---|---|
+| `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` | Upstash Redis over REST. Recommended for Vercel — pure HTTP, no TCP connection state to lose between serverless invocations. (`UPSTASH_REDIS_URL`/`UPSTASH_REDIS_TOKEN` are accepted aliases.) |
+| `REDIS_URL` | Any Redis over TCP (`redis://…`, or `rediss://…` for TLS, e.g. Upstash's TCP or Railway Redis). Used when the Upstash REST vars are unset. |
+
+Keying:
+- Each limiter writes under its own key prefix (`ratelimit:auth:…`, `ratelimit:api:…`, …) so counters never collide in the shared keyspace.
+- `embedLimiter` keys by **IP + publicId**, so one visitor behind a shared NAT IP no longer throttles every other embed served to that IP, and abuse is scoped per chatbot. IPv6 clients are normalized to a /56 prefix (`ipKeyGenerator`) to prevent low-order-bit rotation bypasses.
+- The AI-cost limiters additionally cap at 10 req/min per IP + project, independent of the generic 30/min embed limit.
+- Store failures fail open: if Redis errors, express-rate-limit's `passOnStoreError` lets the request through and logs the error — rate limiting degrades to "off" instead of 500s.
+
 ### Scaling notes
 
 - **Vector search** uses pgvector HNSW — fast at millions of chunks, no external vector DB needed.
 - **Usage tracking** uses SQL `ON CONFLICT` upserts — safe under concurrent load.
-- **Rate limiting** is in-memory per server instance. For multi-instance deployments, swap the `buckets` Map in `routes/embed.js` for Redis.
+- **Rate limiting** is shared through Redis (see "Rate limiting" above); without a Redis store it degrades to in-memory per instance.
 - **Background processing** (`processFileAsync`) uses `setImmediate` — fine for single-instance. For heavier workloads, move to a job queue (BullMQ).

@@ -59,10 +59,10 @@
             <span class="issue-title">Avatar doesn't appear on the page</span>
           </div>
           <div class="issue-body">
-            <p><strong>Most common cause:</strong> <code>PUBLIC_GEMINI_API_KEY</code> (or <code>GEMINI_API_KEY</code>) is missing on the server. The embed config endpoint returns an empty <code>apiKey</code>, causing the SDK to abort before rendering.</p>
-            <p><strong>Fix:</strong> Set at least <code>GEMINI_API_KEY</code> in your <code>.env</code> file and restart the server:</p>
-            <pre><code class="language-bash">GEMINI_API_KEY=AIza...   # required
-PUBLIC_GEMINI_API_KEY=AIza...  # recommended (separate restricted key)</code></pre>
+            <p><strong>Most common cause:</strong> <code>PUBLIC_GEMINI_API_KEY</code> is missing on the server. The voice path needs a browser-facing Gemini key, and the server deliberately never exposes <code>GEMINI_API_KEY</code> — so with no public key, the embed config returns no <code>apiKey</code> and the widget boots in text-only mode (chat still works via typed messages; the talking avatar doesn't appear).</p>
+            <p><strong>Fix:</strong> Set a separate, restricted browser-safe key in your <code>.env</code> file and restart the server:</p>
+            <pre><code class="language-bash">GEMINI_API_KEY=AIza...          # required — server-side only, never sent to browsers
+PUBLIC_GEMINI_API_KEY=AIza...   # separate key for the voice WebSocket</code></pre>
             <p><strong>Also check:</strong></p>
             <ul>
               <li>The <code>data-public-id</code> attribute on the script tag matches a real project's Public ID (visible in the dashboard Embed tab)</li>
