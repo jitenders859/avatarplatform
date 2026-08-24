@@ -11,6 +11,7 @@ const multer = require('multer');
 const { randomUUID: uuid } = require('crypto');
 const db = require('../db');
 const { authRequired } = require('../middleware/auth');
+const { validate, schemas } = require('../middleware/validate');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { parseQuizCsv } = require('../services/csvImport');
 
@@ -30,13 +31,11 @@ async function ownsProject(req, res, next) {
   }
 }
 
-function validateQuestionBody(body) {
-  const { question, options, correctIndex } = body || {};
-  if (!question || !String(question).trim()) return 'question is required';
-  if (!Array.isArray(options) || options.length < 2 || options.length > 6) {
-    return 'options must be an array of 2 to 6 strings';
-  }
-  if (options.some(o => !o || !String(o).trim())) return 'options cannot be empty';
+// Re-validates a PATCH's merged (existing + incoming) fields — the schema
+// only type-checks the incoming partial body; correctIndex has to be
+// re-checked against options once we know what the merged options array is.
+function correctIndexInBounds(body) {
+  const { options, correctIndex } = body;
   if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex >= options.length) {
     return 'correctIndex must be a valid index into options';
   }
@@ -52,18 +51,15 @@ router.get('/:projectId/quiz-questions', authRequired, ownsProject, async (req, 
 });
 
 // POST /api/projects/:projectId/quiz-questions
-router.post('/:projectId/quiz-questions', authRequired, ownsProject, async (req, res) => {
-  const err = validateQuestionBody(req.body);
-  if (err) return res.status(400).json({ error: err });
-
+router.post('/:projectId/quiz-questions', authRequired, ownsProject, validate(schemas.quizQuestionCreate), async (req, res) => {
   const { question, options, correctIndex, topicTag } = req.body;
   const created = await db.insert('quizQuestions', {
     id: uuid(),
     projectId: req.project.id,
-    question: String(question).trim(),
-    options: options.map(String),
+    question,
+    options,
     correctIndex,
-    topicTag: topicTag ? String(topicTag).trim() : null,
+    topicTag: topicTag || null,
     createdAt: Date.now(),
   });
   res.json({ question: created });
@@ -93,7 +89,7 @@ router.post('/:projectId/quiz-questions/import-csv', authRequired, ownsProject, 
 });
 
 // PATCH /api/projects/:projectId/quiz-questions/:qId
-router.patch('/:projectId/quiz-questions/:qId', authRequired, ownsProject, async (req, res) => {
+router.patch('/:projectId/quiz-questions/:qId', authRequired, ownsProject, validate(schemas.quizQuestionPatch), async (req, res) => {
   const existing = await db.findOne('quizQuestions', { id: req.params.qId, projectId: req.project.id });
   if (!existing) return res.status(404).json({ error: 'Question not found' });
 
@@ -102,11 +98,11 @@ router.patch('/:projectId/quiz-questions/:qId', authRequired, ownsProject, async
     options: req.body.options !== undefined ? req.body.options : existing.options,
     correctIndex: req.body.correctIndex !== undefined ? req.body.correctIndex : existing.correctIndex,
   };
-  const err = validateQuestionBody(merged);
+  const err = correctIndexInBounds(merged);
   if (err) return res.status(400).json({ error: err });
 
-  const patch = { question: String(merged.question).trim(), options: merged.options.map(String), correctIndex: merged.correctIndex };
-  if (req.body.topicTag !== undefined) patch.topicTag = req.body.topicTag ? String(req.body.topicTag).trim() : null;
+  const patch = { question: merged.question, options: merged.options, correctIndex: merged.correctIndex };
+  if (req.body.topicTag !== undefined) patch.topicTag = req.body.topicTag || null;
 
   const updated = await db.update('quizQuestions', existing.id, patch);
   res.json({ question: updated });
@@ -124,10 +120,8 @@ router.delete('/:projectId/quiz-questions/:qId', authRequired, ownsProject, asyn
 // Cheap helper: owner supplies a question + the correct answer, gets 3
 // plausible wrong options back. Uses flash-lite since this is a much
 // simpler generation task than full quiz synthesis from source material.
-router.post('/:projectId/quiz-questions/suggest-distractors', authRequired, ownsProject, async (req, res) => {
-  const { question, correctAnswer } = req.body || {};
-  if (!question || !String(question).trim()) return res.status(400).json({ error: 'question is required' });
-  if (!correctAnswer || !String(correctAnswer).trim()) return res.status(400).json({ error: 'correctAnswer is required' });
+router.post('/:projectId/quiz-questions/suggest-distractors', authRequired, ownsProject, validate(schemas.quizSuggestDistractors), async (req, res) => {
+  const { question, correctAnswer } = req.body;
 
   try {
     const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -142,7 +136,7 @@ router.post('/:projectId/quiz-questions/suggest-distractors', authRequired, owns
         },
       },
     });
-    const prompt = `Question: ${String(question).trim()}\nCorrect answer: ${String(correctAnswer).trim()}\n\n` +
+    const prompt = `Question: ${question}\nCorrect answer: ${correctAnswer}\n\n` +
       'Write exactly 3 plausible but incorrect answer options for this multiple-choice question. ' +
       'They should be believable distractors (similar in length/style to the correct answer), not obviously wrong or silly.';
     const result = await model.generateContent(prompt);

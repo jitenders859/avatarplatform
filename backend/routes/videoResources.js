@@ -7,9 +7,9 @@ const express = require('express');
 const { randomUUID: uuid } = require('crypto');
 const db = require('../db');
 const { authRequired } = require('../middleware/auth');
+const { validate, schemas } = require('../middleware/validate');
 
 const router = express.Router();
-const YOUTUBE_URL_RE = /^https:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/;
 
 async function ownsProject(req, res, next) {
   try {
@@ -22,14 +22,6 @@ async function ownsProject(req, res, next) {
   }
 }
 
-function validateVideoBody(body) {
-  const { title, youtubeUrl, topicTags } = body || {};
-  if (!title || !String(title).trim()) return 'title is required';
-  if (!youtubeUrl || !YOUTUBE_URL_RE.test(youtubeUrl)) return 'youtubeUrl must be a valid youtube.com or youtu.be link';
-  if (!Array.isArray(topicTags) || topicTags.length === 0) return 'at least one topic tag is required';
-  return null;
-}
-
 // GET /api/projects/:projectId/video-resources
 router.get('/:projectId/video-resources', authRequired, ownsProject, async (req, res) => {
   const videos = await db.findAll('videoResources', { projectId: req.project.id }, { orderBy: 'createdAt', order: 'desc' });
@@ -37,17 +29,14 @@ router.get('/:projectId/video-resources', authRequired, ownsProject, async (req,
 });
 
 // POST /api/projects/:projectId/video-resources
-router.post('/:projectId/video-resources', authRequired, ownsProject, async (req, res) => {
-  const err = validateVideoBody(req.body);
-  if (err) return res.status(400).json({ error: err });
-
+router.post('/:projectId/video-resources', authRequired, ownsProject, validate(schemas.videoResourceCreate), async (req, res) => {
   const { title, youtubeUrl, topicTags } = req.body;
   const created = await db.insert('videoResources', {
     id: uuid(),
     projectId: req.project.id,
-    title: String(title).trim(),
-    youtubeUrl: String(youtubeUrl).trim(),
-    topicTags: topicTags.map(t => String(t).trim().toLowerCase()).filter(Boolean),
+    title,
+    youtubeUrl,
+    topicTags: topicTags.map(t => t.toLowerCase()).filter(Boolean),
     createdAt: Date.now(),
   });
   res.json({ video: created });

@@ -10,31 +10,26 @@
  *
  * Returns: { url, finalUrl, title, text, faviconUrl, fetchedAt }
  */
-const fetch = require('node-fetch');
 const cheerio = require('cheerio');
+const { safeFetch } = require('./safeFetch');
 
 const UA = 'Mozilla/5.0 (compatible; AvatarPlatformBot/1.0; +https://avatarplatform.app)';
 const FETCH_TIMEOUT_MS = 15000;
 const MAX_BYTES = 5 * 1024 * 1024; // 5MB cap on a single page
 
 async function fetchUrl(url) {
-  // Validate + normalize
-  let parsed;
-  try { parsed = new URL(url); } catch { throw new Error('Invalid URL'); }
-  if (!/^https?:$/.test(parsed.protocol)) throw new Error('Only http(s) URLs are supported');
-
+  const originalUrl = new URL(url).toString();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
 
   let res;
   try {
-    res = await fetch(parsed.toString(), {
+    res = await safeFetch(url, {
       headers: {
         'User-Agent': UA,
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'en-US,en;q=0.9',
       },
-      redirect: 'follow',
       signal: ctrl.signal,
     });
   } catch (e) {
@@ -58,7 +53,7 @@ async function fetchUrl(url) {
   }
   const html = buf.toString('utf8');
 
-  return parseHtml(html, res.url || parsed.toString(), parsed.toString());
+  return parseHtml(html, res.url || originalUrl, originalUrl);
 }
 
 function parseHtml(html, finalUrl, originalUrl) {

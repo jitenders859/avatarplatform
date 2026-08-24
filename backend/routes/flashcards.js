@@ -8,6 +8,7 @@ const multer = require('multer');
 const { randomUUID: uuid } = require('crypto');
 const db = require('../db');
 const { authRequired } = require('../middleware/auth');
+const { validate, schemas } = require('../middleware/validate');
 const { parseFlashcardCsv } = require('../services/csvImport');
 
 const router = express.Router();
@@ -24,13 +25,6 @@ async function ownsProject(req, res, next) {
   }
 }
 
-function validateCardBody(body) {
-  const { front, back } = body || {};
-  if (!front || !String(front).trim()) return 'front is required';
-  if (!back || !String(back).trim()) return 'back is required';
-  return null;
-}
-
 // GET /api/projects/:projectId/flashcards
 router.get('/:projectId/flashcards', authRequired, ownsProject, async (req, res) => {
   const cards = await db.findAll('flashcards', { projectId: req.project.id }, { orderBy: 'createdAt', order: 'desc' });
@@ -38,17 +32,14 @@ router.get('/:projectId/flashcards', authRequired, ownsProject, async (req, res)
 });
 
 // POST /api/projects/:projectId/flashcards
-router.post('/:projectId/flashcards', authRequired, ownsProject, async (req, res) => {
-  const err = validateCardBody(req.body);
-  if (err) return res.status(400).json({ error: err });
-
+router.post('/:projectId/flashcards', authRequired, ownsProject, validate(schemas.flashcardCreate), async (req, res) => {
   const { front, back, topicTag } = req.body;
   const created = await db.insert('flashcards', {
     id: uuid(),
     projectId: req.project.id,
-    front: String(front).trim(),
-    back: String(back).trim(),
-    topicTag: topicTag ? String(topicTag).trim() : null,
+    front,
+    back,
+    topicTag: topicTag || null,
     createdAt: Date.now(),
   });
   res.json({ card: created });

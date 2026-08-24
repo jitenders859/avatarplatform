@@ -31,6 +31,8 @@ const { rateLimit } = require('express-rate-limit');
 const { serve: serveInngest } = require('inngest/express');
 const pinoHttp = require('pino-http');
 const logger = require('./logger');
+const { AppError } = require('./errors');
+const { getRateLimitStore, embedKeyGenerator } = require('./services/rateLimitStore');
 
 const authRoutes = require('./routes/auth');
 const { router: projectsRoutes } = require('./routes/projects');
@@ -50,6 +52,11 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // ── Rate limiters ─────────────────────────────────────────────
+// All limiters share a Redis-backed store when one is configured
+// (UPSTASH_REDIS_REST_URL/+TOKEN or REDIS_URL — see services/rateLimitStore.js)
+// so limits survive Vercel's per-invocation process state and apply across
+// horizontally-scaled instances. Without a store they silently fall back to
+// per-process MemoryStore and rateLimitStore logs a loud boot warning.
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 10,
@@ -57,6 +64,7 @@ const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many attempts, please try again later' },
+  store: getRateLimitStore('auth'),
 });
 
 const apiLimiter = rateLimit({
@@ -65,23 +73,28 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, slow down' },
+  store: getRateLimitStore('api'),
 });
 
+// Keyed by IP+publicId rather than IP alone: an IP-only key meant one
+// legitimate visitor behind office NAT ate the 30/min budget of every other
+// embed served to that IP, while abusers needed to rotate nothing.
 const embedLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: embedKeyGenerator,
   message: { error: 'Too many requests, slow down' },
+  store: getRateLimitStore('embed'),
 });
 
-// Separate from authLimiter: express-rate-limit's default MemoryStore keys
-// purely by IP with no path awareness when the same limiter instance is
-// mounted at two different paths, so sharing authLimiter here would let
-// customer login failures from an IP eat into the admin login budget for
-// that same IP (and vice versa), and would prevent admin login from ever
-// being stricter than customer login even though a compromised admin
-// credential is far higher blast-radius.
+// Separate from authLimiter: even with a shared store each limiter gets its
+// own key prefix (see rateLimitStore.getRateLimitStore), so sharing
+// authLimiter here would let customer login failures from an IP eat into the
+// admin login budget for that same IP (and vice versa), and would prevent
+// admin login from ever being stricter than customer login even though a
+// compromised admin credential is far higher blast-radius.
 const adminLoginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 5,
@@ -89,6 +102,7 @@ const adminLoginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many attempts, please try again later' },
+  store: getRateLimitStore('admin'),
 });
 
 // ── Health check (before all middleware + logging) ────────────
@@ -192,12 +206,23 @@ app.get('/e/:publicId', (_req, res) => {
 });
 
 // ── Error handler ─────────────────────────────────────────────
+// err.message is only ever returned verbatim for AppError — a deliberate,
+// user-facing rejection raised by application code. Anything else reaching
+// here (DB errors, Supabase errors, upstream Gemini/Stripe error text, ...)
+// is logged in full server-side and replaced with a generic message, so
+// internals never leak to the client. req.id (assigned by pino-http) is
+// returned alongside so a report of "Internal server error" can be matched
+// back to the corresponding server-side log line.
 app.use((err, req, res, _next) => {
-  req.log.error({ err }, 'unhandled error');
   if (err.code === 'LIMIT_FILE_SIZE') {
     return res.status(413).json({ error: 'File too large (max 100MB)' });
   }
-  res.status(500).json({ error: err.message || 'Internal server error' });
+  if (err instanceof AppError) {
+    req.log.warn({ err }, 'app error');
+    return res.status(err.status || 400).json({ error: err.message });
+  }
+  req.log.error({ err }, 'unhandled error');
+  res.status(500).json({ error: 'Internal server error', requestId: req.id });
 });
 
 // Vercel provides its own listener and process lifecycle around the
@@ -214,6 +239,17 @@ if (!process.env.VERCEL) {
       logger.warn('GEMINI_API_KEY not set — embeddings, multimodal extraction, and live chat will fail');
     } else {
       logger.info('GEMINI_API_KEY loaded');
+    }
+    // PUBLIC_GEMINI_API_KEY is shipped to every visitor's browser via
+    // /embed/:id/config — it must be a separate, restricted key. When it's
+    // missing we omit it from the config (never fall back to GEMINI_API_KEY,
+    // which would publicly leak the server key) and widgets run text-only.
+    if (!process.env.PUBLIC_GEMINI_API_KEY) {
+      logger.warn('PUBLIC_GEMINI_API_KEY not set — live voice disabled; embed widgets will run in text-only mode via /ask');
+    } else if (process.env.PUBLIC_GEMINI_API_KEY === process.env.GEMINI_API_KEY) {
+      logger.warn('PUBLIC_GEMINI_API_KEY equals GEMINI_API_KEY — the server key would be publicly downloadable via /embed/:id/config. Create a separate, quota-restricted key.');
+    } else {
+      logger.info('PUBLIC_GEMINI_API_KEY loaded');
     }
     if (!process.env.STRIPE_SECRET_KEY) {
       logger.warn('STRIPE_SECRET_KEY not set — billing endpoints will return 503');

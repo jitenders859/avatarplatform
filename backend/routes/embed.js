@@ -21,12 +21,50 @@ const { toolsForTier } = require('../services/tools');
 const { resolveLearnerKey, backfillLearnerKey } = require('../services/learner');
 const { checkLimit, userPlanId } = require('../services/usage');
 const logger = require('../logger').child({ module: 'embed' });
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
+const { getRateLimitStore } = require('../services/rateLimitStore');
+const { safeFetch } = require('../services/safeFetch');
 const router = express.Router();
+
+// Per-(visitor, project) cap for the three Gemini-paying endpoints (/ask,
+// /study, and the embedding-heavy /retrieve), IN ADDITION to the generic
+// 30/min /embed limiter and the owner's monthly message quota. Without the
+// project dimension, one office NAT IP using project A eats the whole
+// 30/min budget, and one abuser with a publicId can burn Gemini cost
+// against that owner specifically at 30/min. This is a floor for abuse;
+// the monthly quota remains the billing gate.
+// ipKeyGenerator normalizes IPv6 clients to a /56 prefix — without that, a
+// visitor on an IPv6 prefix could rotate low-order bits to bypass the cap.
+// Shares the Redis-backed store when one is configured (serverless-safe)
+// and falls back to MemoryStore with a boot warning otherwise.
+const aiCostLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip || 'unknown')}:ai:${req.params.publicId || 'unknown'}`,
+  handler: (_req, res) => res.status(429).json({ error: 'Too many questions — please slow down a little.' }),
+  store: getRateLimitStore('ai'),
+});
 
 const STUDY_MODEL = process.env.STUDY_MODEL || 'gemini-2.5-flash';
 const MAX_TOOL_ITERATIONS = 5;
 
-const PUBLIC_API_KEY = process.env.PUBLIC_GEMINI_API_KEY || process.env.GEMINI_API_KEY || '';
+// Browser-facing key for the Gemini Live WebSocket (browser → Gemini direct,
+// see lipsync-sdk.js). This is PUBLIC by construction — it leaves to any
+// visitor via /config — and must be a SEPARATE, quota-restricted key.
+// NEVER fall back to GEMINI_API_KEY: that's the server-side key backing
+// embeddings, /ask, /study, and file processing, and shipping it to every
+// visitor's browser would let anyone burn the platform's own Gemini quota.
+// If someone sets PUBLIC_GEMINI_API_KEY to the SAME value as GEMINI_API_KEY
+// we treat it as unset too (same leak), relying on /ask regardless.
+// When effectively unset, voice is disabled and the widget degrades to
+// text-only mode (server-side /ask) — see voiceEnabled below. server.js
+// warns at boot in both cases.
+const PUBLIC_API_KEY = (() => {
+  const raw = process.env.PUBLIC_GEMINI_API_KEY || '';
+  return raw && raw !== process.env.GEMINI_API_KEY ? raw : '';
+})();
 
 async function findByPublicId(publicId) {
   if (projectCache.has(publicId)) return projectCache.get(publicId);
@@ -130,8 +168,12 @@ router.get('/:publicId/config', async (req, res) => {
       // gate them individually. Withholding the key once the owner's
       // monthly message quota is exhausted is the enforcement point for
       // that path; /ask and /study additionally check per-request since
-      // they do proxy through us.
-      apiKey: messageLimitCheck.ok ? PUBLIC_API_KEY : null,
+      // they do proxy through us. When PUBLIC_GEMINI_API_KEY is unset the
+      // key is omitted entirely (never falls back to the server key) and
+      // voiceEnabled=false tells the widget to run in text-only mode via
+      // the server-side /ask path.
+      apiKey: messageLimitCheck.ok && PUBLIC_API_KEY ? PUBLIC_API_KEY : null,
+      voiceEnabled: messageLimitCheck.ok && !!PUBLIC_API_KEY,
       limitReached: !messageLimitCheck.ok,
       limitMessage: messageLimitCheck.ok ? null : messageLimitCheck.reason,
       model: 'gemini-3.1-flash-live-preview',
@@ -145,22 +187,21 @@ router.get('/:publicId/config', async (req, res) => {
 /**
  * POST /embed/:publicId/retrieve
  */
-router.post('/:publicId/retrieve', async (req, res) => {
+router.post('/:publicId/retrieve', aiCostLimiter, validate(schemas.embedRetrieve), async (req, res) => {
   const project = await findByPublicId(req.params.publicId);
   if (!project) return res.status(404).json({ error: 'Chatbot not found' });
 
-  const { query, k = 5 } = req.body || {};
-  if (!query || !String(query).trim()) return res.status(400).json({ error: 'Query required' });
+  const { query, k = 5 } = req.body;
 
   let queryEmbedding;
   try {
-    queryEmbedding = await embedOne(String(query).slice(0, 1500), 'RETRIEVAL_QUERY');
+    queryEmbedding = await embedOne(query.slice(0, 1500), 'RETRIEVAL_QUERY');
   } catch (e) {
     logger.error({ err: e.message }, 'retrieve embed failed');
     return res.status(502).json({ error: 'Embedding service unavailable' });
   }
 
-  const hits = await searchProject(project.id, queryEmbedding, Math.min(Math.max(1, k), 10));
+  const hits = await searchProject(project.id, queryEmbedding, k);
 
   const fileCache = await filesForHits(hits);
   const showFigures = project.capabilityTier !== 'basic';
@@ -243,7 +284,7 @@ router.get('/:publicId/page-image/:pageImageId', async (req, res) => {
  * POST /embed/:publicId/ask
  * Async Q&A — no voice, no WebSocket. Returns a text answer + sources.
  */
-router.post('/:publicId/ask', validate(schemas.ask), async (req, res) => {
+router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, res) => {
   try {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
@@ -348,7 +389,7 @@ router.post('/:publicId/ask', validate(schemas.ask), async (req, res) => {
  * model returns a final text answer (capped at MAX_TOOL_ITERATIONS to avoid
  * a pathological tool-call loop).
  */
-router.post('/:publicId/study', validate(schemas.study), async (req, res) => {
+router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (req, res) => {
   try {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
@@ -652,6 +693,25 @@ router.post('/:publicId/log', validate(schemas.log), async (req, res) => {
   const ip = req.ip || 'unknown';
   const { sessionId, role, text } = req.body;
 
+  // Quota gate for user turns, same as /ask and /study. Previously /log
+  // incremented the owner's monthly message counter with NO limit check, so
+  // anyone knowing a publicId could drain a free owner's 100 messages/month
+  // by spamming this endpoint. Now we refuse to record (or count) user turns
+  // once the quota is gone and return the same limitReached shape /config
+  // emits so the widget degrades gracefully. Checked BEFORE the insert so a
+  // rejected spammer can't flood the messages table either.
+  if (role === 'user') {
+    const limitCheck = await checkLimit(project.userId, 'message', 1);
+    if (!limitCheck.ok) {
+      return res.status(402).json({
+        error: limitCheck.reason,
+        limitReached: true,
+        limitMessage: limitCheck.reason,
+        sessionId: sessionId || null,
+      });
+    }
+  }
+
   let sid = sessionId;
   if (!sid) {
     sid = uuid();
@@ -684,8 +744,7 @@ router.post('/:publicId/log', validate(schemas.log), async (req, res) => {
             timestamp: Date.now(),
           });
           const sig = 'sha256=' + crypto.createHmac('sha256', project.webhookSecret || '').update(payload).digest('hex');
-          const fetch = require('node-fetch');
-          await fetch(project.webhookUrl, {
+          await safeFetch(project.webhookUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-Avatar-Signature': sig },
             body: payload,
@@ -721,15 +780,11 @@ router.get('/:publicId/capture-fields', async (req, res) => {
 /**
  * POST /embed/:publicId/lead
  */
-router.post('/:publicId/lead', async (req, res) => {
+router.post('/:publicId/lead', validate(schemas.embedLead), async (req, res) => {
   const project = await findByPublicId(req.params.publicId);
   if (!project) return res.status(404).json({ error: 'Chatbot not found' });
 
-  const ip = req.ip || 'unknown';
-
-  const { sessionId, data, complete } = req.body || {};
-  if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
-  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object required' });
+  const { sessionId, data, complete } = req.body;
 
   const session = await db.findOne('sessions', { id: sessionId, projectId: project.id });
   if (!session) return res.status(404).json({ error: 'Session not found' });

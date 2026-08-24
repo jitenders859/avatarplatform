@@ -140,6 +140,7 @@
   let panelOpen = true;
   let fullscreenActive = false;
   let avatarCanvas = null;   // single Rive canvas element shuttled between slots
+  let textOnly = false;      // true when no voice key (server answers via /ask)
 
   const AVATAR_SIZES = { small: 80, medium: 120, large: 160, xlarge: 200 };
 
@@ -230,7 +231,12 @@
     }
 
     if (config.limitReached) { showFatal(config.limitMessage || 'This assistant has reached its usage limit for this month. Please check back later.'); return; }
-    if (!config.apiKey) { showFatal('This chatbot is not yet configured (no API key).'); return; }
+
+    // No voice key issued by the server (PUBLIC_GEMINI_API_KEY unset, or the
+    // owner's quota was exhausted between config load and now). Degrade to
+    // text-only mode: the server answers typed questions through POST /ask,
+    // so the widget stays fully usable — just without the talking avatar.
+    if (!config.apiKey) { initTextMode(); return; }
 
     initSDK();
   }
@@ -324,6 +330,79 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     }
   }
 
+  // ── 2b. Text-only mode (no voice key from the server) ────────────
+  // Kicks in when /config returns no apiKey (PUBLIC_GEMINI_API_KEY is
+  // intentionally unset on the server — voice needs a browser-facing key and
+  // we never ship the server key out). Everything typed is answered by the
+  // server-side POST /ask RAG path; the avatar canvas and voice/image/mic
+  // affordances are simply not available.
+  function initTextMode() {
+    textOnly = true;
+    captureFields = config.captureFields || [];
+
+    micBtn.style.display = 'none';
+    imageBtn.style.display = 'none';
+    imageInput.style.display = 'none';
+    document.getElementById('avatar-row').style.display = 'none';
+    launcherFallback.style.display = '';
+
+    statusDot.className = 'status-dot connected';
+    statusText.textContent = 'Text mode';
+
+    if (config.project.welcomeMessage) {
+      addMessage('bot', config.project.welcomeMessage, { welcome: true });
+    }
+    finishBoot(!!config.project.widgetStartOpen);
+  }
+
+  async function sendTextOnly(text) {
+    addMessage('user', text);
+    textInput.value = '';
+    textInput.style.height = 'auto';
+    sendBtn.disabled = true;
+    statusText.textContent = 'Thinking…';
+
+    try {
+      const res = await fetch(`/embed/${publicId}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: text, sessionId }),
+      });
+
+      if (res.status === 429) {
+        addMessage('bot', '⚠️ Slow down a bit — too many messages in a short time.');
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 402 || data.limitReached) {
+        addMessage('bot', data.limitMessage || data.error || 'This assistant has reached its usage limit for this month. Please check back later.');
+        return;
+      }
+      if (!res.ok) {
+        addMessage('bot', data.error || 'Something went wrong — please try again in a moment.');
+        return;
+      }
+
+      if (data.sessionId) sessionId = data.sessionId;
+
+      const answerEl = addMessage('bot', data.answer || '…');
+      if (config.project.showSourceCards !== false && data.sources && data.sources.length) {
+        attachSources(answerEl, data.sources.map(s => ({
+          fileId: null, fileName: s.title, kind: s.url ? 'url' : null, previewUrl: null,
+        })));
+      }
+      // No logTurn here: /ask already persists both turns + bumped the
+      // message counter server-side; hitting /log too would double-count.
+    } catch (e) {
+      addMessage('bot', 'Something went wrong — please try again in a moment.');
+    } finally {
+      sendBtn.disabled = false;
+      statusText.textContent = 'Text mode';
+    }
+  }
+
   function waitForCanvas(cb, attempts = 60) {
     const host = document.getElementById('sdk-host');
     const canvas = host && host.querySelector('canvas');
@@ -408,6 +487,8 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   async function sendMessage(text) {
     text = (text || '').trim();
     if (!text) return;
+    if (textOnly) return sendTextOnly(text);
+
     addMessage('user', text);
     textInput.value = '';
     textInput.style.height = 'auto';

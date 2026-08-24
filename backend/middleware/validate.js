@@ -1,4 +1,5 @@
 const { z } = require('zod');
+const { TIERS: CAPABILITY_TIERS } = require('../services/tiers');
 
 /**
  * validate(schema) — express middleware factory.
@@ -25,6 +26,15 @@ function validate(schema) {
 const email = z.string().email('Invalid email address').toLowerCase().trim();
 const password = z.string().min(8, 'Password must be at least 8 characters');
 
+// 30 Gemini Live voices — kept in sync with public/project.html's VOICES list.
+const VOICES = ['Puck', 'Charon', 'Kore', 'Fenrir', 'Aoede', 'Leda', 'Orus', 'Zephyr', 'Achernar', 'Achird', 'Algenib', 'Algieba', 'Alnilam', 'Autonoe', 'Callirrhoe', 'Despina', 'Enceladus', 'Erinome', 'Gacrux', 'Iapetus', 'Laomedeia', 'Pulcherrima', 'Rasalgethi', 'Sadachbia', 'Sadaltager', 'Schedar', 'Sulafat', 'Umbriel', 'Vindemiatrix', 'Zubenelgenubi'];
+const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
+const YOUTUBE_URL_RE = /^https:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/;
+const CAPTURE_FIELD_TYPES = ['text', 'email', 'phone', 'number', 'date', 'time', 'select'];
+
+const systemPrompt = z.string().max(4000, 'systemPrompt too long').optional();
+const voice = z.enum(VOICES, { error: 'Invalid voice' }).optional();
+
 const schemas = {
   signup: z.object({
     email,
@@ -49,6 +59,151 @@ const schemas = {
   createProject: z.object({
     name: z.string().min(1, 'Name is required').max(120, 'Name too long').trim(),
     characterId: z.string().optional(),
+    systemPrompt,
+    voice,
+  }),
+
+  // All fields optional — this backs a PATCH where any subset may be sent.
+  // Cross-field checks that need DB state (characterId existence,
+  // capabilityTier's plan_tiers lookup for a custom tier, webhookUrl's SSRF
+  // safety check) stay in routes/projects.js after this runs.
+  patchProject: z.object({
+    name: z.string().min(1, 'Name is required').max(120, 'Name too long').trim().optional(),
+    characterId: z.string().optional(),
+    systemPrompt,
+    voice,
+    welcomeMessage: z.string().max(300, 'welcomeMessage too long').optional(),
+    widgetPosition: z.enum(['bottom-right', 'bottom-left', 'inline'], { error: 'Invalid widgetPosition' }).optional(),
+    widgetStartOpen: z.boolean().optional(),
+    textDirection: z.enum(['auto', 'ltr', 'rtl'], { error: 'Invalid textDirection' }).optional(),
+    themeColor: z.string().regex(HEX_COLOR_RE, 'themeColor must be a 6-digit hex color').optional(),
+    widgetTheme: z.enum(['light', 'dark'], { error: 'Invalid widgetTheme' }).optional(),
+    showBranding: z.boolean().optional(),
+    showSourceCards: z.boolean().optional(),
+    showQuickReplies: z.boolean().optional(),
+    allowDragDropUpload: z.boolean().optional(),
+    widgetOffsetX: z.number().int().min(0).max(100).optional(),
+    widgetOffsetY: z.number().int().min(0).max(100).optional(),
+    fullScreenOnDesktop: z.boolean().optional(),
+    fullScreenOnMobile: z.boolean().optional(),
+    showFullScreenToggle: z.boolean().optional(),
+    avatarPosition: z.enum(['left', 'right'], { error: 'Invalid avatarPosition' }).optional(),
+    avatarSize: z.enum(['small', 'medium', 'large', 'xlarge'], { error: 'Invalid avatarSize' }).optional(),
+    showAvatarInLauncher: z.boolean().optional(),
+    avatarOffsetX: z.number().int().min(-100).max(100).optional(),
+    avatarOffsetY: z.number().int().min(-100).max(100).optional(),
+    avatarKeepVisible: z.boolean().optional(),
+    avatarCompactOnMobile: z.boolean().optional(),
+    // Format only — assertSafeUrl (SSRF: scheme + resolved-IP checks) still
+    // runs in routes/projects.js before this is persisted.
+    webhookUrl: z.string().url('Invalid webhookUrl').max(2048).nullable().optional(),
+    capabilityTier: z.enum(CAPABILITY_TIERS, { error: 'Invalid capabilityTier' }).optional(),
+  }),
+
+  filesInit: z.object({
+    files: z.array(z.object({
+      name: z.string().min(1, 'file name is required').max(255, 'file name too long'),
+      size: z.number().nonnegative('file size must be a non-negative number').max(100 * 1024 * 1024, 'File too large (max 100MB)'),
+      mimeType: z.string().max(255).optional(),
+    })).min(1, 'No files requested').max(20, 'Max 20 files per request'),
+  }),
+
+  sourcesUrl: z.object({
+    url: z.string().trim().min(1).optional(),
+    urls: z.array(z.string()).max(20, 'Max 20 URLs per request').optional(),
+  }).refine(d => (d.url && d.url.length > 0) || (d.urls && d.urls.length > 0), {
+    message: 'Provide a URL (or urls: [...])',
+  }),
+
+  captureFieldCreate: z.object({
+    label: z.string().trim().min(1, 'label is required').max(80, 'label too long'),
+    key: z.string().trim().min(1, 'key is required').max(40, 'key must be 40 characters or fewer')
+      .regex(/^[a-z][a-z0-9_]*$/, 'key must match /^[a-z][a-z0-9_]*$/'),
+    type: z.enum(CAPTURE_FIELD_TYPES, { error: `type must be one of: ${CAPTURE_FIELD_TYPES.join(', ')}` }),
+    options: z.array(z.string()).optional(),
+    required: z.boolean().optional(),
+    order: z.number().int().optional(),
+  }).refine(d => d.type !== 'select' || (Array.isArray(d.options) && d.options.length > 0), {
+    message: 'options array required for type=select',
+    path: ['options'],
+  }),
+
+  captureFieldPatch: z.object({
+    label: z.string().trim().min(1, 'label cannot be empty').max(80, 'label too long').optional(),
+    type: z.enum(CAPTURE_FIELD_TYPES, { error: `type must be one of: ${CAPTURE_FIELD_TYPES.join(', ')}` }).optional(),
+    options: z.array(z.string()).optional(),
+    required: z.boolean().optional(),
+    order: z.number().int().optional(),
+  }),
+
+  captureFieldReorder: z.object({
+    ids: z.array(z.string(), { error: 'ids array required' }),
+  }),
+
+  createCheckoutSession: z.object({
+    planId: z.string().min(1, 'planId is required'),
+  }),
+
+  adminPatchUser: z.object({
+    suspended: z.boolean().optional(),
+    adminPlanId: z.string().nullable().optional(),
+  }).refine(d => d.suspended !== undefined || d.adminPlanId !== undefined, {
+    message: 'Nothing to update',
+  }),
+
+  adminDeleteUser: z.object({
+    confirmEmail: z.string().min(1, 'confirmEmail is required'),
+  }),
+
+  flashcardCreate: z.object({
+    front: z.string().trim().min(1, 'front is required').max(2000, 'front too long'),
+    back: z.string().trim().min(1, 'back is required').max(2000, 'back too long'),
+    topicTag: z.string().trim().max(200, 'topicTag too long').optional(),
+  }),
+
+  quizQuestionCreate: z.object({
+    question: z.string().trim().min(1, 'question is required').max(2000, 'question too long'),
+    options: z.array(z.string().trim().min(1, 'options cannot be empty'))
+      .min(2, 'options must be an array of 2 to 6 strings')
+      .max(6, 'options must be an array of 2 to 6 strings'),
+    correctIndex: z.number().int('correctIndex must be a valid index into options').nonnegative(),
+    topicTag: z.string().trim().max(200, 'topicTag too long').optional(),
+  }).refine(d => d.correctIndex < d.options.length, {
+    message: 'correctIndex must be a valid index into options',
+    path: ['correctIndex'],
+  }),
+
+  // PATCH allows a partial update; routes/quizQuestions.js merges with the
+  // existing row and re-checks correctIndex against the merged options.
+  quizQuestionPatch: z.object({
+    question: z.string().trim().min(1, 'question is required').max(2000, 'question too long').optional(),
+    options: z.array(z.string().trim().min(1, 'options cannot be empty'))
+      .min(2, 'options must be an array of 2 to 6 strings')
+      .max(6, 'options must be an array of 2 to 6 strings').optional(),
+    correctIndex: z.number().int('correctIndex must be a valid index into options').nonnegative().optional(),
+    topicTag: z.string().trim().max(200, 'topicTag too long').nullable().optional(),
+  }),
+
+  quizSuggestDistractors: z.object({
+    question: z.string().trim().min(1, 'question is required').max(2000, 'question too long'),
+    correctAnswer: z.string().trim().min(1, 'correctAnswer is required').max(500, 'correctAnswer too long'),
+  }),
+
+  videoResourceCreate: z.object({
+    title: z.string().trim().min(1, 'title is required').max(200, 'title too long'),
+    youtubeUrl: z.string().regex(YOUTUBE_URL_RE, 'youtubeUrl must be a valid youtube.com or youtu.be link'),
+    topicTags: z.array(z.string().trim().min(1)).min(1, 'at least one topic tag is required'),
+  }),
+
+  embedLead: z.object({
+    sessionId: z.string().min(1, 'sessionId required'),
+    data: z.record(z.string(), z.unknown(), { error: 'data object required' }),
+    complete: z.boolean().optional(),
+  }),
+
+  embedRetrieve: z.object({
+    query: z.string().trim().min(1, 'Query required').max(2000, 'Query too long'),
+    k: z.number().int().min(1).max(10).optional(),
   }),
 
   ask: z.object({

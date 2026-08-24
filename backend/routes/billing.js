@@ -11,6 +11,7 @@ const { authRequired } = require('../middleware/auth');
 const { PLANS, getPlan, planByStripePriceId } = require('../plans');
 const { getStripe, isConfigured } = require('../services/stripe');
 const { getUsageSnapshot, userPlanId } = require('../services/usage');
+const { validate, schemas } = require('../middleware/validate');
 const logger = require('../logger').child({ module: 'billing' });
 
 const router = express.Router();
@@ -66,11 +67,11 @@ router.get('/usage', authRequired, async (req, res) => {
 });
 
 // ── Stripe Checkout session ───────────────────────────────────
-router.post('/create-checkout-session', authRequired, async (req, res) => {
+router.post('/create-checkout-session', authRequired, validate(schemas.createCheckoutSession), async (req, res) => {
   const stripe = getStripe();
   if (!stripe) return res.status(503).json({ error: 'Billing is not configured on this server (STRIPE_SECRET_KEY missing).' });
 
-  const { planId } = req.body || {};
+  const { planId } = req.body;
   const plan = await getPlan(planId);
   if (!plan || plan.id === 'free') return res.status(400).json({ error: 'Invalid plan' });
   if (!plan.stripePriceId) return res.status(400).json({ error: `No Stripe price configured for plan "${plan.id}"` });

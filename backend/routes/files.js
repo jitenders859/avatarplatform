@@ -7,6 +7,7 @@ const inngest = require('../inngest/client');
 const { authRequired } = require('../middleware/auth');
 const { classify } = require('../services/extract');
 const { checkLimit } = require('../services/usage');
+const { validate, schemas } = require('../middleware/validate');
 
 const router = express.Router();
 
@@ -40,10 +41,8 @@ router.get('/projects/:projectId/files', authRequired, ownsProject, async (req, 
  * server entirely — required because Vercel serverless functions cap
  * request bodies at 4.5MB, well under this app's 100MB upload limit.
  */
-router.post('/projects/:projectId/files/init', authRequired, ownsProject, async (req, res) => {
-  const requested = Array.isArray(req.body?.files) ? req.body.files : [];
-  if (requested.length === 0) return res.status(400).json({ error: 'No files requested' });
-  if (requested.length > 20) return res.status(400).json({ error: 'Max 20 files per request' });
+router.post('/projects/:projectId/files/init', authRequired, ownsProject, validate(schemas.filesInit), async (req, res) => {
+  const requested = req.body.files;
 
   const fileCheck = await checkLimit(req.user.id, 'file', requested.length);
   if (!fileCheck.ok) return res.status(402).json({ error: fileCheck.reason });
@@ -109,12 +108,11 @@ router.post('/projects/:projectId/files/:fileId/reprocess', authRequired, ownsPr
   res.json({ ok: true });
 });
 
-router.post('/projects/:projectId/sources/url', authRequired, ownsProject, async (req, res) => {
-  const single = (req.body && req.body.url) ? [req.body.url] : null;
-  const list = single || (Array.isArray(req.body && req.body.urls) ? req.body.urls : []);
+router.post('/projects/:projectId/sources/url', authRequired, ownsProject, validate(schemas.sourcesUrl), async (req, res) => {
+  const single = req.body.url ? [req.body.url] : null;
+  const list = single || req.body.urls || [];
   const urls = list.map(s => String(s || '').trim()).filter(Boolean);
   if (urls.length === 0) return res.status(400).json({ error: 'Provide a URL (or urls: [...])' });
-  if (urls.length > 20) return res.status(400).json({ error: 'Max 20 URLs per request' });
 
   const urlCheck = await checkLimit(req.user.id, 'urlSource', urls.length);
   if (!urlCheck.ok) return res.status(402).json({ error: urlCheck.reason });

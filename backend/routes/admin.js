@@ -108,13 +108,13 @@ router.get('/users/:id', adminAuthRequired, async (req, res) => {
   });
 });
 
-router.patch('/users/:id', adminAuthRequired, async (req, res) => {
+router.patch('/users/:id', adminAuthRequired, validate(schemas.adminPatchUser), async (req, res) => {
   const user = await db.findOne('users', { id: req.params.id });
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const { suspended, adminPlanId } = req.body || {};
+  const { suspended, adminPlanId } = req.body;
   const patch = {};
 
-  if (suspended !== undefined) patch.suspended = !!suspended;
+  if (suspended !== undefined) patch.suspended = suspended;
 
   if (adminPlanId !== undefined) {
     if (adminPlanId) {
@@ -124,7 +124,6 @@ router.patch('/users/:id', adminAuthRequired, async (req, res) => {
     patch.adminPlanId = adminPlanId || null;
   }
 
-  if (!Object.keys(patch).length) return res.status(400).json({ error: 'Nothing to update' });
   const updated = await db.update('users', user.id, patch);
   if (!updated) return res.status(404).json({ error: 'User not found' });
 
@@ -149,10 +148,10 @@ router.patch('/users/:id', adminAuthRequired, async (req, res) => {
   res.json({ user: { id: updated.id, suspended: updated.suspended, adminPlanId: updated.adminPlanId } });
 });
 
-router.delete('/users/:id', adminDeleteLimiter, adminAuthRequired, async (req, res) => {
+router.delete('/users/:id', adminDeleteLimiter, adminAuthRequired, validate(schemas.adminDeleteUser), async (req, res) => {
   const user = await db.findOne('users', { id: req.params.id });
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const { confirmEmail } = req.body || {};
+  const { confirmEmail } = req.body;
   if (confirmEmail !== user.email) return res.status(400).json({ error: 'Email confirmation does not match' });
   await logAdminAction({
     adminId: req.admin.id,

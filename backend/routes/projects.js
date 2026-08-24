@@ -4,7 +4,8 @@ const uuid = crypto.randomUUID;
 const db = require('../db');
 const { authRequired } = require('../middleware/auth');
 const { invalidateProjectCache } = require('../cache');
-const { isValidTier } = require('../services/tiers');
+const { safeFetch, assertSafeUrl } = require('../services/safeFetch');
+const { validate, schemas } = require('../middleware/validate');
 
 const router = express.Router();
 
@@ -24,9 +25,8 @@ router.get('/', authRequired, async (req, res) => {
   res.json({ projects: projects.map(strip) });
 });
 
-router.post('/', authRequired, async (req, res) => {
-  const { name, characterId, systemPrompt, voice } = req.body || {};
-  if (!name || !name.trim()) return res.status(400).json({ error: 'Name required' });
+router.post('/', authRequired, validate(schemas.createProject), async (req, res) => {
+  const { name, characterId, systemPrompt, voice } = req.body;
 
   const { checkLimit } = require('../services/usage');
   const limitCheck = await checkLimit(req.user.id, 'project', 1);
@@ -80,39 +80,26 @@ router.get('/:id', authRequired, async (req, res) => {
   res.json({ project: strip(project) });
 });
 
-router.patch('/:id', authRequired, async (req, res) => {
+router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, res) => {
   const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
-  const allowed = [
-    'name', 'characterId', 'systemPrompt', 'voice', 'welcomeMessage',
-    'widgetPosition', 'widgetStartOpen', 'textDirection', 'themeColor', 'widgetTheme',
-    'showBranding', 'showSourceCards', 'showQuickReplies', 'allowDragDropUpload', 'widgetOffsetX', 'widgetOffsetY',
-    'fullScreenOnDesktop', 'fullScreenOnMobile', 'showFullScreenToggle',
-    'avatarPosition', 'avatarSize', 'showAvatarInLauncher',
-    'avatarOffsetX', 'avatarOffsetY', 'avatarKeepVisible', 'avatarCompactOnMobile',
-    'webhookUrl', 'capabilityTier',
-  ];
-  const patch = {};
-  for (const k of allowed) if (k in req.body) patch[k] = req.body[k];
+  // req.body is already stripped to only the ~28 allowlisted keys (whatever
+  // subset the caller sent) by the patchProject schema — everything else
+  // was type/enum/format-checked there. What's left are the checks that
+  // need DB state or the SSRF-safety network check, which can't live in a
+  // synchronous schema.
+  const patch = req.body;
 
   if (patch.characterId && !CHARACTERS.find(c => c.id === patch.characterId)) {
     return res.status(400).json({ error: 'Unknown character' });
   }
-  if (patch.widgetPosition && !['bottom-right', 'bottom-left', 'inline'].includes(patch.widgetPosition)) {
-    return res.status(400).json({ error: 'Invalid widgetPosition' });
-  }
-  if (patch.textDirection && !['auto', 'ltr', 'rtl'].includes(patch.textDirection)) {
-    return res.status(400).json({ error: 'Invalid textDirection' });
-  }
-  if (patch.avatarPosition && !['left', 'right'].includes(patch.avatarPosition)) {
-    return res.status(400).json({ error: 'Invalid avatarPosition' });
-  }
-  if (patch.avatarSize && !['small', 'medium', 'large', 'xlarge'].includes(patch.avatarSize)) {
-    return res.status(400).json({ error: 'Invalid avatarSize' });
-  }
-  if (patch.capabilityTier && !isValidTier(patch.capabilityTier)) {
-    return res.status(400).json({ error: 'Invalid capabilityTier' });
+  if (patch.webhookUrl) {
+    try {
+      await assertSafeUrl(patch.webhookUrl);
+    } catch (e) {
+      return res.status(400).json({ error: `Invalid webhookUrl: ${e.message}` });
+    }
   }
 
   const updated = await db.update('projects', project.id, patch);
@@ -237,8 +224,7 @@ router.post('/:id/webhook/test', authRequired, async (req, res) => {
   const sig = 'sha256=' + crypto.createHmac('sha256', project.webhookSecret || '').update(payload).digest('hex');
 
   try {
-    const fetch = require('node-fetch');
-    const response = await fetch(project.webhookUrl, {
+    const response = await safeFetch(project.webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Avatar-Signature': sig },
       body: payload,

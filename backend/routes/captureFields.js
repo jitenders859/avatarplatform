@@ -2,10 +2,9 @@ const express = require('express');
 const { randomUUID: uuid } = require('crypto');
 const db = require('../db');
 const { authRequired } = require('../middleware/auth');
+const { validate, schemas } = require('../middleware/validate');
 
 const router = express.Router();
-
-const ALLOWED_TYPES = ['text', 'email', 'phone', 'number', 'date', 'time', 'select'];
 
 async function ownsProject(req, res, next) {
   try {
@@ -25,9 +24,8 @@ router.get('/:projectId/capture', authRequired, ownsProject, async (req, res) =>
 });
 
 // POST /api/projects/:projectId/capture/reorder  — must be before /:fieldId
-router.post('/:projectId/capture/reorder', authRequired, ownsProject, async (req, res) => {
-  const { ids } = req.body || {};
-  if (!Array.isArray(ids)) return res.status(400).json({ error: 'ids array required' });
+router.post('/:projectId/capture/reorder', authRequired, ownsProject, validate(schemas.captureFieldReorder), async (req, res) => {
+  const { ids } = req.body;
 
   // Previously did one findOne + one update PER id — up to 2N round trips
   // to reorder N fields. A single UPDATE ... FROM unnest(...) applies every
@@ -50,21 +48,8 @@ router.post('/:projectId/capture/reorder', authRequired, ownsProject, async (req
 });
 
 // POST /api/projects/:projectId/capture
-router.post('/:projectId/capture', authRequired, ownsProject, async (req, res) => {
-  const { label, key, type, options, required, order } = req.body || {};
-
-  if (!label || !String(label).trim()) return res.status(400).json({ error: 'label is required' });
-  if (!key) return res.status(400).json({ error: 'key is required' });
-  if (!/^[a-z][a-z0-9_]*$/.test(key)) {
-    return res.status(400).json({ error: 'key must match /^[a-z][a-z0-9_]*$/' });
-  }
-  if (key.length > 40) return res.status(400).json({ error: 'key must be 40 characters or fewer' });
-  if (!ALLOWED_TYPES.includes(type)) {
-    return res.status(400).json({ error: `type must be one of: ${ALLOWED_TYPES.join(', ')}` });
-  }
-  if (type === 'select' && (!Array.isArray(options) || options.length === 0)) {
-    return res.status(400).json({ error: 'options array required for type=select' });
-  }
+router.post('/:projectId/capture', authRequired, ownsProject, validate(schemas.captureFieldCreate), async (req, res) => {
+  const { label, key, type, options, required, order } = req.body;
 
   const duplicate = await db.findOne('captureFields', { projectId: req.project.id, key });
   if (duplicate) return res.status(409).json({ error: `key "${key}" already exists in this project` });
@@ -85,24 +70,15 @@ router.post('/:projectId/capture', authRequired, ownsProject, async (req, res) =
 });
 
 // PATCH /api/projects/:projectId/capture/:fieldId
-router.patch('/:projectId/capture/:fieldId', authRequired, ownsProject, async (req, res) => {
+router.patch('/:projectId/capture/:fieldId', authRequired, ownsProject, validate(schemas.captureFieldPatch), async (req, res) => {
   const field = await db.findOne('captureFields', { id: req.params.fieldId, projectId: req.project.id });
   if (!field) return res.status(404).json({ error: 'Capture field not found' });
 
-  const { label, type, options, required, order } = req.body || {};
+  const { label, type, options, required, order } = req.body;
   const patch = {};
 
-  if (label !== undefined) {
-    const trimmed = String(label).trim();
-    if (!trimmed) return res.status(400).json({ error: 'label cannot be empty' });
-    patch.label = trimmed;
-  }
-  if (type !== undefined) {
-    if (!ALLOWED_TYPES.includes(type)) {
-      return res.status(400).json({ error: `type must be one of: ${ALLOWED_TYPES.join(', ')}` });
-    }
-    patch.type = type;
-  }
+  if (label !== undefined) patch.label = label;
+  if (type !== undefined) patch.type = type;
   const effectiveType = patch.type || field.type;
   if (effectiveType === 'select') {
     const opts = options !== undefined ? options : field.options;
