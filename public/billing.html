@@ -29,6 +29,12 @@
     </div>
 
     <h2 style="font-size:18px;margin:0 0 16px">Plans</h2>
+
+    <div class="row gap-sm mb-md" style="align-items:center">
+      <input type="text" id="coupon-input" class="input" placeholder="Have a coupon code?" style="max-width:220px;text-transform:uppercase" />
+      <span class="text-sm muted">Applied when you upgrade below</span>
+    </div>
+
     <div class="grid grid-4" id="plans-grid"></div>
     <p class="muted text-sm text-center mt-lg" id="stripe-note"></p>
   </div>
@@ -137,8 +143,14 @@
   }
 
   window.checkout = async (planId) => {
+    const couponCode = document.getElementById('coupon-input')?.value.trim();
     try {
-      const { url } = await API.createCheckout(planId);
+      // Validated here first so an invalid/inapplicable code surfaces a
+      // specific reason instead of a generic checkout failure — the
+      // server re-validates authoritatively again inside create-checkout-
+      // session regardless, this is just for a clearer error message.
+      if (couponCode) await API.validateCoupon(couponCode, planId);
+      const { url } = await API.createCheckout(planId, couponCode);
       location.href = url;
     } catch (e) { toast(e.message, 'error'); }
   };

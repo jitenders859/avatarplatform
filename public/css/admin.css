@@ -1,0 +1,161 @@
+/**
+ * Admin design system — an internal ops tool used daily by admins/support,
+ * so this prioritizes information density and scanability over the
+ * marketing-site polish of app.css. Scoped to #admin-view and #modal-root
+ * so it never affects the customer-facing app.
+ *
+ * Reuses app.css's existing color tokens rather than inventing a second
+ * palette:
+ *   primary/accent → --accent   success → --success   warning → --warn
+ *   danger → --danger            text → --text / --text-2 / --text-dim
+ * and its two font roles (--font-heading for titles, --font-body for
+ * everything else — including data, which stays in the body face for
+ * readability at small sizes).
+ */
+
+#admin-view, #modal-root {
+  /* Type scale — one step tighter than app.css's marketing scale, since
+     admin screens are read at a much higher density. */
+  --adm-text-xs: 11px;
+  --adm-text-sm: 12px;
+  --adm-text-base: 13px;
+  --adm-text-md: 14px;
+  --adm-text-lg: 16px;
+  --adm-text-xl: 20px;
+
+  /* Spacing scale — reuses app.css's gap-sm/md/lg (6/12/24) for layout,
+     this adds the finer steps data-dense components need. */
+  --adm-space-1: 4px;
+  --adm-space-2: 8px;
+  --adm-space-3: 12px;
+  --adm-space-4: 16px;
+
+  /* Shape — flatter and tighter than the marketing-site cards. */
+  --adm-radius: 8px;
+  --adm-radius-sm: 6px;
+  --adm-shadow: 0 1px 2px rgba(var(--text-rgb), .06);
+}
+
+/* ── Page shell ───────────────────────────────────────────── */
+#admin-view .page-header { padding: 24px 0 20px; }
+#admin-view .page-title { font-size: 22px; }
+
+#admin-view #tab-bar { border-bottom: 1px solid var(--border); padding-bottom: 0; margin-bottom: 20px; }
+#admin-view .tab-btn {
+  border-radius: var(--adm-radius-sm) var(--adm-radius-sm) 0 0;
+  border: 1px solid transparent;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-size: var(--adm-text-base);
+  padding: 8px 14px;
+}
+#admin-view .tab-btn:hover { background: var(--bg-3); }
+#admin-view .tab-btn.active {
+  background: transparent;
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── Denser cards ─────────────────────────────────────────── */
+#admin-view .card {
+  border-radius: var(--adm-radius);
+  box-shadow: none;
+  padding: 16px;
+}
+#admin-view .card-header { margin-bottom: 12px; }
+#admin-view .card-title { font-size: var(--adm-text-lg); }
+
+/* ── Data table ───────────────────────────────────────────── */
+/* .table had zero styling before this pass — plain browser default table
+   rendering. This is the component the densest, most-used screens (Users,
+   Audit Log, and the new Characters/Coupons lists) all depend on. */
+.table-scroll { overflow-x: auto; }
+#admin-view .table, #modal-root .table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--adm-text-base);
+}
+#admin-view .table thead th, #modal-root .table thead th {
+  text-align: left;
+  font-size: var(--adm-text-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--text-dim);
+  padding: 0 var(--adm-space-3) var(--adm-space-2);
+  border-bottom: 1px solid var(--border-strong);
+  white-space: nowrap;
+  position: sticky;
+  top: 0;
+  background: var(--bg-2);
+}
+#admin-view .table tbody td, #modal-root .table tbody td {
+  padding: var(--adm-space-3);
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+#admin-view .table tbody tr:last-child td, #modal-root .table tbody tr:last-child td { border-bottom: none; }
+#admin-view .table tbody tr.user-row:hover,
+#admin-view .table tbody tr[data-id]:hover,
+#admin-view .table tbody tr[data-clickable]:hover {
+  background: var(--bg-3);
+}
+
+/* ── Pills — slightly denser than the marketing ones ─────── */
+#admin-view .pill, #modal-root .pill { padding: 3px 8px; font-size: var(--adm-text-xs); }
+
+/* ── Empty / loading / error states ──────────────────────── */
+#admin-view .empty, #modal-root .empty { padding: 32px 20px; border-radius: var(--adm-radius); }
+#admin-view .empty-icon { font-size: 28px; }
+
+.adm-skeleton-row {
+  height: 36px;
+  border-radius: var(--adm-radius-sm);
+  background: linear-gradient(90deg, var(--bg-3) 25%, var(--bg-4) 37%, var(--bg-3) 63%);
+  background-size: 400% 100%;
+  animation: adm-skeleton 1.4s ease infinite;
+  margin-bottom: var(--adm-space-2);
+}
+@keyframes adm-skeleton { 0% { background-position: 100% 50%; } 100% { background-position: 0 50%; } }
+
+.adm-error-state {
+  display: flex; align-items: center; gap: var(--adm-space-2);
+  padding: var(--adm-space-3) var(--adm-space-4);
+  background: var(--danger-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--adm-radius);
+  font-size: var(--adm-text-base);
+}
+
+/* ── Keyboard focus visibility ────────────────────────────── */
+/* app.css defines :focus (input/textarea/select) but nothing for buttons,
+   rows, or tabs — needed since this is a keyboard-heavy daily-use tool. */
+#admin-view *:focus-visible, #modal-root *:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Modal form density ───────────────────────────────────── */
+#modal-root .modal { max-width: 560px; }
+#modal-root .modal-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: var(--adm-space-4);
+}
+#modal-root .modal-title { font-size: var(--adm-text-xl); margin: 0; }
+#modal-root .modal-close {
+  background: none; border: none; color: var(--text-dim);
+  font-size: 18px; line-height: 1; cursor: pointer; padding: 4px;
+}
+#modal-root .modal-close:hover { color: var(--text); }
+#modal-root .modal-actions {
+  display: flex; justify-content: flex-end; gap: var(--adm-space-2);
+  margin-top: var(--adm-space-4);
+}
+
+/* ── Responsive: don't break on a laptop-width admin viewport ── */
+@media (max-width: 860px) {
+  #admin-view .page-header { flex-direction: column; align-items: flex-start; }
+  #admin-view #tab-bar { flex-wrap: wrap; }
+}

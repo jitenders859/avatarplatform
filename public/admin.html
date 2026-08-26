@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/admin.css" />
 </head>
 <body>
   <div class="container mt-md">
@@ -32,17 +33,34 @@
 
       <div class="row gap-sm mb-lg" id="tab-bar">
         <button class="btn btn-ghost tab-btn active" data-tab="users">Users</button>
+        <button class="btn btn-ghost tab-btn" data-tab="characters">Characters</button>
+        <button class="btn btn-ghost tab-btn" data-tab="coupons">Coupons</button>
         <button class="btn btn-ghost tab-btn" data-tab="tiers">Tiers</button>
         <button class="btn btn-ghost tab-btn" data-tab="audit">Audit Log</button>
       </div>
 
       <section id="tab-users"></section>
+      <section id="tab-characters" hidden></section>
+      <section id="tab-coupons" hidden></section>
       <section id="tab-tiers" hidden></section>
       <section id="tab-audit" hidden></section>
     </div>
   </div>
 
+  <div id="modal-root"></div>
+
+  <!-- Same CDN builds public/embed.html and public/characters.html load —
+       the character-upload inspector uses the real production Rive runtime
+       so "does this file conform" reflects exactly what the widget will do. -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://unpkg.com/@rive-app/canvas@2.21.0/rive.js"></script>
+
   <script src="/js/theme.js"></script>
-  <script src="/js/admin.js"></script>
+  <script src="/js/admin/core.js"></script>
+  <script src="/js/admin/users.js"></script>
+  <script src="/js/admin/characters.js"></script>
+  <script src="/js/admin/coupons.js"></script>
+  <script src="/js/admin/tiers.js"></script>
+  <script src="/js/admin/audit.js"></script>
 </body>
 </html>

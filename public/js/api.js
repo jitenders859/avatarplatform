@@ -163,8 +163,9 @@ const API = {
   plans:               () => apiCall('/api/billing/plans'),
   subscription:        () => apiCall('/api/billing/subscription'),
   usage:               () => apiCall('/api/billing/usage'),
-  createCheckout:      (planId) => apiCall('/api/billing/create-checkout-session', { method: 'POST', body: { planId } }),
+  createCheckout:      (planId, couponCode) => apiCall('/api/billing/create-checkout-session', { method: 'POST', body: { planId, couponCode: couponCode || undefined } }),
   createPortalSession: () => apiCall('/api/billing/create-portal-session', { method: 'POST' }),
+  validateCoupon:      (code, planId) => apiCall('/api/billing/validate-coupon', { method: 'POST', body: { code, planId } }),
 
 };
 

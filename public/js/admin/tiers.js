@@ -1,0 +1,71 @@
+// ── Tiers tab ─────────────────────────────────────────────────
+async function loadTiersTab() {
+  const section = document.getElementById('tab-tiers');
+  section.innerHTML = `
+    <div class="card mb-lg">
+      <div class="card-header"><h2 class="card-title">Create tier</h2></div>
+      <form id="tier-form" class="col gap-sm">
+        <input type="text" id="tier-name" placeholder="Tier name (e.g. Acme Corp bump)" required class="input" />
+        <div class="row gap-sm" style="flex-wrap:wrap">
+          ${['projects', 'filesPerProject', 'storageMb', 'monthlyMessages', 'monthlyEmbeddingChars', 'urlSources']
+            .map(f => `<input type="number" min="1" name="${f}" placeholder="${f}" required class="input" style="max-width:180px" />`).join('')}
+        </div>
+        <button type="submit" class="btn btn-primary" style="align-self:flex-start">Create tier</button>
+      </form>
+    </div>
+    <div id="tiers-table"></div>
+  `;
+  document.getElementById('tier-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    const limits = {};
+    for (const f of ['projects', 'filesPerProject', 'storageMb', 'monthlyMessages', 'monthlyEmbeddingChars', 'urlSources']) {
+      limits[f] = parseInt(fd.get(f), 10);
+    }
+    try {
+      await AdminAPI.createTier({ name: document.getElementById('tier-name').value, limits });
+      adminToast('Tier created', 'success');
+      e.target.reset();
+      renderTiersTable();
+    } catch (err) { adminToast(err.message, 'error'); }
+  });
+  await renderTiersTable();
+}
+
+async function renderTiersTable() {
+  const wrap = document.getElementById('tiers-table');
+  wrap.innerHTML = '<div class="adm-skeleton-row"></div><div class="adm-skeleton-row"></div>';
+  let tiers;
+  try {
+    ({ tiers } = await AdminAPI.listTiers());
+  } catch (err) {
+    wrap.innerHTML = `<div class="adm-error-state">Could not load tiers: ${escapeHtml(err.message)}</div>`;
+    return;
+  }
+  const rows = tiers.map(t => `
+    <tr>
+      <td>${escapeHtml(t.name)}</td>
+      <td class="muted text-sm">${escapeHtml(t.id)}</td>
+      <td class="text-sm">${Object.entries(t.limits).map(([k, v]) => `${escapeHtml(k)}: ${formatNum(v)}`).join(', ')}</td>
+      <td><button class="btn btn-ghost text-sm" data-delete-tier="${escapeHtml(t.id)}" style="color:var(--danger)">Delete</button></td>
+    </tr>`).join('');
+  wrap.innerHTML = `
+    <div class="table-scroll">
+    <table class="table">
+      <thead><tr><th>Name</th><th>ID</th><th>Limits</th><th></th></tr></thead>
+      <tbody>${rows || '<tr><td colspan="4" class="muted">No custom tiers yet</td></tr>'}</tbody>
+    </table>
+    </div>`;
+  for (const btn of document.querySelectorAll('[data-delete-tier]')) {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Delete this tier?')) return;
+      try {
+        await AdminAPI.deleteTier(btn.dataset.deleteTier);
+        adminToast('Tier deleted', 'success');
+        renderTiersTable();
+      } catch (err) { adminToast(err.message, 'error'); }
+    });
+  }
+}
+
+TABS.tiers = loadTiersTab;

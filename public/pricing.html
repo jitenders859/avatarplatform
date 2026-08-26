@@ -32,6 +32,10 @@
   </div>
 
   <div class="container mt-lg">
+    <div class="row gap-sm mb-md" id="coupon-row" style="align-items:center;justify-content:center;display:none">
+      <input type="text" id="coupon-input" class="input" placeholder="Have a coupon code?" style="max-width:220px;text-transform:uppercase" />
+      <span class="text-sm muted">Applied when you upgrade below</span>
+    </div>
     <div class="grid grid-4" id="plans-grid"></div>
   </div>
 
@@ -48,6 +52,10 @@
         loggedIn ? API.subscription().catch(() => null) : Promise.resolve(null),
       ]);
       const currentPlanId = sub ? sub.plan.id : null;
+      // Only logged-in visitors ever click straight into checkout here —
+      // anonymous CTAs go to /signup instead, so a coupon input is
+      // meaningless (and confusing) for them.
+      if (loggedIn) document.getElementById('coupon-row').style.display = 'flex';
 
       document.getElementById('plans-grid').innerHTML = plans.map(p => `
         <div class="card" style="position:relative;${p.popular ? 'border-color:var(--accent)' : ''}">
@@ -91,8 +99,10 @@
   }
 
   window.checkout = async (planId) => {
+    const couponCode = document.getElementById('coupon-input')?.value.trim();
     try {
-      const { url } = await API.createCheckout(planId);
+      if (couponCode) await API.validateCoupon(couponCode, planId);
+      const { url } = await API.createCheckout(planId, couponCode);
       location.href = url;
     } catch (e) { toast(e.message, 'error'); }
   };
