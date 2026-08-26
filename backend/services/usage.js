@@ -14,12 +14,19 @@ function periodKey(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// A tier override with an expiresAt in the past is treated as if it were
+// never set — checked lazily here rather than swept by a cron job, since
+// every caller of userPlanId() already re-derives the plan on each read.
+function isAdminPlanOverrideActive(user) {
+  return !!(user?.adminPlanId && (!user.adminPlanExpiresAt || user.adminPlanExpiresAt > Date.now()));
+}
+
 async function userPlanId(userId) {
   const [user, sub] = await Promise.all([
     db.findOne('users', { id: userId }),
     db.findOne('subscriptions', { userId, status: 'active' }),
   ]);
-  return user?.adminPlanId || (sub ? sub.planId : 'free');
+  return isAdminPlanOverrideActive(user) ? user.adminPlanId : (sub ? sub.planId : 'free');
 }
 
 async function trackMessage(userId) {
@@ -130,4 +137,4 @@ function fail(name, limit, current) {
   };
 }
 
-module.exports = { userPlanId, getUsageSnapshot, trackMessage, trackEmbeddingChars, checkLimit };
+module.exports = { userPlanId, getUsageSnapshot, trackMessage, trackEmbeddingChars, checkLimit, isAdminPlanOverrideActive };

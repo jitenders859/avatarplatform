@@ -9,7 +9,6 @@ const crypto = require('crypto');
 const uuid = crypto.randomUUID;
 const db = require('../db');
 const storage = require('../services/storage');
-const { CHARACTERS } = require('./projects');
 const { embedOne } = require('../services/embed');
 const { searchProject } = require('../services/vector');
 const { resolveFigures } = require('../services/figures');
@@ -102,6 +101,21 @@ async function pageImagesForHits(hits) {
 
 module.exports.invalidateProjectCache = invalidateProjectCache;
 
+// Deliberately NOT status-filtered — an archived character (soft-deleted
+// via the admin panel) must keep resolving for projects already assigned
+// to it; only NEW assignment (routes/projects.js) is gated to status
+// 'active'. Falls back to the oldest active+global character if the
+// assigned slug doesn't resolve to anything (e.g. data predating any
+// character existing at all), mirroring the default used at project
+// creation time.
+async function findCharacterForEmbed(slug) {
+  const bySlug = slug ? await db.findOne('characters', { slug }) : null;
+  if (bySlug) return bySlug;
+  return db.queryOne(
+    `SELECT * FROM characters WHERE status = 'active' AND visibility = 'global' ORDER BY created_at ASC LIMIT 1`
+  );
+}
+
 /**
  * GET /embed/:publicId/config
  */
@@ -109,7 +123,7 @@ router.get('/:publicId/config', async (req, res) => {
   try {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
-    const character = CHARACTERS.find(c => c.id === project.characterId) || CHARACTERS[0];
+    const character = await findCharacterForEmbed(project.characterId);
 
     const captureFields = await db.findAll('captureFields', { projectId: project.id }, { orderBy: 'order', order: 'asc' });
 
@@ -154,11 +168,11 @@ router.get('/:publicId/config', async (req, res) => {
         avatarKeepVisible:     project.avatarKeepVisible     !== false,
         avatarCompactOnMobile: project.avatarCompactOnMobile !== false,
       },
-      character: {
-        id: character.id,
+      character: character ? {
+        id: character.slug,
         name: character.name,
-        rivePath: character.rivePath,
-      },
+        rivePath: storage.characterAssets.getPublicUrl(character.storageKey),
+      } : null,
       captureFields: captureFields.map(f => ({
         id: f.id, label: f.label, key: f.key,
         type: f.type, options: f.options, required: f.required, order: f.order,

@@ -45,6 +45,8 @@ const quizQuestionsRoutes = require('./routes/quizQuestions');
 const flashcardsRoutes = require('./routes/flashcards');
 const videoResourcesRoutes = require('./routes/videoResources');
 const adminRoutes = require('./routes/admin');
+const adminCharactersRoutes = require('./routes/adminCharacters');
+const adminCouponsRoutes = require('./routes/adminCoupons');
 const inngestClient = require('./inngest/client');
 const { functions: inngestFunctions } = require('./inngest/functions');
 
@@ -171,6 +173,8 @@ app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/analytics', apiLimiter, analyticsRoutes);
 app.use('/api/admin/login', adminLoginLimiter);
 app.use('/api/admin', apiLimiter, adminRoutes);
+app.use('/api/admin/characters', apiLimiter, adminCharactersRoutes);
+app.use('/api/admin/coupons', apiLimiter, adminCouponsRoutes);
 app.use('/embed', embedLimiter, embedRoutes);
 
 // ── Static frontend ───────────────────────────────────────────

@@ -12,6 +12,7 @@ const { PLANS, getPlan, planByStripePriceId } = require('../plans');
 const { getStripe, isConfigured } = require('../services/stripe');
 const { getUsageSnapshot, userPlanId } = require('../services/usage');
 const { validate, schemas } = require('../middleware/validate');
+const { validateCoupon, recordRedemption } = require('../services/coupons');
 const logger = require('../logger').child({ module: 'billing' });
 
 const router = express.Router();
@@ -66,12 +67,25 @@ router.get('/usage', authRequired, async (req, res) => {
   res.json(await getUsageSnapshot(req.user.id));
 });
 
+// ── Coupon pre-checkout validation ─────────────────────────────
+// Always re-validated here server-side before checkout — never trust a
+// client-reported "this code is valid" from an earlier call.
+router.post('/validate-coupon', authRequired, validate(schemas.validateCoupon), async (req, res) => {
+  const { code, planId } = req.body;
+  const result = await validateCoupon(code, planId, req.user.id);
+  if (!result.valid) return res.status(400).json({ valid: false, error: result.reason });
+  res.json({
+    valid: true,
+    discount: { type: result.coupon.discountType, value: result.coupon.discountValue, currency: result.coupon.currency },
+  });
+});
+
 // ── Stripe Checkout session ───────────────────────────────────
 router.post('/create-checkout-session', authRequired, validate(schemas.createCheckoutSession), async (req, res) => {
   const stripe = getStripe();
   if (!stripe) return res.status(503).json({ error: 'Billing is not configured on this server (STRIPE_SECRET_KEY missing).' });
 
-  const { planId } = req.body;
+  const { planId, couponCode } = req.body;
   const plan = await getPlan(planId);
   if (!plan || plan.id === 'free') return res.status(400).json({ error: 'Invalid plan' });
   if (!plan.stripePriceId) return res.status(400).json({ error: `No Stripe price configured for plan "${plan.id}"` });
@@ -90,17 +104,37 @@ router.post('/create-checkout-session', authRequired, validate(schemas.createChe
   }
 
   const origin = req.headers.origin || `${req.protocol}://${req.get('host')}`;
-  const session = await stripe.checkout.sessions.create({
+  const metadata = { userId: user.id, planId: plan.id };
+  const sessionParams = {
     mode: 'subscription',
     customer: customerId,
     line_items: [{ price: plan.stripePriceId, quantity: 1 }],
     success_url: `${origin}/billing?status=success`,
     cancel_url:  `${origin}/billing?status=cancelled`,
-    metadata: { userId: user.id, planId: plan.id },
-    subscription_data: { metadata: { userId: user.id, planId: plan.id } },
-    allow_promotion_codes: true,
-  });
+    metadata,
+    subscription_data: { metadata },
+  };
 
+  if (couponCode) {
+    // Re-validated here regardless of any earlier /validate-coupon call —
+    // caps could have been hit by another request in between.
+    const result = await validateCoupon(couponCode, plan.id, user.id);
+    if (!result.valid) return res.status(400).json({ error: result.reason });
+    // Stripe rejects setting both discounts and allow_promotion_codes.
+    sessionParams.discounts = [{ promotion_code: result.coupon.stripePromotionCodeId }];
+    // Recorded in the webhook once payment actually confirms (see
+    // recordCouponRedemptionFromCheckoutSession) — never here, so an
+    // abandoned checkout never burns the user's per-coupon quota.
+    metadata.couponId = result.coupon.id;
+  } else {
+    // Fallback: customer types a code directly into Stripe's own hosted
+    // checkout page. Stripe enforces its own native redemption limit on
+    // the Promotion Code; we don't track that redemption locally (see
+    // services/coupons.js's module comment for why).
+    sessionParams.allow_promotion_codes = true;
+  }
+
+  const session = await stripe.checkout.sessions.create(sessionParams);
   res.json({ url: session.url });
 });
 
@@ -168,6 +202,9 @@ async function webhookHandler(req, res) {
   try {
     switch (event.type) {
       case 'checkout.session.completed':
+        await syncSubscriptionFromEvent(event, stripe);
+        await recordCouponRedemptionFromCheckoutSession(event.data.object);
+        break;
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
         await syncSubscriptionFromEvent(event, stripe);
@@ -254,6 +291,19 @@ async function syncSubscriptionFromEvent(event, stripe) {
   }
 
   logger.info({ subscriptionId: subscription.id, userId, planId }, 'synced subscription');
+}
+
+// Recorded on confirmed payment only, never at session-creation time, so an
+// abandoned checkout never burns the user's per-coupon quota. Only tracks
+// redemptions that went through our own pre-checkout validation (metadata.
+// couponId set in create-checkout-session above) — a code the customer
+// typed directly into Stripe's hosted checkout page isn't tracked here,
+// per the disclosed tradeoff in services/coupons.js's module comment.
+async function recordCouponRedemptionFromCheckoutSession(session) {
+  const userId = session.metadata?.userId;
+  const couponId = session.metadata?.couponId;
+  if (!userId || !couponId) return;
+  await recordRedemption({ couponId, userId, stripeCheckoutSessionId: session.id, planId: session.metadata?.planId || null });
 }
 
 async function markSubscriptionCancelled(event) {

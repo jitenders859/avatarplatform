@@ -89,7 +89,7 @@ function toCamel(row) {
 // JSONB. These need pg's own default array-literal serialization ("{a,b}"),
 // so ser() must NOT JSON.stringify them the way it does for JSONB arrays —
 // keyed by snake_case column name.
-const NATIVE_ARRAY_COLUMNS = new Set(['topic_tags']);
+const NATIVE_ARRAY_COLUMNS = new Set(['topic_tags', 'applicable_plan_ids']);
 
 // Arrays of numbers → pgvector literal string "[x,y,z]".
 // Native Postgres array columns (see NATIVE_ARRAY_COLUMNS) → pass through;

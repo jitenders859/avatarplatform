@@ -2,22 +2,44 @@ const express = require('express');
 const crypto = require('crypto');
 const uuid = crypto.randomUUID;
 const db = require('../db');
-const { authRequired } = require('../middleware/auth');
+const { authRequired, optionalAuth } = require('../middleware/auth');
 const { invalidateProjectCache } = require('../cache');
 const { safeFetch, assertSafeUrl } = require('../services/safeFetch');
 const { validate, schemas } = require('../middleware/validate');
+const storage = require('../services/storage');
 
 const router = express.Router();
 
-const CHARACTERS = [
-  { id: 'character_1', name: 'Aria',   description: 'Friendly, expressive default character',  rivePath: '/assets/characters/character_1.riv' },
-  { id: 'character_2', name: 'Kai',    description: 'Calm, professional support agent vibe',   rivePath: '/assets/characters/character_2.riv' },
-  { id: 'character_3', name: 'Nova',   description: 'Energetic, upbeat brand ambassador',      rivePath: '/assets/characters/character_3.riv' },
-  { id: 'character_4', name: 'Echo',   description: 'Soft-spoken, thoughtful guide',           rivePath: '/assets/characters/character_4.riv' },
-];
+// Characters assignable to a project: admin-published (status='active') and
+// either globally available or explicitly granted to this user. Ordered
+// oldest-first so the pre-migration default (the original "character_1"/
+// Aria) stays first — used as the fallback default below, same as before
+// this became DB-driven. Anonymous callers (userId undefined) only ever see
+// global characters, since character_access.user_id can never match NULL.
+async function listAvailableCharacters(userId) {
+  const rows = await db.query(
+    `SELECT c.* FROM characters c
+      WHERE c.status = 'active'
+        AND (c.visibility = 'global' OR EXISTS (
+          SELECT 1 FROM character_access ca WHERE ca.character_id = c.id AND ca.user_id = $1
+        ))
+      ORDER BY c.created_at ASC`,
+    [userId || null]
+  );
+  return rows.map(toCharacterDTO);
+}
 
-router.get('/characters', (req, res) => {
-  res.json({ characters: CHARACTERS });
+function toCharacterDTO(c) {
+  return { id: c.slug, name: c.name, description: c.description, rivePath: storage.characterAssets.getPublicUrl(c.storageKey) };
+}
+
+// GET /projects/characters is hit anonymously by the public marketing
+// character-picker page (public/characters.html) as well as by logged-in
+// users choosing a character for a new/existing project — optionalAuth
+// personalizes restricted-visibility results for the latter without
+// requiring login for the former.
+router.get('/characters', optionalAuth, async (req, res) => {
+  res.json({ characters: await listAvailableCharacters(req.user?.id) });
 });
 
 router.get('/', authRequired, async (req, res) => {
@@ -32,7 +54,9 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
   const limitCheck = await checkLimit(req.user.id, 'project', 1);
   if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason, limit: limitCheck });
 
-  const ch = CHARACTERS.find(c => c.id === characterId) || CHARACTERS[0];
+  const available = await listAvailableCharacters(req.user.id);
+  const ch = available.find(c => c.id === characterId) || available[0];
+  if (!ch) return res.status(500).json({ error: 'No characters are currently available' });
   const project = await db.insert('projects', {
     id: uuid(),
     userId: req.user.id,
@@ -91,8 +115,11 @@ router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, r
   // synchronous schema.
   const patch = req.body;
 
-  if (patch.characterId && !CHARACTERS.find(c => c.id === patch.characterId)) {
-    return res.status(400).json({ error: 'Unknown character' });
+  if (patch.characterId) {
+    const available = await listAvailableCharacters(req.user.id);
+    if (!available.find(c => c.id === patch.characterId)) {
+      return res.status(400).json({ error: 'Unknown character' });
+    }
   }
   if (patch.webhookUrl) {
     try {
@@ -263,4 +290,4 @@ function strip(p) {
   return rest;
 }
 
-module.exports = { router, CHARACTERS };
+module.exports = { router };

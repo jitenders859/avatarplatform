@@ -7,7 +7,7 @@ const { adminAuthRequired, signAdminToken, signToken } = require('../middleware/
 const { deleteUserAccount } = require('../services/accountDelete');
 const { logAdminAction } = require('../services/auditLog');
 const { validate, schemas } = require('../middleware/validate');
-const { getUsageSnapshot } = require('../services/usage');
+const { getUsageSnapshot, isAdminPlanOverrideActive } = require('../services/usage');
 
 const router = express.Router();
 
@@ -60,8 +60,11 @@ router.get('/users', adminAuthRequired, async (req, res) => {
 
   const rows = await db.query(
     `SELECT u.id, u.email, u.name, u.created_at, u.suspended, u.admin_plan_id,
+            u.admin_plan_set_by, u.admin_plan_set_at, u.admin_plan_note, u.admin_plan_expires_at,
+            a.email AS admin_plan_set_by_email,
             s.plan_id AS stripe_plan_id
        FROM users u
+       LEFT JOIN admin_users a ON a.id = u.admin_plan_set_by
        LEFT JOIN LATERAL (
          SELECT plan_id, updated_at, created_at FROM subscriptions
           WHERE user_id = u.id AND status = 'active'
@@ -75,11 +78,21 @@ router.get('/users', adminAuthRequired, async (req, res) => {
   const [{ count }] = await db.query(`SELECT COUNT(*)::int AS count FROM users u ${where}`, params);
 
   res.json({
-    users: rows.map(r => ({
-      id: r.id, email: r.email, name: r.name, createdAt: r.createdAt, suspended: r.suspended,
-      planId: r.adminPlanId || r.stripePlanId || 'free',
-      planSource: r.adminPlanId ? 'admin' : (r.stripePlanId ? 'stripe' : 'free'),
-    })),
+    users: rows.map(r => {
+      const overrideActive = isAdminPlanOverrideActive(r);
+      return {
+        id: r.id, email: r.email, name: r.name, createdAt: r.createdAt, suspended: r.suspended,
+        planId: overrideActive ? r.adminPlanId : (r.stripePlanId || 'free'),
+        planSource: overrideActive ? 'admin' : (r.stripePlanId ? 'stripe' : 'free'),
+        adminOverride: overrideActive ? {
+          tierId: r.adminPlanId,
+          setByEmail: r.adminPlanSetByEmail,
+          setAt: r.adminPlanSetAt,
+          note: r.adminPlanNote,
+          expiresAt: r.adminPlanExpiresAt,
+        } : null,
+      };
+    }),
     page, pageSize, total: count,
   });
 });
@@ -100,8 +113,21 @@ router.get('/users/:id', adminAuthRequired, async (req, res) => {
     db.query(`SELECT * FROM subscriptions WHERE user_id = $1 ORDER BY created_at DESC`, [user.id]),
   ]);
 
+  const overrideActive = isAdminPlanOverrideActive(user);
+  const setter = user.adminPlanSetBy ? await db.findOne('admin_users', { id: user.adminPlanSetBy }) : null;
+
   res.json({
-    user: { id: user.id, email: user.email, name: user.name, createdAt: user.createdAt, suspended: user.suspended, adminPlanId: user.adminPlanId },
+    user: {
+      id: user.id, email: user.email, name: user.name, createdAt: user.createdAt, suspended: user.suspended,
+      adminPlanId: user.adminPlanId,
+      adminOverride: overrideActive ? {
+        tierId: user.adminPlanId,
+        setByEmail: setter?.email || null,
+        setAt: user.adminPlanSetAt,
+        note: user.adminPlanNote,
+        expiresAt: user.adminPlanExpiresAt,
+      } : null,
+    },
     usage: snapshot,
     projects,
     subscriptions: subs,
@@ -111,7 +137,7 @@ router.get('/users/:id', adminAuthRequired, async (req, res) => {
 router.patch('/users/:id', adminAuthRequired, validate(schemas.adminPatchUser), async (req, res) => {
   const user = await db.findOne('users', { id: req.params.id });
   if (!user) return res.status(404).json({ error: 'User not found' });
-  const { suspended, adminPlanId } = req.body;
+  const { suspended, adminPlanId, reason, expiresAt } = req.body;
   const patch = {};
 
   if (suspended !== undefined) patch.suspended = suspended;
@@ -120,8 +146,20 @@ router.patch('/users/:id', adminAuthRequired, validate(schemas.adminPatchUser), 
     if (adminPlanId) {
       const tier = await db.findOne('plan_tiers', { id: adminPlanId });
       if (!tier) return res.status(400).json({ error: 'Unknown plan tier' });
+      patch.adminPlanId = adminPlanId;
+      patch.adminPlanSetBy = req.admin.id;
+      patch.adminPlanSetAt = Date.now();
+      patch.adminPlanNote = reason || null;
+      patch.adminPlanExpiresAt = expiresAt || null;
+    } else {
+      // Clearing the override resets its metadata too, so no stale
+      // "overridden by X" badge lingers once there's no active override.
+      patch.adminPlanId = null;
+      patch.adminPlanSetBy = null;
+      patch.adminPlanSetAt = null;
+      patch.adminPlanNote = null;
+      patch.adminPlanExpiresAt = null;
     }
-    patch.adminPlanId = adminPlanId || null;
   }
 
   const updated = await db.update('users', user.id, patch);
@@ -141,11 +179,21 @@ router.patch('/users/:id', adminAuthRequired, validate(schemas.adminPatchUser), 
       action: adminPlanId ? 'assign_tier' : 'clear_tier',
       targetUserId: user.id,
       targetEmail: user.email,
-      meta: { adminPlanId },
+      meta: {
+        fromTier: user.adminPlanId || null,
+        toTier: adminPlanId || null,
+        reason: adminPlanId ? (reason || null) : null,
+        expiresAt: adminPlanId ? (expiresAt || null) : null,
+      },
     });
   }
 
-  res.json({ user: { id: updated.id, suspended: updated.suspended, adminPlanId: updated.adminPlanId } });
+  res.json({
+    user: {
+      id: updated.id, suspended: updated.suspended, adminPlanId: updated.adminPlanId,
+      adminPlanSetAt: updated.adminPlanSetAt, adminPlanNote: updated.adminPlanNote, adminPlanExpiresAt: updated.adminPlanExpiresAt,
+    },
+  });
 });
 
 router.delete('/users/:id', adminDeleteLimiter, adminAuthRequired, validate(schemas.adminDeleteUser), async (req, res) => {

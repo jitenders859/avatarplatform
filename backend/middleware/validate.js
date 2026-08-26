@@ -142,11 +142,42 @@ const schemas = {
 
   createCheckoutSession: z.object({
     planId: z.string().min(1, 'planId is required'),
+    couponCode: z.string().trim().min(1).max(40).optional(),
   }),
+
+  validateCoupon: z.object({
+    code: z.string().trim().min(1, 'code is required').max(40),
+    planId: z.string().min(1, 'planId is required'),
+  }),
+
+  couponCreate: z.object({
+    code: z.string().trim().toUpperCase().min(3, 'Code must be at least 3 characters').max(40, 'Code too long')
+      .regex(/^[A-Z0-9_-]+$/, 'Code may contain only letters, numbers, hyphens, and underscores').optional(),
+    discountType: z.enum(['percent', 'fixed'], { error: 'discountType must be percent or fixed' }),
+    discountValue: z.number().positive('discountValue must be positive'),
+    currency: z.string().trim().toLowerCase().length(3, 'currency must be a 3-letter code').optional(),
+    applicablePlanIds: z.array(z.string()).optional(),
+    maxRedemptions: z.number().int().positive().optional(),
+    maxRedemptionsPerUser: z.number().int().positive().optional(),
+    expiresAt: z.number().int().positive().optional(),
+  })
+    .refine(d => d.discountType !== 'percent' || d.discountValue <= 100, { message: 'Percent discount cannot exceed 100', path: ['discountValue'] })
+    .refine(d => d.discountType !== 'fixed' || !!d.currency, { message: 'currency is required for a fixed discount', path: ['currency'] }),
+
+  couponPatch: z.object({
+    active: z.boolean().optional(),
+    applicablePlanIds: z.array(z.string()).optional(),
+    maxRedemptionsPerUser: z.number().int().positive().nullable().optional(),
+  }).refine(d => Object.keys(d).length > 0, { message: 'Nothing to update' }),
 
   adminPatchUser: z.object({
     suspended: z.boolean().optional(),
     adminPlanId: z.string().nullable().optional(),
+    // Only meaningful alongside a truthy adminPlanId — reason is an optional
+    // free-text note for the audit trail, expiresAt (epoch ms) auto-reverts
+    // the override once past, both ignored when clearing the override.
+    reason: z.string().trim().max(500, 'reason too long').optional(),
+    expiresAt: z.number().int().positive().nullable().optional(),
   }).refine(d => d.suspended !== undefined || d.adminPlanId !== undefined, {
     message: 'Nothing to update',
   }),
@@ -243,6 +274,30 @@ const schemas = {
   adminLogin: z.object({
     email,
     password: z.string().min(1, 'Password is required'),
+  }),
+
+  characterInit: z.object({
+    name: z.string().trim().min(1, 'Name is required').max(80, 'Name too long'),
+    description: z.string().trim().max(500, 'description too long').optional(),
+    visibility: z.enum(['global', 'restricted'], { error: 'Invalid visibility' }).optional(),
+  }),
+
+  // inspectorMeta is admin-reported from the browser rive.js inspector —
+  // advisory only (stored for display in the library), not re-validated
+  // server-side, so this stays loose rather than pinning an exact shape.
+  characterComplete: z.object({
+    inspectorMeta: z.record(z.string(), z.unknown()).optional(),
+  }),
+
+  characterPatch: z.object({
+    name: z.string().trim().min(1, 'Name is required').max(80, 'Name too long').optional(),
+    description: z.string().trim().max(500, 'description too long').nullable().optional(),
+    status: z.enum(['draft', 'active', 'archived'], { error: 'Invalid status' }).optional(),
+    visibility: z.enum(['global', 'restricted'], { error: 'Invalid visibility' }).optional(),
+  }).refine(d => Object.keys(d).length > 0, { message: 'Nothing to update' }),
+
+  characterAccessGrant: z.object({
+    userId: z.string().min(1, 'userId is required'),
   }),
 
   tierUpsert: z.object({

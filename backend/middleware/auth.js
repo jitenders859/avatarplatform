@@ -36,6 +36,25 @@ async function authRequired(req, res, next) {
   }
 }
 
+// Never rejects — for routes public marketing pages hit anonymously
+// (e.g. GET /projects/characters) that need to personalize for a logged-in
+// visitor without requiring login. Sets req.user when a valid, non-admin
+// customer token is present; otherwise leaves it undefined and continues.
+async function optionalAuth(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return next();
+  try {
+    const payload = jwt.verify(token, JWT_SECRET, { algorithms: ['HS256'] });
+    if (!payload.uid || payload.isAdmin) return next();
+    const user = await db.findOne('users', { id: payload.uid });
+    if (user && !user.suspended) req.user = user;
+  } catch (e) {
+    // Invalid/expired token on an optional-auth route just means "anonymous".
+  }
+  next();
+}
+
 function signToken(userId, opts = {}) {
   return jwt.sign({ uid: userId, ...(opts.imp ? { imp: true } : {}) }, JWT_SECRET, { expiresIn: opts.expiresIn ?? '30d' });
 }
@@ -65,4 +84,4 @@ function signAdminToken(adminId) {
   return jwt.sign({ aid: adminId, isAdmin: true }, JWT_SECRET, { expiresIn: '12h' });
 }
 
-module.exports = { authRequired, signToken, adminAuthRequired, signAdminToken, JWT_SECRET };
+module.exports = { authRequired, optionalAuth, signToken, adminAuthRequired, signAdminToken, JWT_SECRET };
