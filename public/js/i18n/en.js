@@ -75,6 +75,7 @@ window.I18N_STRINGS.en = {
 
   // ── pricing.html ──────────────────────────────────────────────
   'pricing.pageTitle': 'Pricing — AvatarPlatform',
+  'pricing.eyebrow': 'Pricing',
   'pricing.title': 'Pricing',
   'pricing.subtitle': 'Start free. No card required. Upgrade when you outgrow it.',
   'pricing.couponPlaceholder': 'Have a coupon code?',
@@ -157,6 +158,7 @@ window.I18N_STRINGS.en = {
 
   // ── characters.html ───────────────────────────────────────────
   'characters.pageTitle': 'Characters — AvatarPlatform',
+  'characters.eyebrow': 'Characters',
   'characters.title': 'Meet the characters',
   'characters.subtitle': 'Real-time lip sync, multilingual, fully embeddable. Pick the face that fits your brand.',
   'characters.navDashboard': 'Dashboard →',

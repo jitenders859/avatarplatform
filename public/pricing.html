@@ -17,8 +17,29 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
+  <style>
+    .pricing-hero { padding: 56px 24px 8px; text-align: center; }
+    .pricing-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 14px;
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 12px; font-weight: 600;
+      color: var(--accent-strong);
+      margin-bottom: 18px;
+    }
+    .pricing-title { font-size: clamp(30px, 4vw, 40px); font-weight: 800; letter-spacing: -0.03em; margin: 0 0 10px; }
+    .pricing-sub { font-size: 16px; color: var(--text-2); }
+    .plan-card {
+      position: relative;
+      transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    }
+    .plan-card:hover { border-color: var(--border-strong); box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+    .plan-card.popular { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow-lg); }
+  </style>
 </head>
 <body>
   <nav class="topnav">
@@ -37,9 +58,10 @@
     </div>
   </nav>
 
-  <div class="container mt-lg" style="text-align:center">
-    <h1 style="font-size:36px;letter-spacing:-0.02em;margin:32px 0 8px" data-i18n="pricing.title">Pricing</h1>
-    <p class="muted" data-i18n="pricing.subtitle">Start free. No card required. Upgrade when you outgrow it.</p>
+  <div class="pricing-hero">
+    <span class="pricing-eyebrow" data-i18n="pricing.eyebrow">Pricing</span>
+    <h1 class="pricing-title" data-i18n="pricing.title">Pricing</h1>
+    <p class="pricing-sub" data-i18n="pricing.subtitle">Start free. No card required. Upgrade when you outgrow it.</p>
   </div>
 
   <div class="container mt-lg">
@@ -93,7 +115,7 @@
       document.getElementById('plans-grid').innerHTML = plans.map(p => {
         const l = localizePlan(p);
         return `
-        <div class="card" style="position:relative;${p.popular ? 'border-color:var(--accent)' : ''}">
+        <div class="card plan-card${p.popular ? ' popular' : ''}">
           ${p.popular ? `<span class="pill pill-info" style="position:absolute;top:-10px;left:20px">${I18N.t('pricing.mostPopular', 'Most popular')}</span>` : ''}
           <h3 style="margin:0 0 4px;font-size:18px">${l.name}</h3>
           <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em">$${p.priceMonthly}<span class="muted text-sm" style="font-weight:400">${I18N.t('pricing.perMonth', '/mo')}</span></div>

@@ -7,8 +7,44 @@
   <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
+  <style>
+    .project-card {
+      background: var(--bg-2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      transition: box-shadow .18s ease, border-color .18s ease, transform .18s ease;
+      position: relative;
+      overflow: hidden;
+    }
+    .project-card::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 3px;
+      background: var(--project-accent);
+      opacity: .85;
+    }
+    .project-card:hover {
+      border-color: var(--border-strong);
+      box-shadow: var(--shadow-lg);
+      transform: translateY(-2px);
+    }
+    .project-card-link { text-decoration: none; color: inherit; display: flex; gap: 12px; align-items: flex-start; }
+    .project-card-avatar {
+      flex: none; width: 38px; height: 38px; border-radius: 10px;
+      background: color-mix(in srgb, var(--project-accent) 16%, var(--bg-3));
+      color: var(--project-accent);
+      display: grid; place-items: center;
+      font-weight: 700; font-size: 15px;
+    }
+    .project-card-footer {
+      margin-top: 14px; padding-top: 12px;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    }
+  </style>
 </head>
 <body>
   <div class="container mt-md">
@@ -101,19 +137,19 @@
       );
 
       grid.innerHTML = projects.map((p, i) => `
-        <div class="card" style="position:relative;transition:border-color .15s" onmouseover="this.style.borderColor='var(--border-strong)'" onmouseout="this.style.borderColor='var(--border)'">
-          <a href="/project?id=${p.id}" style="text-decoration:none;color:inherit;display:block">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-              <div>
-                <div style="font-weight:600;font-size:15px">${escape(p.name)}</div>
-                <div class="muted text-sm mt-sm">${charName(p.characterId)} · /e/${p.publicId}</div>
+        <div class="project-card" style="--project-accent:${p.themeColor || 'var(--accent)'}">
+          <a href="/project?id=${p.id}" class="project-card-link">
+            <div class="project-card-avatar">${escape((p.name || '?').trim().charAt(0).toUpperCase())}</div>
+            <div style="min-width:0;flex:1">
+              <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+                <div style="font-weight:600;font-size:14.5px;letter-spacing:-0.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(p.name)}</div>
+                <span class="pill" style="flex:none">${p.widgetPosition || 'bottom-right'}</span>
               </div>
-              <span class="pill pill-info">${p.widgetPosition || 'bottom-right'}</span>
+              <div class="muted text-sm mt-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${charName(p.characterId)} · /e/${p.publicId}</div>
             </div>
           </a>
-          <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px">
-            ${leadCounts[i] > 0 ? `<a href="/project?id=${p.id}#leads" class="pill pill-success" style="text-decoration:none;font-size:11px">📋 ${leadCounts[i]} lead${leadCounts[i] === 1 ? '' : 's'}</a>` : ''}
-            <span style="flex:1"></span>
+          <div class="project-card-footer">
+            ${leadCounts[i] > 0 ? `<a href="/project?id=${p.id}#leads" class="pill pill-success" style="text-decoration:none;font-size:11px">📋 ${leadCounts[i]} lead${leadCounts[i] === 1 ? '' : 's'}</a>` : '<span></span>'}
             <button class="btn btn-sm btn-ghost" onclick="duplicate('${p.id}', event)">⎘ Duplicate</button>
           </div>
         </div>

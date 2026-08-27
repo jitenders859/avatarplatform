@@ -72,6 +72,7 @@ window.I18N_STRINGS.hi = {
   'index.pricingCallout.ctaPlans': 'सभी प्लान देखें',
 
   'pricing.pageTitle': 'मूल्य — AvatarPlatform',
+  'pricing.eyebrow': 'मूल्य',
   'pricing.title': 'मूल्य',
   'pricing.subtitle': 'मुफ़्त में शुरू करें। कार्ड की ज़रूरत नहीं। इससे आगे बढ़ने पर अपग्रेड करें।',
   'pricing.couponPlaceholder': 'क्या आपके पास कूपन कोड है?',
@@ -147,6 +148,7 @@ window.I18N_STRINGS.hi = {
   'contact.calFallback.cta': 'cal.com खोलें →',
 
   'characters.pageTitle': 'किरदार — AvatarPlatform',
+  'characters.eyebrow': 'किरदार',
   'characters.title': 'किरदारों से मिलें',
   'characters.subtitle': 'रीयल-टाइम लिप सिंक, बहुभाषी, पूरी तरह एम्बेड करने योग्य। वह चेहरा चुनें जो आपके ब्रांड से मेल खाता हो।',
   'characters.navDashboard': 'डैशबोर्ड →',

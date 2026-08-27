@@ -72,6 +72,7 @@ window.I18N_STRINGS.fr = {
   'index.pricingCallout.ctaPlans': 'Voir tous les plans',
 
   'pricing.pageTitle': 'Tarifs — AvatarPlatform',
+  'pricing.eyebrow': 'Tarifs',
   'pricing.title': 'Tarifs',
   'pricing.subtitle': 'Commencez gratuitement. Aucune carte requise. Passez à un plan supérieur quand vous le dépassez.',
   'pricing.couponPlaceholder': 'Vous avez un code promo ?',
@@ -147,6 +148,7 @@ window.I18N_STRINGS.fr = {
   'contact.calFallback.cta': 'Ouvrir cal.com →',
 
   'characters.pageTitle': 'Personnages — AvatarPlatform',
+  'characters.eyebrow': 'Personnages',
   'characters.title': 'Découvrez les personnages',
   'characters.subtitle': 'Synchronisation labiale en temps réel, multilingue, entièrement intégrable. Choisissez le visage qui correspond à votre marque.',
   'characters.navDashboard': 'Tableau de bord →',

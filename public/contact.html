@@ -17,7 +17,7 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
   <style>
     .contact-page {
@@ -61,12 +61,13 @@
       border: 1px solid var(--border);
       border-radius: 14px;
       margin-bottom: 12px;
+      box-shadow: var(--shadow);
     }
     .contact-info-icon {
       width: 40px; height: 40px;
       border-radius: 12px;
-      background: rgba(124,106,245,0.1);
-      border: 1px solid rgba(124,106,245,0.2);
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
       display: grid; place-items: center;
       font-size: 18px;
       flex-shrink: 0;
@@ -86,8 +87,8 @@
     .contact-async {
       margin-top: 28px;
       padding: 20px;
-      background: rgba(124,106,245,0.07);
-      border: 1px solid rgba(124,106,245,0.15);
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
       border-radius: 14px;
     }
     .contact-async-label {
@@ -114,6 +115,7 @@
       border: 1px solid var(--border);
       border-radius: 20px;
       padding: 32px;
+      box-shadow: var(--shadow);
     }
     #cal-embed {
       min-height: 500px;
@@ -286,8 +288,8 @@
       });
 
       Cal('ui', {
-        theme: 'dark',
-        styles: { branding: { brandColor: '#7c6af5' } },
+        theme: 'light',
+        styles: { branding: { brandColor: '#5B57F0' } },
         hideEventTypeDetails: false,
         layout: 'month_view',
       });

@@ -72,6 +72,7 @@ window.I18N_STRINGS.ar = {
   'index.pricingCallout.ctaPlans': 'عرض جميع الخطط',
 
   'pricing.pageTitle': 'الأسعار — AvatarPlatform',
+  'pricing.eyebrow': 'الأسعار',
   'pricing.title': 'الأسعار',
   'pricing.subtitle': 'ابدأ مجانًا. لا حاجة لبطاقة. قم بالترقية عندما تتجاوزه.',
   'pricing.couponPlaceholder': 'هل لديك رمز كوبون؟',
@@ -147,6 +148,7 @@ window.I18N_STRINGS.ar = {
   'contact.calFallback.cta': '← افتح cal.com',
 
   'characters.pageTitle': 'الشخصيات — AvatarPlatform',
+  'characters.eyebrow': 'الشخصيات',
   'characters.title': 'تعرّف على الشخصيات',
   'characters.subtitle': 'مزامنة شفاه فورية، متعددة اللغات، وقابلة للدمج بالكامل. اختر الوجه الذي يناسب علامتك التجارية.',
   'characters.navDashboard': '← لوحة التحكم',

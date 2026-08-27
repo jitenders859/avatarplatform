@@ -17,23 +17,35 @@
   </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
   <script src="https://unpkg.com/@rive-app/canvas@2.21.0/rive.js"></script>
   <style>
     .chars-hero {
       text-align: center;
-      padding: 64px 24px 16px;
+      padding: 68px 24px 16px;
+    }
+    .chars-eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 6px 14px;
+      background: var(--accent-soft);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      font-size: 12px; font-weight: 600;
+      color: var(--accent-strong);
+      margin-bottom: 18px;
     }
     .chars-hero h1 {
-      font-size: 36px;
-      letter-spacing: -0.02em;
+      font-size: clamp(30px, 4vw, 40px);
+      font-weight: 800;
+      letter-spacing: -0.03em;
       margin: 0 0 10px;
     }
     .chars-hero p {
-      margin: 0;
-      color: var(--text-dim);
+      margin: 0 auto;
+      color: var(--text-2);
       font-size: 16px;
+      max-width: 480px;
     }
 
     .char-grid {
@@ -48,14 +60,15 @@
     .char-card {
       background: var(--bg-2);
       border: 1px solid var(--border);
-      border-radius: 16px;
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
       overflow: hidden;
       transition: border-color .2s, transform .2s, box-shadow .2s;
     }
     .char-card:hover {
-      border-color: var(--accent);
+      border-color: var(--border-strong);
       transform: translateY(-3px);
-      box-shadow: 0 12px 32px rgba(124,106,245,.15);
+      box-shadow: var(--shadow-lg);
     }
 
     /* Square Rive canvas area */
@@ -168,6 +181,7 @@
 
   <!-- ── Hero ────────────────────────────────────────────────── -->
   <div class="chars-hero">
+    <span class="chars-eyebrow" data-i18n="characters.eyebrow">Characters</span>
     <h1 data-i18n="characters.title">Meet the characters</h1>
     <p data-i18n="characters.subtitle">Real-time lip sync, multilingual, fully embeddable. Pick the face that fits your brand.</p>
   </div>

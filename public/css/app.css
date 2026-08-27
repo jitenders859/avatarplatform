@@ -1,31 +1,36 @@
 /* ── Tokens ───────────────────────────────────────────────── */
+/* Palette: a restrained indigo accent on a cool neutral (navy-tinted, not
+   warm) gray scale — the "clean professional SaaS" direction (Stripe et al.),
+   replacing the earlier warm-cream/playful-purple identity. Color is used
+   sparingly: most of the UI is neutral, with the accent reserved for
+   primary actions, links, and focus states. */
 :root {
   /* Brand */
-  --accent: #6C4FF0;
-  --accent-2: #8A72FF;
-  --accent-glow: rgba(108,79,240,0.25);
-  --accent-soft: #F3ECFF;
+  --accent: #5B57F0;
+  --accent-2: #7A73FF;
+  --accent-glow: rgba(91,87,240,0.18);
+  --accent-soft: #EEEDFF;
   --accent-soft-border: transparent;
-  --accent-strong: #5539D6;
-  --accent-rgb: 108,79,240;
+  --accent-strong: #4338CA;
+  --accent-rgb: 91,87,240;
 
   /* Surfaces */
-  --bg: #FFF7EC;
+  --bg: #F7F8FA;
   --bg-2: #FFFFFF;
-  --bg-3: #FBF6EE;
-  --bg-4: #F3ECFF;
-  --surface-translucent: rgba(255,247,236,0.85);
-  --border: rgba(36,27,47,0.08);
-  --border-strong: rgba(36,27,47,0.14);
+  --bg-3: #F1F2F6;
+  --bg-4: #E9E9F5;
+  --surface-translucent: rgba(247,248,250,0.85);
+  --border: rgba(15,23,42,0.08);
+  --border-strong: rgba(15,23,42,0.14);
 
   /* Text */
-  --text: #241B2F;
-  --text-2: #6B6178;
-  --text-dim: #9089A0;
-  --text-rgb: 36,27,47;
+  --text: #0F172A;
+  --text-2: #4B5568;
+  --text-dim: #8A93A6;
+  --text-rgb: 15,23,42;
 
   /* Semantic */
-  --success: #1F9E63; --success-bg: #E1F6EC; --success-border: transparent;
+  --success: #16803D; --success-bg: #E9F7EF; --success-border: transparent;
   --warn:    #B45309; --warn-bg:    #FEF3C7; --warn-border:    transparent;
   --danger:  #DC2626; --danger-bg:  #FEE2E2; --danger-border:  transparent;
 
@@ -33,49 +38,53 @@
   --code-blue: #2b6cb0;
   --code-green: #15803d;
 
-  /* Shape */
-  --radius: 14px;
-  --radius-lg: 22px;
-  --shadow: 0 1px 2px rgba(36,27,47,.06), 0 8px 24px rgba(36,27,47,.08);
-  --shadow-lg: 0 24px 60px rgba(36,27,47,.18), 0 4px 16px rgba(36,27,47,.12);
+  /* Shape — modest radius and quiet, layered shadows rather than a
+     hard drop shadow; elevation reads mostly through subtle borders. */
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow: 0 1px 2px rgba(15,23,42,.04), 0 6px 16px rgba(15,23,42,.06);
+  --shadow-lg: 0 16px 40px rgba(15,23,42,.14), 0 4px 12px rgba(15,23,42,.08);
 
   /* Buttons / brand marks */
   --btn-primary-bg: var(--accent);
-  --btn-primary-hover-bg: #5539D6;
-  --btn-shadow: 0 4px 0 #4227A8;
-  --mark-shadow: 0 2px 0 #5539D6;
+  --btn-primary-hover-bg: var(--accent-strong);
+  --btn-shadow: 0 1px 2px rgba(15,23,42,.05), 0 2px 8px var(--accent-glow);
+  --mark-shadow: 0 2px 6px var(--accent-glow);
   --user-avatar-bg: var(--accent-soft);
-  --user-avatar-text: var(--accent);
+  --user-avatar-text: var(--accent-strong);
 
   /* Heading gradient (hero-title, docs h1) */
   --heading-gradient: linear-gradient(180deg, var(--text) 0%, var(--text-2) 100%);
 
-  /* Fonts — theme-independent, same in light and dark */
-  --font-heading: 'Baloo 2', sans-serif;
-  --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* Fonts — theme-independent, same in light and dark. Inter for both
+     heading and body (differentiated by weight, not typeface) — the
+     clean-professional look this system targets reads as one considered
+     type family rather than a display/body pairing. */
+  --font-heading: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 :root[data-theme="dark"] {
-  --accent: #7c6af5;
-  --accent-2: #a78bfa;
-  --accent-glow: rgba(124,106,245,0.25);
-  --accent-soft: rgba(124,106,245,.12);
-  --accent-soft-border: rgba(124,106,245,.25);
-  --accent-strong: #c4b5fd;
-  --accent-rgb: 124,106,245;
+  --accent: #8B85FF;
+  --accent-2: #A5A0FF;
+  --accent-glow: rgba(139,133,255,0.22);
+  --accent-soft: rgba(139,133,255,.14);
+  --accent-soft-border: rgba(139,133,255,.28);
+  --accent-strong: #C2BFFF;
+  --accent-rgb: 139,133,255;
 
-  --bg: #0a0b13;
-  --bg-2: #11131c;
-  --bg-3: #181a25;
-  --bg-4: #20232f;
-  --surface-translucent: rgba(10,11,19,0.85);
+  --bg: #0B0D14;
+  --bg-2: #12141D;
+  --bg-3: #191C27;
+  --bg-4: #222537;
+  --surface-translucent: rgba(11,13,20,0.85);
   --border: rgba(255,255,255,0.08);
   --border-strong: rgba(255,255,255,0.14);
 
-  --text: #ecedf3;
-  --text-2: #b6bbcc;
-  --text-dim: #7a8090;
-  --text-rgb: 236,237,243;
+  --text: #F1F2F6;
+  --text-2: #A9AFC0;
+  --text-dim: #6E7488;
+  --text-rgb: 241,242,246;
 
   --success: #86efac; --success-bg: rgba(34,197,94,.1);  --success-border: rgba(34,197,94,.2);
   --warn:    #fcd34d; --warn-bg:    rgba(245,158,11,.1); --warn-border:    rgba(245,158,11,.2);
@@ -84,19 +93,19 @@
   --code-blue: #61afef;
   --code-green: #98c379;
 
-  --radius: 12px;
+  --radius: 10px;
   --radius-lg: 16px;
-  --shadow: 0 1px 2px rgba(0,0,0,.2), 0 8px 24px rgba(0,0,0,.25);
-  --shadow-lg: 0 24px 60px rgba(0,0,0,.45), 0 4px 16px rgba(0,0,0,.35);
+  --shadow: 0 1px 2px rgba(0,0,0,.3), 0 6px 16px rgba(0,0,0,.3);
+  --shadow-lg: 0 20px 50px rgba(0,0,0,.5), 0 4px 14px rgba(0,0,0,.4);
 
-  --btn-primary-bg: linear-gradient(135deg, var(--accent), var(--accent-2));
-  --btn-primary-hover-bg: linear-gradient(135deg, #6f5cf3, #9479f8);
-  --btn-shadow: 0 4px 16px var(--accent-glow);
-  --mark-shadow: 0 4px 12px var(--accent-glow);
-  --user-avatar-bg: linear-gradient(135deg, var(--accent), var(--accent-2));
-  --user-avatar-text: white;
+  --btn-primary-bg: var(--accent);
+  --btn-primary-hover-bg: #9D97FF;
+  --btn-shadow: 0 1px 2px rgba(0,0,0,.3), 0 2px 10px var(--accent-glow);
+  --mark-shadow: 0 2px 8px var(--accent-glow);
+  --user-avatar-bg: var(--accent-soft);
+  --user-avatar-text: var(--accent-strong);
 
-  --heading-gradient: linear-gradient(180deg, #fff 0%, #b6bbcc 100%);
+  --heading-gradient: linear-gradient(180deg, #fff 0%, #A9AFC0 100%);
 }
 
 * { box-sizing: border-box; }
@@ -107,10 +116,13 @@ html, body {
   color: var(--text);
   font: 14px/1.55 var(--font-body);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   min-height: 100vh;
+  letter-spacing: -0.006em;
 }
 
-a { color: var(--accent-2); text-decoration: none; }
+a { color: var(--accent-strong); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 button { font: inherit; }
@@ -118,6 +130,7 @@ button { font: inherit; }
 h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
   font-family: var(--font-heading);
   font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 /* ── Layout primitives ────────────────────────────────────── */
@@ -148,16 +161,16 @@ h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
 .brand {
   display: flex; align-items: center; gap: 8px;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
   color: var(--text);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 .brand-mark {
   width: 28px; height: 28px;
   border-radius: 8px;
   background: var(--btn-primary-bg);
   display: grid; place-items: center;
-  color: white; font-weight: 800; font-size: 14px;
+  color: white; font-weight: 700; font-size: 13px;
   box-shadow: var(--mark-shadow);
 }
 .nav-links { display: flex; gap: 4px; margin-left: 12px; }
@@ -191,19 +204,21 @@ h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
 /* ── Buttons ──────────────────────────────────────────────── */
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 10px 16px;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  background: var(--bg-3);
+  padding: 9px 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-2);
   color: var(--text);
   font-size: 13px; font-weight: 500;
   cursor: pointer;
-  transition: background .15s, border-color .15s, transform .1s;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease, transform .08s ease;
   text-decoration: none;
+  box-shadow: 0 1px 2px rgba(15,23,42,.03);
 }
-.btn:hover { background: var(--bg-4); text-decoration: none; }
-.btn:active { transform: scale(0.98); }
+.btn:hover { background: var(--bg-3); border-color: var(--border-strong); text-decoration: none; }
+.btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .btn-primary {
   background: var(--btn-primary-bg);
@@ -211,13 +226,13 @@ h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
   border-color: transparent;
   box-shadow: var(--btn-shadow);
 }
-.btn-primary:hover { background: var(--btn-primary-hover-bg); }
-.btn-ghost { background: transparent; border-color: var(--border); }
+.btn-primary:hover { background: var(--btn-primary-hover-bg); box-shadow: 0 2px 4px rgba(15,23,42,.08), 0 4px 14px var(--accent-glow); }
+.btn-ghost { background: transparent; border-color: var(--border); box-shadow: none; }
 .btn-ghost:hover { background: var(--bg-3); }
-.btn-danger { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-border); }
-.btn-danger:hover { background: rgba(239,68,68,0.2); }
-.btn-sm { padding: 6px 10px; font-size: 12px; border-radius: 8px; }
-.btn-lg { padding: 14px 24px; font-size: 15px; }
+.btn-danger { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-border); box-shadow: none; }
+.btn-danger:hover { background: rgba(239,68,68,0.16); }
+.btn-sm { padding: 6px 11px; font-size: 12px; border-radius: 8px; }
+.btn-lg { padding: 13px 22px; font-size: 14.5px; border-radius: 12px; }
 
 /* ── Cards ────────────────────────────────────────────────── */
 .card {
@@ -225,9 +240,11 @@ h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 20px;
+  box-shadow: var(--shadow);
+  transition: box-shadow .2s ease, border-color .2s ease;
 }
 .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-.card-title { font-size: 16px; font-weight: 600; margin: 0; }
+.card-title { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
 .card-sub   { font-size: 13px; color: var(--text-2); }
 
 /* ── Forms ────────────────────────────────────────────────── */
@@ -237,28 +254,31 @@ h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
 
 .input, .textarea, .select {
   width: 100%;
-  padding: 10px 12px;
-  background: var(--bg-3);
+  padding: 9px 12px;
+  background: var(--bg-2);
   color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
   font: inherit;
   outline: none;
-  transition: border-color .15s, background .15s;
+  transition: border-color .15s ease, box-shadow .15s ease;
 }
 .input:focus, .textarea:focus, .select:focus {
   border-color: var(--accent);
-  background: var(--bg-4);
+  background: var(--bg-2);
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
+.input::placeholder, .textarea::placeholder { color: var(--text-dim); }
 .textarea { min-height: 80px; resize: vertical; font-family: inherit; }
 
 /* ── Pills / tags ─────────────────────────────────────────── */
 .pill {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 8px;
+  padding: 3px 9px;
   border-radius: 999px;
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   background: var(--bg-3);
   color: var(--text-2);
   border: 1px solid var(--border);
@@ -336,23 +356,24 @@ h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
   flex-wrap: wrap; gap: 16px;
 }
 .page-title {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 700;
   letter-spacing: -0.02em;
   margin: 0;
 }
-.page-sub { color: var(--text-2); margin: 4px 0 0; font-size: 14px; }
+.page-sub { color: var(--text-2); margin: 4px 0 0; font-size: 13.5px; }
 
 /* ── Empty states ─────────────────────────────────────────── */
 .empty {
   text-align: center;
-  padding: 48px 24px;
-  border: 2px dashed var(--border);
+  padding: 56px 24px;
+  border: 1.5px dashed var(--border-strong);
   border-radius: var(--radius-lg);
+  background: var(--bg-2);
   color: var(--text-dim);
 }
-.empty-icon { font-size: 36px; margin-bottom: 12px; }
-.empty-title { color: var(--text); font-weight: 600; margin-bottom: 4px; }
+.empty-icon { font-size: 32px; margin-bottom: 14px; opacity: .7; }
+.empty-title { color: var(--text); font-weight: 600; margin-bottom: 4px; font-size: 15px; }
 
 /* ── Grid ─────────────────────────────────────────────────── */
 .grid { display: grid; gap: 16px; }
@@ -369,7 +390,7 @@ h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
 
 /* ── Hero (landing) ──────────────────────────────────────── */
 .hero {
-  padding: 80px 24px 60px;
+  padding: 96px 24px 64px;
   text-align: center;
   position: relative;
   overflow: hidden;
@@ -377,38 +398,41 @@ h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
 .hero::before {
   content: '';
   position: absolute; inset: -20% -20% auto -20%;
-  height: 600px;
-  background: radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 70%);
+  height: 560px;
+  background: radial-gradient(ellipse at center, var(--accent-glow) 0%, transparent 68%);
   pointer-events: none;
   z-index: -1;
+  opacity: .8;
 }
 .hero-eyebrow {
-  display: inline-block;
+  display: inline-flex; align-items: center; gap: 6px;
   padding: 6px 14px;
-  background: var(--bg-3);
+  background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 12px;
+  font-weight: 500;
   color: var(--text-2);
-  margin-bottom: 20px;
+  margin-bottom: 24px;
+  box-shadow: var(--shadow);
 }
 .hero-title {
-  font-size: clamp(36px, 6vw, 64px);
-  font-weight: 800;
-  letter-spacing: -0.03em;
-  margin: 0 0 16px;
-  line-height: 1.05;
+  font-size: clamp(36px, 5.5vw, 60px);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  margin: 0 0 18px;
+  line-height: 1.08;
   background: var(--heading-gradient);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 .hero-sub {
-  font-size: clamp(15px, 2vw, 18px);
+  font-size: clamp(15px, 1.6vw, 18px);
   color: var(--text-2);
-  max-width: 620px;
-  margin: 0 auto 32px;
-  line-height: 1.5;
+  max-width: 600px;
+  margin: 0 auto 36px;
+  line-height: 1.6;
 }
 .hero-cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 
