@@ -1884,9 +1884,16 @@ When answering, speak naturally and conversationally — do not read the knowled
             system_instruction: {
               parts: [{ text: this._buildSystemPrompt() }],
             },
+            // tools/functionDeclarations is camelCase — unlike the setup fields
+            // above (which follow this file's established snake_case dialect,
+            // confirmed working in production), this is new, previously-untested
+            // code, so it uses the exact casing Google's official @google/genai
+            // SDK type definitions document for LiveClientSetup.tools (checked
+            // directly against its published .d.ts — the Live protocol's client
+            // message types are camelCase throughout, with no snake_case variant).
             ...(this._tools.length ? {
               tools: [{
-                function_declarations: this._tools.map(t => ({
+                functionDeclarations: this._tools.map(t => ({
                   name: t.name, description: t.description || '', parameters: t.parameters,
                 })),
               }],
@@ -2086,7 +2093,9 @@ When answering, speak naturally and conversationally — do not read the knowled
         return { id: call.id, name: call.name, response };
       }));
       if (!this._isConnected || this._ws !== ws) return;
-      ws.send(JSON.stringify({ tool_response: { function_responses: responses } }));
+      // camelCase — see the setup-message comment above on tools/functionDeclarations
+      // for why this differs from the surrounding snake_case setup fields.
+      ws.send(JSON.stringify({ toolResponse: { functionResponses: responses } }));
     }
 
     // ─────────────────────────────────────────────────────
