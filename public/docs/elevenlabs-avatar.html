@@ -111,7 +111,7 @@ Authorization: Bearer YOUR_JWT
 
         <div class="callout callout-tip">
           <span class="callout-icon">💡</span>
-          <div class="callout-body"><p><strong>If synthesis calls fail in your account:</strong> the request shape (endpoint path, header names, the <code>alignment</code> field names) is set based on ElevenLabs' public API — if your account differs, adjust <code>synthesizeElevenLabs()</code> in <code>backend/services/tts.js</code>; failures are logged server-side with the response body to make this quick to diagnose.</p></div>
+          <div class="callout-body"><p>The request shape in <code>synthesizeElevenLabs()</code> (endpoint path, header names, the <code>alignment</code> field names) was verified directly against the official <code>@elevenlabs/elevenlabs-js</code> npm package's source, not guessed from docs — if a future ElevenLabs API change breaks it, failures are logged server-side with the response body to make it quick to diagnose and re-verify the same way.</p></div>
         </div>
 
         <h2>When to use this instead of Gemini Live, Fish Audio, or Cartesia</h2>

@@ -93,7 +93,7 @@ Authorization: Bearer YOUR_JWT
 
         <div class="callout callout-tip">
           <span class="callout-icon">💡</span>
-          <div class="callout-body"><p><strong>If synthesis calls fail in your account:</strong> Fish Audio's request fields (e.g. <code>reference_id</code>, <code>format</code>) are set based on their public API — if your account uses different field names, adjust <code>synthesizeFishAudio()</code> in <code>backend/services/tts.js</code>; failures are logged server-side with the response body to make this quick to diagnose.</p></div>
+          <div class="callout-body"><p>The request shape in <code>synthesizeFishAudio()</code> (endpoint, headers, and body fields like <code>reference_id</code>/<code>format</code>) was verified directly against the official <code>fish-audio-sdk</code> npm package's source, not guessed from docs — if a future Fish Audio API change breaks it, failures are logged server-side with the response body to make it quick to diagnose and re-verify the same way.</p></div>
         </div>
 
         <h2>When to use this instead of Gemini Live</h2>

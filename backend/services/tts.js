@@ -13,8 +13,26 @@
  *   FISH_AUDIO_API_KEY   — https://fish.audio API key
  *   CARTESIA_API_KEY     — https://cartesia.ai API key
  *   CARTESIA_MODEL_ID    — default 'sonic-3.5'
+ *   CARTESIA_VERSION     — default '2026-08-14' (required date-versioned API header)
  *   ELEVENLABS_API_KEY   — https://elevenlabs.io API key
  *   ELEVENLABS_MODEL_ID  — default 'eleven_multilingual_v2'
+ *
+ * Request/response shapes below were verified directly against each
+ * provider's official Node SDK source (this sandbox's egress proxy blocks
+ * the vendor doc sites themselves, but not the npm registry, so the SDKs'
+ * actual request-building and response-parsing code was inspected instead):
+ *   elevenlabs / @elevenlabs/elevenlabs-js — confirmed exact: endpoint,
+ *     headers, body fields, and the with-timestamps response shape below.
+ *   @cartesia/cartesia-js@4.1.0 — caught and fixed three real bugs an
+ *     earlier unverified version of this file had: auth is `Authorization:
+ *     Bearer <key>`, not `X-API-Key`; `voice` is a plain ID string (or
+ *     `{id}`), not `{mode:'id', id}`; and the required `cartesia-version`
+ *     header needs a currently-valid date, not a guessed one.
+ *   fish-audio-sdk@2025.11.29 — confirmed exact: endpoint, headers, and body
+ *     fields (including `format: 'pcm'` as a valid enum value).
+ * If a provider changes their API after this was written, re-run the same
+ * check: `npm install <official-sdk-package>` somewhere and read its
+ * request-building source rather than guessing again.
  *
  * Output contract: synthesizeSpeech() always resolves to raw PCM16 little-
  * endian, mono, 24kHz audio as a Buffer — matching public/lipsync-sdk.js's
@@ -76,6 +94,9 @@ async function synthesizeFishAudio(voiceId, text) {
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
+      // Matches the default the official fish-audio-sdk sends on every
+      // request when the caller doesn't override it — not account-specific.
+      'developer-id': '6322d9df15d044e7b928de27c863480f',
     },
     body: JSON.stringify({
       text,
@@ -105,16 +126,20 @@ async function synthesizeCartesia(voiceId, text) {
   const res = await fetch('https://api.cartesia.ai/tts/bytes', {
     method: 'POST',
     headers: {
-      'X-API-Key': apiKey,
-      'Cartesia-Version': process.env.CARTESIA_VERSION || '2025-04-16',
+      Authorization: `Bearer ${apiKey}`,
+      'cartesia-version': process.env.CARTESIA_VERSION || '2026-08-14',
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       model_id: process.env.CARTESIA_MODEL_ID || 'sonic-3.5',
       transcript: text,
-      voice: { mode: 'id', id: voiceId },
+      // A plain voice-ID string is a valid VoiceSpecifier — no {mode:'id'}
+      // wrapper (that shape belongs to an older API version).
+      voice: voiceId,
       output_format: { container: 'raw', encoding: 'pcm_s16le', sample_rate: PCM_SAMPLE_RATE },
-      language: 'en',
+      // No `language`/`locale` field: it's optional, and this platform is
+      // multilingual (see lipsync-sdk.js's 13-language G2P) — forcing 'en'
+      // here would mispronounce every non-English reply.
     }),
     timeout: 20000,
   });

@@ -71,7 +71,7 @@
 CARTESIA_API_KEY=your-cartesia-api-key
 # Optional overrides:
 CARTESIA_MODEL_ID=sonic-3.5
-CARTESIA_VERSION=2025-04-16</code></pre>
+CARTESIA_VERSION=2026-08-14</code></pre>
 
         <h3>Step 2 — Set the engine and voice for a project</h3>
         <p>In the dashboard, open your project → <strong>Settings</strong> tab and set <strong>Speech engine</strong> to <em>Cartesia Sonic</em>, then paste your Cartesia voice ID into the field that appears. You can also do this via the API:</p>
@@ -95,7 +95,7 @@ Authorization: Bearer YOUR_JWT
 
         <div class="callout callout-tip">
           <span class="callout-icon">💡</span>
-          <div class="callout-body"><p><strong>If synthesis calls fail in your account:</strong> Cartesia's request shape (model IDs, header names, the <code>voice</code> object) is set based on their public API — if your account differs, adjust <code>synthesizeCartesia()</code> in <code>backend/services/tts.js</code>; failures are logged server-side with the response body to make this quick to diagnose.</p></div>
+          <div class="callout-body"><p>The request shape in <code>synthesizeCartesia()</code> (auth header, model IDs, the <code>voice</code> field, the <code>cartesia-version</code> header) was verified directly against the official <code>@cartesia/cartesia-js</code> npm package's source, not guessed from docs — if a future Cartesia API change breaks it, failures are logged server-side with the response body to make it quick to diagnose and re-verify the same way.</p></div>
         </div>
 
         <h2>When to use this instead of Gemini Live</h2>
