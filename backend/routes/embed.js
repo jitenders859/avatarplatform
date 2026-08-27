@@ -247,6 +247,11 @@ router.post('/:publicId/retrieve', aiCostLimiter, validate(schemas.embedRetrieve
         fileId: file.id,
         fileName: file.originalName,
         kind: file.kind,
+        // Click-through target: the original page for a URL source, or the
+        // same publicly-servable image already used for the thumbnail.
+        // Other kinds (pdf/docx/text/audio/video) have no public embed-side
+        // serving endpoint, so they stay unlinked — same boundary as today.
+        url: file.kind === 'url' ? file.sourceUrl : null,
         previewUrl: file.kind === 'image'
           ? `/embed/${project.publicId}/file/${file.id}`
           : null,
@@ -456,6 +461,7 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
           fileId: file.id,
           fileName: file.originalName,
           kind: file.kind,
+          url: file.kind === 'url' ? file.sourceUrl : null,
           previewUrl: file.kind === 'image'
             ? `/embed/${project.publicId}/file/${file.id}`
             : null,

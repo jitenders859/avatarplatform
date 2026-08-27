@@ -391,7 +391,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       const answerEl = addMessage('bot', data.answer || '…');
       if (config.project.showSourceCards !== false && data.sources && data.sources.length) {
         attachSources(answerEl, data.sources.map(s => ({
-          fileId: null, fileName: s.title, kind: s.url ? 'url' : null, previewUrl: null,
+          fileId: null, fileName: s.title, kind: s.url ? 'url' : null, url: s.url || null, previewUrl: null,
         })));
       }
       // No logTurn here: /ask already persists both turns + bumped the
@@ -773,8 +773,18 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     const wrap = document.createElement('div');
     wrap.className = 'sources';
     for (const s of sources) {
-      const card = document.createElement('div');
+      // Click-through target: the original page for a URL source, the
+      // full-size image for an image source (previewUrl doubles as this —
+      // it's already a public embed-side link, just wasn't clickable
+      // before), or nothing for kinds with no public serving endpoint.
+      const linkUrl = s.url || (s.kind === 'image' ? s.previewUrl : null);
+      const card = document.createElement(linkUrl ? 'a' : 'div');
       card.className = 'source-card';
+      if (linkUrl) {
+        card.href = linkUrl;
+        card.target = '_blank';
+        card.rel = 'noopener noreferrer';
+      }
       if (s.previewUrl) {
         const img = document.createElement('img');
         img.className = 'src-thumb'; img.src = s.previewUrl; img.alt = s.fileName || '';

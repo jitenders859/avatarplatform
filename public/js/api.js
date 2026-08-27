@@ -104,7 +104,6 @@ const API = {
   },
   reprocessFile: (pid, fid) => apiCall(`/api/projects/${pid}/files/${fid}/reprocess`, { method: 'POST' }),
   deleteFile:    (pid, fid) => apiCall(`/api/projects/${pid}/files/${fid}`, { method: 'DELETE' }),
-  addUrl: (pid, url) => apiCall(`/api/projects/${pid}/sources/url`, { method: 'POST', body: { url } }),
   addUrls: (pid, urls) => apiCall(`/api/projects/${pid}/sources/url`, { method: 'POST', body: { urls } }),
   reindexProject:  (pid) => apiCall(`/api/projects/${pid}/reindex`, { method: 'POST' }),
   duplicateProject:(pid) => apiCall(`/api/projects/${pid}/duplicate`, { method: 'POST' }),

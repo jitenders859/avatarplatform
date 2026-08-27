@@ -354,6 +354,15 @@ body.mode-inline .launcher { display: none; }
   font-size: 11px;
   color: var(--text-dim);
   max-width: 180px;
+  text-decoration: none;
+}
+a.source-card {
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+a.source-card:hover {
+  border-color: var(--accent, var(--text-dim));
+  color: var(--text);
 }
 .src-thumb {
   width: 22px; height: 22px;

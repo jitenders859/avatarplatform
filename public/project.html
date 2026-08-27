@@ -109,11 +109,11 @@
           <button class="btn btn-primary mt-md" id="upload-btn">Choose files</button>
         </div>
         <div class="card">
-          <h3 class="card-title mb-md">Add a website</h3>
-          <p class="muted text-sm">Paste a URL — we'll fetch, clean, and index the page.</p>
-          <div class="row mt-md">
-            <input class="input" id="url-input" placeholder="https://example.com/docs" style="flex:1" />
-            <button class="btn btn-primary" id="url-btn">Add</button>
+          <h3 class="card-title mb-md">Add websites</h3>
+          <p class="muted text-sm">Paste one or more URLs (one per line) — we'll fetch, clean, and index each page.</p>
+          <div class="col mt-md" style="gap:8px">
+            <textarea class="textarea" id="url-input" rows="3" placeholder="https://example.com/docs&#10;https://example.com/faq"></textarea>
+            <button class="btn btn-primary" id="url-btn" style="align-self:flex-start">Add</button>
           </div>
         </div>
       </div>
@@ -1114,17 +1114,27 @@
   });
 
   document.getElementById('url-btn').addEventListener('click', addUrl);
-  document.getElementById('url-input').addEventListener('keydown', e => { if (e.key === 'Enter') addUrl(); });
+  document.getElementById('url-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); addUrl(); }
+  });
   async function addUrl() {
     const input = document.getElementById('url-input');
-    const url = input.value.trim();
-    if (!url) return;
+    const urls = [...new Set(
+      input.value.split(/[\n,]/).map(u => u.trim()).filter(Boolean)
+    )];
+    if (!urls.length) return;
+    const btn = document.getElementById('url-btn');
+    btn.disabled = true;
     try {
-      await API.addUrl(projectId, url);
-      input.value = '';
-      toast('URL added — fetching…', 'success');
+      const { sources } = await API.addUrls(projectId, urls);
+      const failed = sources.filter(s => s.error);
+      const added = sources.length - failed.length;
+      if (added) toast(`${added} URL${added === 1 ? '' : 's'} added — fetching…`, 'success');
+      if (failed.length) toast(`${failed.length} URL${failed.length === 1 ? '' : 's'} failed: ${failed.map(f => f.error).join('; ')}`, 'error');
+      if (added) input.value = '';
       loadFiles();
     } catch (err) { toast(err.message, 'error'); }
+    finally { btn.disabled = false; }
   }
 
   // ── Reindex ──
