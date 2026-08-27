@@ -12,16 +12,30 @@
   <link rel="stylesheet" href="/css/admin.css" />
 </head>
 <body>
-  <div class="container mt-md">
-    <div id="login-view" class="card" style="max-width:360px;margin:80px auto">
-      <div class="card-header"><h2 class="card-title">Admin sign in</h2></div>
+  <div id="login-view" style="min-height:100vh;display:grid;place-items:center;padding:24px">
+    <div class="card" style="width:100%;max-width:380px">
+      <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:24px">
+        <span class="brand-mark">A</span>
+        <span style="font-weight:700;font-size:15px">AvatarPlatform</span>
+        <span class="pill" style="margin-inline-start:2px">Admin</span>
+      </div>
+      <h1 style="font-size:20px;margin:0 0 4px;text-align:center">Admin sign in</h1>
+      <p class="muted text-sm text-center" style="margin:0 0 24px">Internal access only</p>
       <form id="login-form" class="col gap-md">
-        <input type="email" id="login-email" placeholder="Email" required class="input" />
-        <input type="password" id="login-password" placeholder="Password" required class="input" />
-        <button type="submit" class="btn btn-primary">Sign in</button>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="login-email" required class="input" autofocus autocomplete="email" />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="login-password" required class="input" autocomplete="current-password" />
+        </div>
+        <button type="submit" class="btn btn-primary btn-lg">Sign in</button>
       </form>
     </div>
+  </div>
 
+  <div class="container mt-md">
     <div id="admin-view" hidden>
       <div class="page-header">
         <div>

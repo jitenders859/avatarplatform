@@ -30,12 +30,23 @@ async function loadOverviewTab() {
       <td>${formatNum(p.messageCount)}</td>
     </tr>`).join('');
 
+  const statTile = (icon, value, label) => `
+    <div class="card">
+      <div class="stat-tile">
+        <div class="stat-tile-icon">${icon}</div>
+        <div class="stat-tile-body">
+          <div class="stat-tile-value">${value}</div>
+          <div class="stat-tile-label">${label}</div>
+        </div>
+      </div>
+    </div>`;
+
   section.innerHTML = `
     <div class="grid grid-4 mb-lg">
-      <div class="card"><div class="muted text-sm mb-sm">Total users</div><div style="font-size:28px;font-weight:700">${formatNum(totals.users)}</div></div>
-      <div class="card"><div class="muted text-sm mb-sm">Total chatbots</div><div style="font-size:28px;font-weight:700">${formatNum(totals.projects)}</div></div>
-      <div class="card"><div class="muted text-sm mb-sm">Active subscriptions</div><div style="font-size:28px;font-weight:700">${formatNum(totals.activeSubscriptions)}</div></div>
-      <div class="card"><div class="muted text-sm mb-sm">MRR</div><div style="font-size:28px;font-weight:700">$${formatNum(totals.mrr)}</div></div>
+      ${statTile('👥', formatNum(totals.users), 'Total users')}
+      ${statTile('🤖', formatNum(totals.projects), 'Total chatbots')}
+      ${statTile('💳', formatNum(totals.activeSubscriptions), 'Active subscriptions')}
+      ${statTile('💰', '$' + formatNum(totals.mrr), 'MRR')}
     </div>
 
     <div class="grid grid-2 mb-lg">

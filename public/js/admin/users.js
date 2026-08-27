@@ -82,7 +82,7 @@ async function renderUserDetail(userId) {
   ];
   const bars = items.map(i => {
     const pct = Math.min(100, Math.round((i.current / Math.max(1, i.limit)) * 100));
-    const color = pct >= 90 ? 'background:#ef4444' : pct >= 70 ? 'background:#f59e0b' : 'background:linear-gradient(90deg,var(--accent),var(--accent-2))';
+    const color = pct >= 90 ? 'background:var(--danger)' : pct >= 70 ? 'background:var(--warn)' : 'background:linear-gradient(90deg,var(--accent),var(--accent-2))';
     return `<div>
       <div class="row" style="justify-content:space-between;margin-bottom:6px">
         <span class="text-sm">${i.label}</span>

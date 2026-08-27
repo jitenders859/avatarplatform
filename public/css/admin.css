@@ -60,11 +60,34 @@
 /* ── Denser cards ─────────────────────────────────────────── */
 #admin-view .card {
   border-radius: var(--adm-radius);
-  box-shadow: none;
+  box-shadow: var(--adm-shadow);
   padding: 16px;
 }
 #admin-view .card-header { margin-bottom: 12px; }
 #admin-view .card-title { font-size: var(--adm-text-lg); }
+
+/* ── KPI stat tiles (Overview tab) ───────────────────────────
+   Same visual language as the dashboard's project cards — an
+   accent-tinted icon badge plus a large figure — instead of a
+   bare number, so the first screen an admin sees reads as a
+   real dashboard rather than a debug printout. */
+.stat-tile {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.stat-tile-icon {
+  flex: none;
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  display: grid; place-items: center;
+  font-size: 16px;
+}
+.stat-tile-body { min-width: 0; }
+.stat-tile-value { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; }
+.stat-tile-label { font-size: var(--adm-text-sm); color: var(--text-dim); margin-top: 2px; }
 
 /* ── Data table ───────────────────────────────────────────── */
 /* .table had zero styling before this pass — plain browser default table
