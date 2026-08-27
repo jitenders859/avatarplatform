@@ -411,12 +411,18 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
  * POST /embed/:publicId/speak
  *
  * Synthesizes text into audio through the project's TTS-only voice engine
- * (Fish Audio / Cartesia — see backend/services/tts.js). Used only by
- * projects configured with one of those engines: the widget still gets its
- * reply text from POST /ask (unchanged), then calls this endpoint with that
- * text to get audio to play through the avatar. Gemini Live and OpenAI
- * Realtime projects never call this — they get audio directly from their
- * own live session and don't need a separate synthesis step.
+ * (Fish Audio / Cartesia / ElevenLabs — see backend/services/tts.js). Used
+ * only by projects configured with one of those engines: the widget still
+ * gets its reply text from POST /ask (unchanged), then calls this endpoint
+ * with that text to get audio to play through the avatar. Gemini Live
+ * projects never call this — they get audio directly from their own live
+ * session and don't need a separate synthesis step.
+ *
+ * For ElevenLabs, the response also carries `alignment` — per-character
+ * timestamps from its "with-timestamps" endpoint — which the widget passes
+ * to avatar.speakPCMWithAlignment() for real timestamp-anchored lip-sync
+ * instead of speakPCM()'s amplitude-only fallback. `alignment` is null for
+ * Fish Audio/Cartesia, which don't offer this.
  *
  * Shares /ask's per-(visitor, project) rate limit since this is the other
  * paid step of the same "answer a question" flow.
@@ -434,12 +440,12 @@ router.post('/:publicId/speak', validate(schemas.speak), aiCostLimiter, async (r
     const limitCheck = await checkLimit(project.userId, 'message', 1);
     if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason });
 
-    const { audioBase64, mimeType, sampleRate } = await synthesizeSpeech({
+    const { audioBase64, mimeType, sampleRate, alignment } = await synthesizeSpeech({
       engine,
       voiceId: project.voice,
       text: req.body.text,
     });
-    res.json({ audio: audioBase64, mimeType, sampleRate });
+    res.json({ audio: audioBase64, mimeType, sampleRate, alignment });
   } catch (e) {
     if (e instanceof TtsError) return res.status(502).json({ error: e.message });
     logger.error({ err: e.message }, 'speak error');

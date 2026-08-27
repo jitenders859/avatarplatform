@@ -16,6 +16,7 @@ const router = express.Router();
 const VOICE_ENGINE_ENV_KEY = {
   'fish-audio': 'FISH_AUDIO_API_KEY',
   cartesia: 'CARTESIA_API_KEY',
+  elevenlabs: 'ELEVENLABS_API_KEY',
 };
 
 // Characters assignable to a project: admin-published (status='active') and

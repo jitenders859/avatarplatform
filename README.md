@@ -41,6 +41,8 @@ You can run without `STRIPE_SECRET_KEY` — billing endpoints return 503 and the
 | `FISH_AUDIO_API_KEY` | Optional | Enables the Fish Audio voice engine (server-side only, never sent to the client — see `backend/services/tts.js`) |
 | `CARTESIA_API_KEY` | Optional | Enables the Cartesia Sonic voice engine (server-side only — see `backend/services/tts.js`) |
 | `CARTESIA_MODEL_ID` | Optional | Cartesia TTS model, defaults to `sonic-3.5` |
+| `ELEVENLABS_API_KEY` | Optional | Enables the ElevenLabs voice engine, including its per-character timestamp-based lip-sync (server-side only — see `backend/services/tts.js`) |
+| `ELEVENLABS_MODEL_ID` | Optional | ElevenLabs TTS model, defaults to `eleven_multilingual_v2` |
 | `JWT_SECRET` | Yes | Signs auth tokens |
 | `STRIPE_SECRET_KEY` | Optional | Enables billing endpoints |
 | `STRIPE_WEBHOOK_SECRET` | Optional | Validates Stripe webhook signatures |
@@ -225,7 +227,7 @@ public/
 ## Notes
 
 - **`PUBLIC_GEMINI_API_KEY`**: the Gemini Live WebSocket is opened client-side and requires a key. Use a key restricted by HTTP referrer and with per-minute quotas in production. A future version could proxy the WebSocket through this server.
-- **Voice engines**: each project picks one via the Settings tab. `gemini-live` (default) is real-time speech-to-speech with native vision (image upload). `fish-audio` and `cartesia` are text-to-speech only — the reply text still comes from the existing Gemini-backed `/ask`, and `/speak` (see `backend/services/tts.js`) turns it into audio server-side; these two don't support image upload or Gemini's native mic streaming (voice input instead uses the browser's Web Speech API, Chrome/Edge only). See `public/docs/fish-audio.html` and `public/docs/cartesia.html`.
+- **Voice engines**: each project picks one via the Settings tab. `gemini-live` (default) is real-time speech-to-speech with native vision (image upload). `fish-audio`, `cartesia`, and `elevenlabs` are text-to-speech only — the reply text still comes from the existing Gemini-backed `/ask`, and `/speak` (see `backend/services/tts.js`) turns it into audio server-side; none of the three support image upload or Gemini's native mic streaming (voice input instead uses the browser's Web Speech API, Chrome/Edge only). `elevenlabs` additionally calls ElevenLabs' "with-timestamps" endpoint for per-character audio timestamps, which `public/lipsync-sdk.js`'s `speakPCMWithAlignment()`/`warpScheduleToAlignment()` use to drive real timestamp-anchored lip-sync — reusing the same G2P engine Gemini's text-only estimation uses — instead of the amplitude-only fallback `fish-audio`/`cartesia` get. See `public/docs/fish-audio.html`, `public/docs/cartesia.html`, and `public/docs/elevenlabs-avatar.html`.
 - **Vector store**: in-memory cosine search, computed on demand from the `chunks` table. For 10k+ chunks per project, replace `services/vector.js` with sqlite-vec, pgvector, or Pinecone.
 - **Database**: JSON-file based with per-table atomic writes — fine for early scale. Swap for Postgres by reimplementing the exported surface of `db.js`.
 - **Sessions**: anonymous visitors are tracked per IP per project. The analytics API rolls them up into 30-day charts.

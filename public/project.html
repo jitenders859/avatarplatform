@@ -67,6 +67,7 @@
               <label>Speech engine</label>
               <select class="select" id="f-voice-engine">
                 <option value="gemini-live">Gemini Live — real-time speech-to-speech + vision (default)</option>
+                <option value="elevenlabs">ElevenLabs — text-to-speech with precise timestamp-based lip-sync</option>
                 <option value="fish-audio">Fish Audio — text-to-speech voices</option>
                 <option value="cartesia">Cartesia Sonic — text-to-speech voices</option>
               </select>
@@ -743,10 +744,12 @@
     applyTierVisibility(e.target.value);
   });
 
-  // Gemini Live uses one of the 30 prebuilt voice names (dropdown); Fish
-  // Audio and Cartesia use a provider-issued voice/reference id, which is an
+  // Gemini Live uses one of the 30 prebuilt voice names (dropdown); the
+  // TTS-only engines use a provider-issued voice/reference id, which is an
   // arbitrary string we can't offer as a dropdown, so those engines get a
   // free-text field instead.
+  const VOICE_ENGINE_NAMES = { 'fish-audio': 'Fish Audio', cartesia: 'Cartesia', elevenlabs: 'ElevenLabs' };
+  const VOICE_ENGINE_ENV_VARS = { 'fish-audio': 'FISH_AUDIO_API_KEY', cartesia: 'CARTESIA_API_KEY', elevenlabs: 'ELEVENLABS_API_KEY' };
   function updateVoiceFieldVisibility() {
     const engine = document.getElementById('f-voice-engine').value;
     const isGemini = engine === 'gemini-live';
@@ -755,7 +758,7 @@
     document.getElementById('f-voice-label').textContent = isGemini ? 'Voice' : 'Voice / reference ID';
     document.getElementById('f-voice-help').textContent = isGemini
       ? "One of Gemini Live's 30 built-in voices."
-      : `The voice or reference ID from your ${engine === 'fish-audio' ? 'Fish Audio' : 'Cartesia'} account. Requires ${engine === 'fish-audio' ? 'FISH_AUDIO_API_KEY' : 'CARTESIA_API_KEY'} to be configured on the server.`;
+      : `The voice or reference ID from your ${VOICE_ENGINE_NAMES[engine]} account. Requires ${VOICE_ENGINE_ENV_VARS[engine]} to be configured on the server.${engine === 'elevenlabs' ? ' ElevenLabs also gives the most accurate lip-sync of the text-to-speech engines, using its real per-character timestamps.' : ''}`;
   }
   document.getElementById('f-voice-engine').addEventListener('change', updateVoiceFieldVisibility);
 

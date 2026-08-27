@@ -669,6 +669,131 @@
   }
 
   // ═══════════════════════════════════════════════════════
+  //  TEXT → AZURE-VISEME SCHEDULE (shared by Gemini's text-estimation path
+  //  and the ElevenLabs-with-timestamps path — see warpScheduleToAlignment)
+  // ═══════════════════════════════════════════════════════
+  /**
+   * Turn arbitrary text into a flat sequence of {azId, startMs, durationMs,
+   * blendWith} entries, with startMs/durationMs being *estimates* relative
+   * to entries[0].startMs===0 (no real audio timing involved yet — that's
+   * layered on by the caller, either by scaling to a known window
+   * (_scheduleFromText, Gemini) or by warping onto real per-character
+   * timestamps (warpScheduleToAlignment, ElevenLabs)).
+   */
+  function textToAzureSchedule(text, langPill) {
+    const multiIds = anyTextToAzureIds(text, langPill);
+    if (multiIds === null) return phonemesToSchedule(textToPhonemes(text));
+
+    const MIN=55,MAX=210,MIN_SIL=130;
+    const filtered=[];
+    for(const {azId,forceDurMs} of multiIds){
+      let dur=forceDurMs||Math.max(MIN,Math.min(MAX,Math.round(80+(AZ_IMPORTANCE[azId]||0.3)*100)));
+      if(azId===0){if(dur>=MIN_SIL)filtered.push({azId:0,dur});continue;}
+      filtered.push({azId,dur});
+    }
+    const merged=[];
+    for(const item of filtered){
+      if(merged.length&&merged[merged.length-1].azId===item.azId)
+        merged[merged.length-1].dur=Math.min(MAX,merged[merged.length-1].dur+item.dur);
+      else merged.push({...item});
+    }
+    const CLOSURE=new Set([0,21]);
+    const entries=[]; let cursor=0;
+    for(let i=0;i<merged.length;i++){
+      const {azId,dur}=merged[i];
+      const isClosure=CLOSURE.has(azId);
+      let blendWith={};
+      if(!isClosure){
+        const prev=i>0?merged[i-1]:null;
+        const next=i<merged.length-1?merged[i+1]:null;
+        if(prev&&!CLOSURE.has(prev.azId)&&prev.azId!==azId) blendWith[prev.azId]=38;
+        if(next&&!CLOSURE.has(next.azId)&&next.azId!==azId) blendWith[next.azId]=28;
+      }
+      entries.push({azId,startMs:cursor,durationMs:dur,blendWith});
+      cursor+=dur;
+    }
+    return entries;
+  }
+
+  /**
+   * Rebuild a textToAzureSchedule() timeline's absolute timing to match real
+   * per-character timestamps from a TTS provider's alignment data (today:
+   * ElevenLabs' "with-timestamps" endpoint — see backend/services/tts.js).
+   * This does NOT re-derive phonemes or visemes — it reuses the exact same
+   * G2P entries Gemini's text-estimation path already produces, and only
+   * replaces each entry's startMs/durationMs.
+   *
+   * Why this works without touching any per-language G2P engine: every G2P
+   * engine above (English word rules, the 11 other language closures) walks
+   * its input text strictly left-to-right, so an entry's position in the
+   * *estimated* timeline — as a fraction of the estimate's total duration —
+   * is a decent proxy for its position in the character stream. We use that
+   * fraction to interpolate into the alignment's real per-character start
+   * times, which time-warps the G2P's relative pacing (already tuned by the
+   * phoneme-importance/duration heuristics above) onto the TTS engine's
+   * actual, non-uniform pacing (real pauses, faster/slower syllables,
+   * emphasis) — instead of either a blind text-only guess (all Gemini gets)
+   * or a single uniform per-utterance scale factor.
+   *
+   * @param {Array<{azId:number, startMs:number, durationMs:number, blendWith:object}>} entries
+   * @param {{characters:string[], characterStartTimesSeconds:number[], characterEndTimesSeconds:number[]}} alignment
+   */
+  function warpScheduleToAlignment(entries, alignment) {
+    const chars  = alignment && alignment.characters;
+    const starts = alignment && alignment.characterStartTimesSeconds;
+    const ends   = alignment && alignment.characterEndTimesSeconds;
+    if (!chars || !starts || !ends || !chars.length || !starts.length || !entries.length) return entries;
+
+    const rawTotalMs = entries.reduce((sum, e) => sum + e.durationMs, 0) || 1;
+
+    function realMsAtFraction(frac) {
+      const idx = clamp01(frac) * (chars.length - 1);
+      const lo = Math.floor(idx), hi = Math.min(chars.length - 1, lo + 1);
+      const t = idx - lo;
+      const sLo = starts[lo] ?? 0, sHi = starts[hi] ?? sLo;
+      return (sLo + (sHi - sLo) * t) * 1000;
+    }
+
+    let cursor = 0;
+    const warped = [];
+    for (const e of entries) {
+      const startFrac = cursor / rawTotalMs;
+      cursor += e.durationMs;
+      const endFrac = cursor / rawTotalMs;
+      const realStart = realMsAtFraction(startFrac);
+      const realEnd   = Math.max(realStart + 1, realMsAtFraction(endFrac));
+      warped.push({ ...e, startMs: realStart, durationMs: realEnd - realStart });
+    }
+    return warped;
+  }
+
+  /**
+   * Search an amplitude history ring buffer (see LipsyncAvatar#_runFFT) for
+   * the nearest detected energy onset within snapMs of anchorMs, and return
+   * the signed offset (ms) to move anchorMs there — or 0 if none is found.
+   * Used by _scheduleFromText's onsetSnapMs option (see its doc comment for
+   * why this exists — Gemini gives no real timing, so this nudges the
+   * text-based estimate toward the one real signal Gemini's audio does
+   * carry: its actual loudness envelope). Deliberately conservative: a
+   * missed snap is better than a wrong one, so RISE is a fairly high bar
+   * and ties go to the closest-in-time candidate.
+   */
+  function findNearestOnsetOffset(history, anchorMs, snapMs) {
+    if (!history || !history.length) return 0;
+    const RISE = 0.0006;
+    let bestOffset = 0, bestDist = Infinity;
+    for (let i = 1; i < history.length; i++) {
+      const dist = Math.abs(history[i].tMs - anchorMs);
+      if (dist > snapMs || dist >= bestDist) continue;
+      if (history[i].vol - history[i-1].vol > RISE) {
+        bestDist = dist;
+        bestOffset = history[i].tMs - anchorMs;
+      }
+    }
+    return bestOffset;
+  }
+
+  // ═══════════════════════════════════════════════════════
   //  AUDIO HELPERS
   // ═══════════════════════════════════════════════════════
   function base64ToInt16(b64){
@@ -1117,6 +1242,19 @@
         smoothingMs: 70,         // not used by timed-ramp but exposed for downstream controllers
         mouthDelayMs: 0,         // positive = delay anchor (audio arrives late); negative = advance
         amplitudeSensitivity: 1.0,
+        // Gemini Live gives no phoneme/word timestamps at all (unlike
+        // ElevenLabs' with-timestamps engine — see speakPCMWithAlignment),
+        // so _scheduleFromText's viseme timing is always a text-based
+        // estimate. When > 0, onsetSnapMs additionally nudges each
+        // estimated viseme's start time toward the nearest detected audio
+        // energy onset (see _ampHistory/_runFFT) within this many ms, in
+        // either direction — a bounded heuristic correction using the one
+        // real signal Gemini's audio does carry (its actual loudness
+        // envelope), not real timestamps. Defaults to 0 (disabled): this is
+        // unverified against production audio and could misfire (snapping
+        // to the wrong onset) on some voices/languages, so it's opt-in
+        // rather than silently changing existing Gemini Live behavior.
+        onsetSnapMs: 0,
         // Character behavior controller
         enableBehavior: false,
         behaviorConfig: {},
@@ -1168,6 +1306,7 @@
       this._audioStart   = 0;
       this._lastTextAnchorMs = 0; // scheduled-audio ms at the last processed transcript delta
       this._fftBands     = {};
+      this._ampHistory   = []; // {tMs, vol} ring buffer for onsetSnapMs (see _runFFT/_scheduleFromText)
       this._silenceHoldMs       = 0;
       this._destroyed           = false;
       this._outputTranscriptBuf = '';
@@ -1269,6 +1408,31 @@
       if (!base64Pcm16 || this._destroyed) return;
       this._ensureAudioCtx();
       this._playPCM(base64ToInt16(base64Pcm16));
+    }
+
+    /**
+     * Like speakPCM(), but for a TTS provider that also returns per-
+     * character timestamps for the text it synthesized — today, ElevenLabs'
+     * "with-timestamps" endpoint (see backend/services/tts.js's `alignment`
+     * field). Instead of falling back to amplitude-driven mouth movement
+     * (speakPCM's only option without any transcript timing), this builds a
+     * full, precisely-timed Azure-viseme schedule up front by reusing the
+     * same G2P phoneme→viseme engines Gemini's text-estimation path uses,
+     * then warping their relative timing onto the real per-character
+     * timestamps (see warpScheduleToAlignment) — real measured timing
+     * instead of a blind text-based guess.
+     * @param {string} base64Pcm16
+     * @param {string} text - the exact text that was synthesized
+     * @param {{characters:string[], characterStartTimesSeconds:number[], characterEndTimesSeconds:number[]}} [alignment]
+     *   Falls back to speakPCM()'s amplitude-only behavior if omitted/empty.
+     */
+    speakPCMWithAlignment(base64Pcm16, text, alignment) {
+      if (!base64Pcm16 || this._destroyed) return;
+      this._ensureAudioCtx();
+      this._playPCM(base64ToInt16(base64Pcm16));
+      if (text && alignment && alignment.characters && alignment.characters.length) {
+        this._scheduleFromAlignment(text, alignment);
+      }
     }
 
     /** Start microphone capture (hold-to-speak) */
@@ -1714,41 +1878,7 @@ When answering, speak naturally and conversationally — do not read the knowled
     _scheduleFromText(text) {
       if (!text || !text.trim()) return;
 
-      const multiIds = anyTextToAzureIds(text, this._el.langPill);
-      let entries;
-
-      if (multiIds !== null) {
-        const MIN=55,MAX=210,MIN_SIL=130;
-        const filtered=[];
-        for(const {azId,forceDurMs} of multiIds){
-          let dur=forceDurMs||Math.max(MIN,Math.min(MAX,Math.round(80+(AZ_IMPORTANCE[azId]||0.3)*100)));
-          if(azId===0){if(dur>=MIN_SIL)filtered.push({azId:0,dur});continue;}
-          filtered.push({azId,dur});
-        }
-        const merged=[];
-        for(const item of filtered){
-          if(merged.length&&merged[merged.length-1].azId===item.azId)
-            merged[merged.length-1].dur=Math.min(MAX,merged[merged.length-1].dur+item.dur);
-          else merged.push({...item});
-        }
-        const CLOSURE=new Set([0,21]);
-        entries=[]; let cursor=0;
-        for(let i=0;i<merged.length;i++){
-          const {azId,dur}=merged[i];
-          const isClosure=CLOSURE.has(azId);
-          let blendWith={};
-          if(!isClosure){
-            const prev=i>0?merged[i-1]:null;
-            const next=i<merged.length-1?merged[i+1]:null;
-            if(prev&&!CLOSURE.has(prev.azId)&&prev.azId!==azId) blendWith[prev.azId]=38;
-            if(next&&!CLOSURE.has(next.azId)&&next.azId!==azId) blendWith[next.azId]=28;
-          }
-          entries.push({azId,startMs:cursor,durationMs:dur,blendWith});
-          cursor+=dur;
-        }
-      } else {
-        entries = phonemesToSchedule(textToPhonemes(text));
-      }
+      const entries = textToAzureSchedule(text, this._el.langPill);
 
       // ── Window-based duration scaling ──────────────────────────
       // Gemini Live gives no phoneme timestamps, but a PCM chunk's duration is
@@ -1787,14 +1917,60 @@ When answering, speak naturally and conversationally — do not read the knowled
 
       const ant    = this._opts.anticipationMs || 0;
       const minMs  = this._opts.minVisemeMs    || 0;
+      const snapMs = this._opts.onsetSnapMs    || 0;
       for (const e of entries) {
         // Enforce minimum hold on non-silence visemes
         if (minMs > 0 && e.azId !== 0 && e.durationMs < minMs) e.durationMs = minMs;
         // Anticipation: mouth starts ant ms before the scheduled phoneme.
         // Math.max(base, ...) prevents pushing entries before the current audio position.
+        let startMs = Math.max(base, base + e.startMs - ant);
+        // Opt-in refinement (see onsetSnapMs's doc comment): nudge toward a
+        // detected audio onset near this estimate, within a small tolerance.
+        if (snapMs > 0 && e.azId !== 0) {
+          startMs += findNearestOnsetOffset(this._ampHistory, startMs, snapMs);
+        }
         this._schedQueue.push({
           ...e,
-          startMs: Math.max(base, base + e.startMs - ant),
+          startMs,
+          endMs: base + e.startMs + e.durationMs,
+        });
+      }
+      if (!this._schedRaf) this._driveSchedule();
+    }
+
+    /**
+     * Like _scheduleFromText(), but for a TTS provider that returns real
+     * per-character timestamps for text it already fully synthesized
+     * up-front (ElevenLabs' "with-timestamps" endpoint — see
+     * speakPCMWithAlignment()). No streaming window-scaling is needed here:
+     * warpScheduleToAlignment() already anchored every entry to real
+     * timestamps, so this just places the whole schedule against the
+     * current audio position (same base logic as _scheduleFromText, in case
+     * a previous utterance's queue hasn't fully drained yet).
+     */
+    _scheduleFromAlignment(text, alignment) {
+      if (!text || !text.trim()) return;
+
+      const entries = warpScheduleToAlignment(textToAzureSchedule(text, this._el.langPill), alignment);
+
+      const queueEndMs = this._schedQueue.length > 0
+        ? this._schedQueue[this._schedQueue.length-1].startMs +
+          this._schedQueue[this._schedQueue.length-1].durationMs
+        : 0;
+      const audioOffsetMs = this._audioStart > 0
+        ? (this._audioCtx.currentTime - this._audioStart) * 1000
+        : 0;
+      const base = Math.max(queueEndMs, audioOffsetMs);
+
+      const minMs = this._opts.minVisemeMs || 0;
+      for (const e of entries) {
+        if (minMs > 0 && e.azId !== 0 && e.durationMs < minMs) e.durationMs = minMs;
+        // No anticipation offset here (unlike _scheduleFromText) — these
+        // start times are real, measured timestamps, not text-based
+        // estimates that benefit from a pre-roll fudge factor.
+        this._schedQueue.push({
+          ...e,
+          startMs: Math.max(base, base + e.startMs),
           endMs:   base + e.startMs + e.durationMs,
         });
       }
@@ -2183,6 +2359,17 @@ When answering, speak naturally and conversationally — do not read the knowled
       };
       for (const k of Object.keys(raw)) {
         this._fftBands[k] = (this._fftBands[k]||0)*(1-FFT_ALPHA) + raw[k]*FFT_ALPHA;
+      }
+
+      // Amplitude history for onsetSnapMs (see _scheduleFromText) — only
+      // bothered with when a caller opts in, and pruned to the last 3s so
+      // it can't grow unbounded across a long session.
+      if (this._opts.onsetSnapMs > 0 && this._audioStart > 0) {
+        const tMs = (this._audioCtx.currentTime - this._audioStart) * 1000;
+        const vol = Object.values(this._fftBands).reduce((a,b)=>a+b,0)/5;
+        this._ampHistory.push({ tMs, vol });
+        const cutoff = tMs - 3000;
+        while (this._ampHistory.length && this._ampHistory[0].tMs < cutoff) this._ampHistory.shift();
       }
 
       // Update band meter

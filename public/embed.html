@@ -422,7 +422,10 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   // (avatar.speakPCM — see public/lipsync-sdk.js), so the avatar stays
   // visible and animated even though there's no live Gemini connection.
   function engineLabel(engine) {
-    return engine === 'fish-audio' ? 'Fish Audio' : engine === 'cartesia' ? 'Cartesia' : 'Voice';
+    if (engine === 'fish-audio') return 'Fish Audio';
+    if (engine === 'cartesia') return 'Cartesia';
+    if (engine === 'elevenlabs') return 'ElevenLabs';
+    return 'Voice';
   }
 
   function initTtsMode() {
@@ -471,7 +474,12 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       });
       if (!res.ok) return;
       const data = await res.json();
-      if (data.audio) avatar.speakPCM(data.audio);
+      if (!data.audio) return;
+      // ElevenLabs returns per-character timestamps alongside the audio —
+      // when present, use them for precise lip-sync instead of the
+      // amplitude-only fallback speakPCM() uses without any timing data.
+      if (data.alignment) avatar.speakPCMWithAlignment(data.audio, text, data.alignment);
+      else avatar.speakPCM(data.audio);
     } catch (_) { /* voice is best-effort */ }
   }
 

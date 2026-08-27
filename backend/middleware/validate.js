@@ -32,7 +32,7 @@ const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const YOUTUBE_URL_RE = /^https:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/;
 const CAPTURE_FIELD_TYPES = ['text', 'email', 'phone', 'number', 'date', 'time', 'select'];
 
-const VOICE_ENGINES = ['gemini-live', 'fish-audio', 'cartesia'];
+const VOICE_ENGINES = ['gemini-live', 'fish-audio', 'cartesia', 'elevenlabs'];
 
 const systemPrompt = z.string().max(4000, 'systemPrompt too long').optional();
 // Gemini Live projects must use one of the 30 prebuilt voice names; Fish

@@ -51,27 +51,42 @@
       <div class="docs-content">
         <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>SDK Introduction</div>
         <h1>ElevenLabs Avatar</h1>
-        <p class="docs-lead">Use ElevenLabs voices instead of the default Gemini TTS engine. ElevenLabs produces more natural, expressive speech — particularly useful for characters with a specific personality or accent.</p>
+        <p class="docs-lead">Use an ElevenLabs voice instead of Gemini Live. Unlike Fish Audio and Cartesia, AvatarPlatform calls ElevenLabs' "with-timestamps" endpoint — a lesser-known variant of its TTS API that also returns the start time of every character in the synthesized audio — and uses that to drive real, precisely-timed lip-sync instead of falling back to amplitude-only mouth movement.</p>
 
-        <h2>Overview</h2>
-        <p>By default, AvatarPlatform uses the voice engine built into the Gemini Live API for real-time speech synthesis. When you configure an ElevenLabs voice, the platform routes audio generation through the ElevenLabs TTS API instead.</p>
-        <p>The lip-sync pipeline is the same regardless of voice engine: audio is analysed in real-time by the hybrid amplitude+phoneme controller, and viseme weights are driven into Rive via the 23-input state machine.</p>
+        <div class="callout callout-warn">
+          <span class="callout-icon">⚠️</span>
+          <div class="callout-body"><p>Like Fish Audio and Cartesia, ElevenLabs does not do speech understanding or live conversation — it only turns text into audio. Setting a project's speech engine to ElevenLabs changes how it answers: no native vision (image upload is unavailable), and microphone input is transcribed by the browser's own Web Speech API (Chrome/Edge) instead of being streamed to the provider.</p></div>
+        </div>
+
+        <h2>How it works</h2>
+        <ol>
+          <li>The visitor's message goes to the existing <code>POST /embed/:publicId/ask</code> endpoint, which runs the normal Gemini-backed knowledge-base RAG pipeline and returns reply text — completely unchanged by which voice engine is selected.</li>
+          <li>The widget calls <code>POST /embed/:publicId/speak</code> with that text. The server calls ElevenLabs' <code>/v1/text-to-speech/:voice_id/with-timestamps</code> endpoint (<code>backend/services/tts.js</code>), which returns both the synthesized audio and an <code>alignment</code> object: parallel arrays of every character in the text, its start time, and its end time, all in seconds.</li>
+          <li>The browser calls <code>avatar.speakPCMWithAlignment(audio, text, alignment)</code> (<code>public/lipsync-sdk.js</code>) instead of the plain <code>speakPCM()</code> used for Fish Audio/Cartesia. This reuses the exact same multilingual G2P (grapheme-to-phoneme) → Azure-viseme engine already built for Gemini Live's text-only lip-sync estimation, then <em>time-warps</em> that estimate's relative pacing onto the real per-character timestamps (<code>warpScheduleToAlignment()</code>) — so pauses, emphasis, and speaking-rate changes in the actual audio are reflected in the mouth movement, not just guessed at.</li>
+        </ol>
+
+        <div class="callout callout-tip">
+          <span class="callout-icon">💡</span>
+          <div class="callout-body"><p><strong>Why this is more accurate than Gemini Live's own lip-sync:</strong> Gemini Live's API gives no phoneme or word timing at all, so its estimate can only be scaled to fit each audio chunk's overall duration. ElevenLabs' per-character timestamps give a real, non-uniform pacing signal to anchor to — no new phoneme engine was needed to take advantage of it.</p></div>
+        </div>
 
         <h2>Configuration</h2>
         <h3>Step 1 — Add your ElevenLabs API key</h3>
-        <p>Add the key to your <code>.env</code> file:</p>
-        <pre><code class="language-bash">ELEVENLABS_API_KEY=your-elevenlabs-api-key</code></pre>
+        <pre><code class="language-bash"># .env — server-side only, never sent to the browser
+ELEVENLABS_API_KEY=your-elevenlabs-api-key
+# Optional override:
+ELEVENLABS_MODEL_ID=eleven_multilingual_v2</code></pre>
 
-        <h3>Step 2 — Set the voice ID per project</h3>
-        <p>In the dashboard, open your project → <strong>Settings</strong> tab → <strong>Voice</strong> dropdown. ElevenLabs voices appear in the list once your API key is configured. You can also set the voice ID directly via the API:</p>
+        <h3>Step 2 — Set the engine and voice for a project</h3>
+        <p>In the dashboard, open your project → <strong>Settings</strong> tab and set <strong>Speech engine</strong> to <em>ElevenLabs</em>, then paste your voice ID into the field that appears. You can also do this via the API:</p>
         <pre><code class="language-bash">PATCH /api/projects/:id
 Content-Type: application/json
 Authorization: Bearer YOUR_JWT
 
 {
-  "voice": "el:21m00Tcm4TlvDq8ikWAM"
+  "voiceEngine": "elevenlabs",
+  "voice": "21m00Tcm4TlvDq8ikWAM"
 }</code></pre>
-        <p>The <code>el:</code> prefix tells the embed SDK to use the ElevenLabs voice engine. The value after the colon is the ElevenLabs voice ID.</p>
 
         <h3>Popular voice IDs</h3>
         <table class="props-table">
@@ -84,56 +99,31 @@ Authorization: Bearer YOUR_JWT
             <tr><td><code>VR6AewLTigWG4xSOukaG</code></td><td>Arnold</td><td>Crisp, American male. Great for product demos.</td></tr>
           </tbody>
         </table>
-        <p>You can browse all available voices in the <a href="https://elevenlabs.io/voice-library" target="_blank" rel="noopener">ElevenLabs voice library</a>.</p>
+        <p>Browse all available voices in the <a href="https://elevenlabs.io/voice-library" target="_blank" rel="noopener">ElevenLabs voice library</a>.</p>
 
-        <h2>How it works</h2>
-        <p>When a visitor speaks to the agent:</p>
-        <ol>
-          <li>The Gemini Live WebSocket processes speech-to-text and generates a text response</li>
-          <li>The text response is sent to the ElevenLabs TTS API (server-side proxy at <code>/embed/:publicId/tts</code>)</li>
-          <li>The audio is streamed back to the browser in chunks</li>
-          <li>The hybrid lip-sync controller analyses each audio chunk in real-time and drives the Rive state machine</li>
-        </ol>
+        <div class="callout callout-info">
+          <span class="callout-icon">ℹ️</span>
+          <div class="callout-body"><p>Saving is rejected with a clear error if <code>ELEVENLABS_API_KEY</code> isn't set on the server yet — this is checked at save time so a broken engine choice can't silently ship to visitors.</p></div>
+        </div>
 
-        <h2>Latency tradeoffs</h2>
-        <table class="props-table">
-          <thead><tr><th></th><th>Gemini Live (default)</th><th>ElevenLabs</th></tr></thead>
-          <tbody>
-            <tr>
-              <td><strong>Latency</strong></td>
-              <td>~300ms end-to-end (fully streaming)</td>
-              <td>~600–900ms (TTS generation adds a round trip)</td>
-            </tr>
-            <tr>
-              <td><strong>Voice quality</strong></td>
-              <td>Good — natural but sometimes robotic on long outputs</td>
-              <td>Excellent — highly expressive, consistent</td>
-            </tr>
-            <tr>
-              <td><strong>Language support</strong></td>
-              <td>30+ languages auto-detected</td>
-              <td>29 languages, specified per request</td>
-            </tr>
-            <tr>
-              <td><strong>Cost</strong></td>
-              <td>Included in Gemini Live pricing</td>
-              <td>ElevenLabs character credits billed separately</td>
-            </tr>
-          </tbody>
-        </table>
+        <h2>Output format</h2>
+        <p><code>backend/services/tts.js</code> requests <code>output_format=pcm_24000</code> directly, matching the sample rate the avatar's playback pipeline already expects (no client-side resampling). As a defensive fallback, a response wrapped in a WAV container is detected and unwrapped automatically, in case your account's API response shape differs slightly from what's documented.</p>
 
         <div class="callout callout-tip">
           <span class="callout-icon">💡</span>
-          <div class="callout-body"><p><strong>Recommendation:</strong> Use Gemini Live voices for the lowest latency. Switch to ElevenLabs when voice personality matters more than response speed — for example, a brand mascot or a product demo agent.</p></div>
+          <div class="callout-body"><p><strong>If synthesis calls fail in your account:</strong> the request shape (endpoint path, header names, the <code>alignment</code> field names) is set based on ElevenLabs' public API — if your account differs, adjust <code>synthesizeElevenLabs()</code> in <code>backend/services/tts.js</code>; failures are logged server-side with the response body to make this quick to diagnose.</p></div>
         </div>
 
-        <h2>ElevenLabs streaming</h2>
-        <p>AvatarPlatform uses ElevenLabs' streaming TTS endpoint (<code>/v1/text-to-speech/:voiceId/stream</code>) with <code>optimize_streaming_latency=3</code> to minimise the first-byte delay. Audio is passed to the Web Audio API and analysed with a real-time FFT analyser — the same pipeline used for Gemini Live audio.</p>
-
-        <div class="callout callout-warn">
-          <span class="callout-icon">⚠️</span>
-          <div class="callout-body"><p>ElevenLabs requires a server-side proxy because the API key must never be exposed to the browser. The proxy endpoint is already built into the embed routes — no extra configuration is needed beyond setting <code>ELEVENLABS_API_KEY</code>.</p></div>
-        </div>
+        <h2>When to use this instead of Gemini Live, Fish Audio, or Cartesia</h2>
+        <table class="props-table">
+          <thead><tr><th></th><th>Gemini Live</th><th>ElevenLabs</th><th>Fish Audio / Cartesia</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Speech understanding</strong></td><td>Native, live</td><td>None — text from <code>/ask</code></td><td>None — text from <code>/ask</code></td></tr>
+            <tr><td><strong>Vision (image upload)</strong></td><td>Yes</td><td>Not supported</td><td>Not supported</td></tr>
+            <tr><td><strong>Lip-sync accuracy</strong></td><td>Text-estimated, scaled to chunk duration</td><td>Text-estimated, warped onto real per-character timestamps — the most accurate of the three TTS-only engines</td><td>Amplitude-only (no timing data available)</td></tr>
+            <tr><td><strong>Latency</strong></td><td>Lowest — one streaming session</td><td colspan="2">Higher — two sequential HTTP calls per turn</td></tr>
+          </tbody>
+        </table>
       </div>
     </main>
   </div>

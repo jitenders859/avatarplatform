@@ -1,33 +1,47 @@
 /**
  * Text-to-speech service for the "TTS-only" voice engines (Fish Audio,
- * Cartesia) — alternatives to the default Gemini Live speech-to-speech
- * engine for owners who want a specific voice model instead of Gemini's
- * built-in ones. Unlike Gemini Live / OpenAI Realtime, these providers only
- * synthesize audio from text — they don't do speech understanding or a live
- * session, so the reply text itself still comes from the existing Gemini
- * RAG pipeline (see POST /embed/:publicId/ask) and this service is called
- * afterward, server-side, to turn that text into audio.
+ * Cartesia, ElevenLabs) — alternatives to the default Gemini Live
+ * speech-to-speech engine for owners who want a specific voice model
+ * instead of Gemini's built-in ones. Unlike Gemini Live / OpenAI Realtime,
+ * these providers only synthesize audio from text — they don't do speech
+ * understanding or a live session, so the reply text itself still comes
+ * from the existing Gemini RAG pipeline (see POST /embed/:publicId/ask)
+ * and this service is called afterward, server-side, to turn that text
+ * into audio.
  *
  * Configure via env vars (only the ones for engines you actually use):
- *   FISH_AUDIO_API_KEY  — https://fish.audio API key
- *   CARTESIA_API_KEY    — https://cartesia.ai API key
- *   CARTESIA_MODEL_ID   — default 'sonic-3.5'
+ *   FISH_AUDIO_API_KEY   — https://fish.audio API key
+ *   CARTESIA_API_KEY     — https://cartesia.ai API key
+ *   CARTESIA_MODEL_ID    — default 'sonic-3.5'
+ *   ELEVENLABS_API_KEY   — https://elevenlabs.io API key
+ *   ELEVENLABS_MODEL_ID  — default 'eleven_multilingual_v2'
  *
  * Output contract: synthesizeSpeech() always resolves to raw PCM16 little-
  * endian, mono, 24kHz audio as a Buffer — matching public/lipsync-sdk.js's
  * OUT_RATE constant, so the widget can feed it straight into the avatar's
- * existing playback/lip-sync pipeline (avatar.speakPCM) with no client-side
- * resampling. Both providers are asked for that format directly; as a
- * defensive fallback (in case a provider ignores the requested format or
- * wraps it in a WAV container) a leading "RIFF" header is detected and
- * stripped so a plain PCM buffer comes out either way.
+ * existing playback/lip-sync pipeline with no client-side resampling. All
+ * three providers are asked for that format directly; as a defensive
+ * fallback (in case a provider ignores the requested format or wraps it in
+ * a WAV container) a leading "RIFF" header is detected and stripped so a
+ * plain PCM buffer comes out either way.
+ *
+ * ElevenLabs is also asked for its "with-timestamps" endpoint, a
+ * lesser-known variant of its TTS API that returns per-CHARACTER start/end
+ * times for the synthesized audio alongside the audio itself. That's a
+ * different — and far more useful — signal than a full-utterance duration:
+ * it captures the model's real (non-uniform) pacing, including pauses and
+ * emphasis, per character of input text. public/lipsync-sdk.js's
+ * warpScheduleToAlignment() uses it to correct the same G2P-based
+ * phoneme→viseme timeline already built for Gemini Live's text-only
+ * estimation, rather than falling back to amplitude-only mouth movement
+ * (see speakPCMWithAlignment() vs. speakPCM()).
  */
 const fetch = require('node-fetch');
 const logger = require('../logger').child({ module: 'services/tts' });
 
 const PCM_SAMPLE_RATE = 24000;
 
-const ENGINES = ['fish-audio', 'cartesia'];
+const ENGINES = ['fish-audio', 'cartesia', 'elevenlabs'];
 
 class TtsError extends Error {
   constructor(message, { status } = {}) {
@@ -116,21 +130,79 @@ async function synthesizeCartesia(voiceId, text) {
 }
 
 /**
- * @param {{ engine: 'fish-audio'|'cartesia', voiceId: string, text: string }} opts
- * @returns {Promise<{ audioBase64: string, mimeType: string, sampleRate: number }>}
+ * ElevenLabs' "with-timestamps" endpoint — same synthesis as its regular TTS
+ * endpoint, but the response is JSON carrying both the audio and a character-
+ * level `alignment` (parallel arrays: characters, their start times, their
+ * end times, all in seconds from the start of the audio). Requesting
+ * output_format=pcm_24000 gets raw PCM16LE samples back in `audio_base64`
+ * (no WAV wrapper) — stripWavHeader() below is only a defensive fallback in
+ * case that changes.
+ */
+async function synthesizeElevenLabs(voiceId, text) {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) throw new TtsError('ElevenLabs is not configured on this server (missing ELEVENLABS_API_KEY).');
+  if (!voiceId) throw new TtsError('This project has no ElevenLabs voice ID configured.');
+
+  const res = await fetch(
+    `https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}/with-timestamps?output_format=pcm_${PCM_SAMPLE_RATE}`,
+    {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text,
+        model_id: process.env.ELEVENLABS_MODEL_ID || 'eleven_multilingual_v2',
+      }),
+      timeout: 20000,
+    }
+  );
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    logger.warn({ status: res.status, body: body.slice(0, 500) }, 'ElevenLabs TTS request failed');
+    throw new TtsError(`ElevenLabs TTS request failed (${res.status})`, { status: res.status });
+  }
+
+  const data = await res.json();
+  const pcm = stripWavHeader(Buffer.from(data.audio_base64, 'base64'));
+  const a = data.alignment || {};
+
+  return {
+    pcm,
+    alignment: (a.characters && a.characters.length)
+      ? {
+          characters: a.characters,
+          characterStartTimesSeconds: a.character_start_times_seconds,
+          characterEndTimesSeconds: a.character_end_times_seconds,
+        }
+      : null,
+  };
+}
+
+/**
+ * @param {{ engine: 'fish-audio'|'cartesia'|'elevenlabs', voiceId: string, text: string }} opts
+ * @returns {Promise<{ audioBase64: string, mimeType: string, sampleRate: number, alignment: object|null }>}
  */
 async function synthesizeSpeech({ engine, voiceId, text }) {
   if (!ENGINES.includes(engine)) throw new TtsError(`Unsupported voice engine: ${engine}`);
   if (!text || !text.trim()) throw new TtsError('No text to speak');
 
-  const pcm = engine === 'fish-audio'
-    ? await synthesizeFishAudio(voiceId, text)
-    : await synthesizeCartesia(voiceId, text);
+  let pcm, alignment = null;
+  if (engine === 'fish-audio') {
+    pcm = await synthesizeFishAudio(voiceId, text);
+  } else if (engine === 'cartesia') {
+    pcm = await synthesizeCartesia(voiceId, text);
+  } else {
+    ({ pcm, alignment } = await synthesizeElevenLabs(voiceId, text));
+  }
 
   return {
     audioBase64: pcm.toString('base64'),
     mimeType: 'audio/pcm;rate=24000',
     sampleRate: PCM_SAMPLE_RATE,
+    alignment,
   };
 }
 
