@@ -1069,6 +1069,14 @@
      *   Auto-fires when its keywords appear in the AI's spoken reply (see CharacterBehaviorController#reactToEmotion);
      *   fire one on demand with avatar.fireCharacterTrigger(name). Requires enableBehavior:true. Matches the shape
      *   returned by GET /embed/:publicId/config's character.triggers.
+     * @param {Array<object>}      [opts.tools] - Gemini Live function-calling tools the model can invoke mid-session —
+     *   e.g. a knowledge-base search tool. Each entry: { name, description, parameters (a JSON-schema-like object,
+     *   same shape Gemini function declarations use — see backend/services/tools.js for existing examples),
+     *   handler: async (args) => response }. handler's return value (a plain object) is sent back to the model as the
+     *   function's result. Unlike opts.knowledgeBase (baked into the system prompt once, only takes effect on the next
+     *   connect()), a tool can be called by the model at any point in an ongoing session — including during a spoken
+     *   conversation, not just a typed one — with no reconnect needed, so it's the right mechanism for retrieval that
+     *   should stay current turn-by-turn.
      */
     constructor(opts = {}) {
       if (!opts.container) throw new Error('[LipsyncAvatar] opts.container is required');
@@ -1106,6 +1114,7 @@
         enableBehavior: false,
         behaviorConfig: {},
         characterTriggers: [],
+        tools: [],
       }, opts);
 
       this._opts.visemeMinValue = Math.max(1, Math.min(99, Number(this._opts.visemeMinValue) || RIVE_ACTIVE_MIN_VALUE));
@@ -1113,6 +1122,9 @@
       this._opts.visemePeakRatio = Math.max(0.1, Math.min(1, Number(this._opts.visemePeakRatio) || 0.88));
       this._opts.visemeOverlapMs = Math.max(0, Math.min(140, Number(this._opts.visemeOverlapMs) || 35));
       this._opts.visemeSmoothingMs = Math.max(0, Math.min(200, Number(this._opts.visemeSmoothingMs) ?? 90));
+
+      this._tools = (this._opts.tools || []).filter(t => t && t.name && typeof t.handler === 'function');
+      this._toolsByName = Object.fromEntries(this._tools.map(t => [t.name, t]));
 
       this._riveInputByAz = RIVE_INPUT_BY_AZ.slice();
       if (this._opts.riveInputMap && typeof this._opts.riveInputMap === 'object') {
@@ -1872,6 +1884,13 @@ When answering, speak naturally and conversationally — do not read the knowled
             system_instruction: {
               parts: [{ text: this._buildSystemPrompt() }],
             },
+            ...(this._tools.length ? {
+              tools: [{
+                function_declarations: this._tools.map(t => ({
+                  name: t.name, description: t.description || '', parameters: t.parameters,
+                })),
+              }],
+            } : {}),
           },
         }));
       };
@@ -1903,6 +1922,18 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._addMsg('Session started', 'system');
           if (this._behaviorCtrl) this._behaviorCtrl.setState('idle');
           this._fire('onConnected');
+          return;
+        }
+
+        if (msg.toolCall?.functionCalls?.length) {
+          this._handleToolCall(msg.toolCall.functionCalls);
+          return;
+        }
+        if (msg.toolCallCancellation) {
+          // Handlers are fire-and-forget async calls with no abort hook — a
+          // cancelled call's eventual response is simply never sent (guarded
+          // in _handleToolCall by the same _isConnected/_ws check used
+          // everywhere else), so there's nothing to actively cancel here.
           return;
         }
 
@@ -2029,6 +2060,33 @@ When answering, speak naturally and conversationally — do not read the knowled
       this._audioStart = 0;
       this._lastTextAnchorMs = 0;
       if (this._ws) { try { this._ws.close(); } catch(_) {} this._ws = null; }
+    }
+
+    // ─────────────────────────────────────────────────────
+    //  TOOL CALLING (opts.tools)
+    // ─────────────────────────────────────────────────────
+    // Dispatches every call in a batch in parallel — Gemini Live sends all
+    // of a turn's function calls in one toolCall message, and there's no
+    // ordering dependency between separate tool invocations the way
+    // /study's REST tool-loop has (that one chains sequential chat turns;
+    // this is a single reply to one batch). Keeps the ws open just long
+    // enough to send the response even if a handler is slow — but bails if
+    // the session already ended (disconnect mid-flight) rather than send on
+    // a stale/closed socket.
+    async _handleToolCall(functionCalls) {
+      const ws = this._ws;
+      const responses = await Promise.all(functionCalls.map(async (call) => {
+        const tool = this._toolsByName[call.name];
+        let response;
+        try {
+          response = tool ? await tool.handler(call.args || {}) : { error: `Unknown tool: ${call.name}` };
+        } catch (e) {
+          response = { error: e?.message || String(e) };
+        }
+        return { id: call.id, name: call.name, response };
+      }));
+      if (!this._isConnected || this._ws !== ws) return;
+      ws.send(JSON.stringify({ tool_response: { function_responses: responses } }));
     }
 
     // ─────────────────────────────────────────────────────

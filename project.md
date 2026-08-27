@@ -47,9 +47,10 @@ Browser (embed.html)                   Browser (dashboard)
 ```
 
 **Data flow for a chat message:**
-1. Visitor types a message → `embed.html` calls `POST /embed/:id/retrieve`
-2. Server embeds the query with Gemini, runs pgvector cosine search, returns top-K chunks
-3. Chunks injected into Gemini Live SDK's `knowledgeBase` — AI answers with RAG context
+1. Visitor speaks or types into `embed.html` — one persistent Gemini Live session handles both, so the AI keeps the conversation's context rather than restarting fresh per message
+2. Whenever the model decides it needs specific knowledge-base content, it calls the `search_knowledge_base` function-calling tool declared in the Live session setup (`public/lipsync-sdk.js`'s `opts.tools`)
+3. The tool's handler (`embed.html`) calls `POST /embed/:id/retrieve`; the server embeds the query with Gemini, runs pgvector cosine search (dropping anything below `RAG_MIN_SCORE`), and returns top-K chunks
+4. Results are sent back over the same Live connection as the function's response — the AI answers grounded in that content, and the widget attaches the matching source citations to the reply
 4. Transcript logged via `POST /embed/:id/log` for analytics and webhooks
 
 ---

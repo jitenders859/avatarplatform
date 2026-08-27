@@ -271,6 +271,7 @@
 
     captureFields = config.captureFields || [];
     const baseSystemPrompt = (config.project.systemPrompt || '')
+      + buildKnowledgeBaseToolInstructions()
       + buildCaptureInstructions(captureFields)
       + buildQuickReplyInstructions(config.project.showQuickReplies);
     const systemPromptWithGreeting = welcomeMessage
@@ -292,6 +293,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       width: 300, height: 300,
       enableBehavior: true,
       characterTriggers: config.character?.triggers || [],
+      tools: [searchKnowledgeBaseTool()],
 
       onConnected: () => {
         statusDot.className = 'status-dot connected';
@@ -485,7 +487,15 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   }
 
   // ── 3. Sending messages ─────────────────────────────────────
-  async function sendMessage(text) {
+  // Sends straight into the persistent Live session — retrieval now
+  // happens on demand via the search_knowledge_base tool (see
+  // searchKnowledgeBaseTool() above) instead of reconnecting the session
+  // on every message. That old reconnect-per-message approach also meant
+  // the AI silently lost the whole conversation so far each time (a fresh
+  // Live session carries no memory of the one it replaced); this keeps one
+  // session running for as long as the visitor stays connected, same as
+  // the mic/voice path already did.
+  function sendMessage(text) {
     text = (text || '').trim();
     if (!text) return;
     if (textOnly) return sendTextOnly(text);
@@ -495,41 +505,15 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     textInput.style.height = 'auto';
     sendBtn.disabled = true;
 
-    let retrieved = { chunks: [], sources: [], figures: [] };
-    try {
-      statusText.textContent = 'Thinking…';
-      const res = await fetch(`/embed/${publicId}/retrieve`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: text, k: 5 }),
-      });
-      if (res.ok) retrieved = await res.json();
-      else if (res.status === 429) {
-        addMessage('bot', '⚠️ Slow down a bit — too many messages in a short time.');
-        sendBtn.disabled = false;
-        return;
-      }
-    } catch (e) { console.warn('[retrieve] failed:', e); }
+    const proceed = () => {
+      currentBotMsgEl = addMessage('bot', '');
+      avatar.sendText(text);
+      sendBtn.disabled = false;
+      logTurn('user', text);
+    };
 
-    pendingSources = (config.project.showSourceCards !== false) ? retrieved.sources : null;
-    pendingFigures = retrieved.figures || [];
-
-    const kbText = retrieved.chunks.length === 0 ? ''
-      : retrieved.chunks.map((c, i) =>
-          `[Source ${i + 1}: ${c.fileName || 'unnamed'}]\n${c.text}`
-        ).join('\n\n');
-    if (kbText) avatar.setKnowledgeBase(kbText);
-
-    try { avatar.disconnect(); } catch (_) {}
-    setTimeout(() => {
-      avatar.connect();
-      waitForConnected(() => {
-        currentBotMsgEl = addMessage('bot', '');
-        avatar.sendText(text);
-        sendBtn.disabled = false;
-        logTurn('user', text);
-      });
-    }, 150);
+    avatar.connect();
+    waitForConnected(proceed);
   }
 
   // ── Image upload ──────────────────────────────────────────────
@@ -1244,6 +1228,59 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   });
 
   // ── Capture helpers ─────────────────────────────────────────
+  function buildKnowledgeBaseToolInstructions() {
+    return `
+
+You have a search_knowledge_base tool connected to this website's uploaded documents and indexed pages. Call it whenever the user asks something that might be covered there — don't guess or rely on general knowledge for anything specific to this business/product/topic. It's fine to call it more than once per turn if the first search doesn't return what you need. If it returns nothing relevant, say so honestly rather than making something up.`;
+  }
+
+  // The one retrieval mechanism for the whole avatar widget — voice and
+  // typed messages alike. Gemini Live calls this mid-session whenever the
+  // model decides it needs knowledge-base content (see lipsync-sdk.js's
+  // opts.tools), instead of the old approach of always re-fetching and
+  // reconnecting the whole session on every typed message (which also
+  // silently dropped the AI's memory of the conversation so far — a fresh
+  // Live session has no history from the one it replaced). Backs onto the
+  // same /retrieve endpoint the text-only /ask fallback already used.
+  function searchKnowledgeBaseTool() {
+    return {
+      name: 'search_knowledge_base',
+      description:
+        "Search this chatbot's knowledge base (uploaded documents and indexed web pages) for information " +
+        "relevant to the user's question. Call this whenever you need specific facts, details, or content " +
+        "from the owner's material.",
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: "A focused search query — the specific question or topic to look up, not necessarily the user's exact wording.",
+          },
+        },
+        required: ['query'],
+      },
+      handler: async ({ query }) => {
+        try {
+          const res = await fetch(`/embed/${publicId}/retrieve`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: String(query || '').slice(0, 500), k: 5 }),
+          });
+          if (!res.ok) return { error: `Search failed (HTTP ${res.status})` };
+          const data = await res.json();
+          pendingSources = (config.project.showSourceCards !== false) ? (data.sources || []) : null;
+          pendingFigures = data.figures || [];
+          if (!data.chunks || !data.chunks.length) {
+            return { results: [], note: 'No relevant content found in the knowledge base for this query.' };
+          }
+          return { results: data.chunks.map(c => ({ source: c.fileName || 'unnamed', text: c.text })) };
+        } catch (e) {
+          return { error: e.message || 'Search failed' };
+        }
+      },
+    };
+  }
+
   function buildCaptureInstructions(fields) {
     if (!fields || fields.length === 0) return '';
     const fieldLines = fields.map(f =>
