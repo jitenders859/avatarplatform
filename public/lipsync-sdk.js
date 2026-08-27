@@ -973,7 +973,7 @@
      * @param {number}             [opts.visemePeakRatio] - 0-1 point in each viseme where value reaches max, default 0.88
      * @param {number}             [opts.visemeOverlapMs] - Start the next viseme slightly early for smoother switching, default 35
      * @param {number}             [opts.visemeSmoothingMs] - Per-frame glide time constant: how long a mouth input takes to
-     *   ease toward its target instead of snapping (default 55). Applies to every Rive input every frame, so an outgoing
+     *   ease toward its target instead of snapping (default 90). Applies to every Rive input every frame, so an outgoing
      *   viseme decays while the incoming one rises instead of hard-cutting — this is what produces an in-between mouth
      *   shape when two inputs (e.g. 110 and 122) are transitioning at once. Raise it if the mouth still looks too snappy;
      *   lower it (or set visemeSpeedMode:'instant') if lip movement starts trailing noticeably behind the audio.
@@ -1010,7 +1010,7 @@
         visemeMaxValue: RIVE_ACTIVE_MAX_VALUE,
         visemePeakRatio: 0.88,
         visemeOverlapMs: 35,
-        visemeSmoothingMs: 55,
+        visemeSmoothingMs: 90,
         // Hybrid lip-sync params
         anticipationMs: 40,      // pre-roll mouth N ms before phoneme starts
         minVisemeMs: 50,         // minimum hold per viseme (prevents flutter on fast consonants)
@@ -1026,7 +1026,7 @@
       this._opts.visemeMaxValue = Math.max(this._opts.visemeMinValue, Math.min(100, Number(this._opts.visemeMaxValue) || RIVE_ACTIVE_MAX_VALUE));
       this._opts.visemePeakRatio = Math.max(0.1, Math.min(1, Number(this._opts.visemePeakRatio) || 0.88));
       this._opts.visemeOverlapMs = Math.max(0, Math.min(140, Number(this._opts.visemeOverlapMs) || 35));
-      this._opts.visemeSmoothingMs = Math.max(0, Math.min(200, Number(this._opts.visemeSmoothingMs) ?? 55));
+      this._opts.visemeSmoothingMs = Math.max(0, Math.min(200, Number(this._opts.visemeSmoothingMs) ?? 90));
 
       this._riveInputByAz = RIVE_INPUT_BY_AZ.slice();
       if (this._opts.riveInputMap && typeof this._opts.riveInputMap === 'object') {
