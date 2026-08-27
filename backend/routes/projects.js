@@ -7,8 +7,23 @@ const { invalidateProjectCache } = require('../cache');
 const { safeFetch, assertSafeUrl } = require('../services/safeFetch');
 const { validate, schemas } = require('../middleware/validate');
 const storage = require('../services/storage');
+const { synthesizeSpeech, TtsError } = require('../services/tts');
+const { rateLimit } = require('express-rate-limit');
 
 const router = express.Router();
+
+// Owner-only, but still a paid call to a third-party TTS API per click —
+// capped generously above normal "click a few voices to compare" usage,
+// not meant to stop a determined abuser (that's the visitor-facing
+// /embed/:publicId/speak limiter's job).
+const voicePreviewLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+  handler: (_req, res) => res.status(429).json({ error: 'Too many preview requests — please slow down a little.' }),
+});
 
 // Which env var backs each TTS-only voice engine — checked at PATCH time so
 // an owner switching engines gets a clear error immediately instead of a
@@ -277,6 +292,34 @@ router.post('/:id/webhook/test', authRequired, async (req, res) => {
     res.json({ ok: response.ok, status: response.status, statusText: response.statusText });
   } catch (e) {
     res.json({ ok: false, error: e.message });
+  }
+});
+
+/**
+ * POST /:id/voice-preview
+ *
+ * Lets the owner hear a candidate voice before saving it — reads
+ * voiceEngine/voice straight from the request body (not the project's
+ * saved record), since the whole point is previewing an *unsaved* choice
+ * mid-edit in the Settings UI. Gemini Live isn't supported here: it has no
+ * simple one-shot TTS call outside a live session, unlike the three
+ * TTS-only engines this hits directly via the same synthesizeSpeech()
+ * backend/services/tts.js uses for real visitor replies.
+ */
+router.post('/:id/voice-preview', authRequired, voicePreviewLimiter, validate(schemas.voicePreview), async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  try {
+    const { audioBase64, mimeType } = await synthesizeSpeech({
+      engine: req.body.voiceEngine,
+      voiceId: req.body.voice,
+      text: req.body.text || "Hi! This is a preview of what I'll sound like.",
+    });
+    res.json({ audio: audioBase64, mimeType });
+  } catch (e) {
+    if (e instanceof TtsError) return res.status(502).json({ error: e.message });
+    throw e;
   }
 });
 

@@ -56,6 +56,29 @@ function checkVoiceForEngine(d, ctx) {
   }
 }
 
+// Comma-separated hostnames, each optionally wildcarded ("*.example.com")
+// or carrying a port ("localhost:3000") — see backend/server.js's
+// frame-ancestors enforcement on GET /e/:publicId.
+const HOSTNAME_RE = /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/i;
+const allowedDomains = z.string().trim().max(2000).nullable().optional()
+  .refine(v => !v || v.split(',').every(h => HOSTNAME_RE.test(h.trim())), {
+    message: 'allowedDomains must be a comma-separated list of hostnames (e.g. example.com, *.example.com)',
+  });
+
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const businessHours = z.object({
+  enabled: z.boolean(),
+  timezone: z.string().trim().min(1, 'timezone is required').max(100),
+  days: z.array(z.enum(WEEKDAYS)).max(7),
+  openTime: z.string().regex(HHMM_RE, 'openTime must be HH:MM'),
+  closeTime: z.string().regex(HHMM_RE, 'closeTime must be HH:MM'),
+}).nullable().optional();
+
+const awayMessage = z.string().trim().max(500, 'awayMessage too long').nullable().optional();
+const fallbackMessage = z.string().trim().max(500, 'fallbackMessage too long').nullable().optional();
+const conversationStarters = z.array(z.string().trim().min(1).max(200)).max(6, 'Up to 6 conversation starters').nullable().optional();
+
 const schemas = {
   signup: z.object({
     email,
@@ -121,7 +144,18 @@ const schemas = {
     // runs in routes/projects.js before this is persisted.
     webhookUrl: z.string().url('Invalid webhookUrl').max(2048).nullable().optional(),
     capabilityTier: z.enum(CAPABILITY_TIERS, { error: 'Invalid capabilityTier' }).optional(),
+    allowedDomains,
+    businessHours,
+    awayMessage,
+    conversationStarters,
+    fallbackMessage,
   }).superRefine(checkVoiceForEngine),
+
+  voicePreview: z.object({
+    voiceEngine: z.enum(['fish-audio', 'cartesia', 'elevenlabs'], { error: 'Invalid voiceEngine for preview' }),
+    voice: z.string().trim().min(1, 'voice is required').max(200),
+    text: z.string().trim().max(300).optional(),
+  }),
 
   filesInit: z.object({
     files: z.array(z.object({

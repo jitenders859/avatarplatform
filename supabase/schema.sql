@@ -79,6 +79,24 @@ CREATE TABLE IF NOT EXISTS projects (
   -- Webhook
   webhook_url              TEXT,
   webhook_secret           TEXT,
+  -- Access control: comma-separated hostnames (e.g. "example.com,app.example.com").
+  -- NULL/empty = unrestricted (default, backward compatible). Enforced via a
+  -- Content-Security-Policy: frame-ancestors header on GET /e/:publicId —
+  -- see backend/server.js.
+  allowed_domains          TEXT,
+  -- Business hours: { enabled, timezone (IANA name), days: ['mon',...],
+  -- openTime: 'HH:MM', closeTime: 'HH:MM' } — see backend/services/hours.js.
+  business_hours           JSONB,
+  away_message             TEXT,
+  -- Owner-defined suggested first questions, shown as buttons when the
+  -- widget opens (before the visitor's first message) — distinct from the
+  -- AI-driven mid-conversation quick-replies (show_quick_replies above).
+  conversation_starters    JSONB   DEFAULT '[]',
+  -- Shown verbatim (REST paths) or injected as a system-prompt instruction
+  -- (Gemini Live) when the knowledge base has nothing relevant to a
+  -- question, instead of letting the model guess. NULL = no override
+  -- (today's behavior).
+  fallback_message         TEXT,
   -- Timestamps
   created_at               BIGINT  NOT NULL,
   updated_at               BIGINT

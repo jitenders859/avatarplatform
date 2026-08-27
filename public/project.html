@@ -9,7 +9,104 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/app.css" />
-  <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+  <style>
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Settings shell: grouped sidebar + main panel ──────────────── */
+    .settings-shell { display: flex; align-items: flex-start; gap: 24px; }
+    .settings-nav {
+      flex: 0 0 200px;
+      position: sticky; top: 16px;
+      display: flex; flex-direction: column; gap: 18px;
+    }
+    .nav-group-title {
+      font-size: 11px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--text-dim);
+      padding: 0 10px; margin-bottom: 4px;
+    }
+    .settings-nav .tab {
+      display: block; width: 100%; text-align: left;
+      padding: 8px 10px; border-radius: 8px;
+      border: none; background: none;
+      font-size: 13px; font-weight: 500; color: var(--text-2);
+      cursor: pointer; margin-bottom: 2px;
+      transition: background .15s, color .15s;
+    }
+    .settings-nav .tab:hover { background: var(--bg-3); color: var(--text); }
+    .settings-nav .tab.active { background: var(--accent-soft); color: var(--accent-strong); }
+    .settings-main { flex: 1 1 auto; min-width: 0; }
+
+    @media (max-width: 860px) {
+      .settings-shell { flex-direction: column; }
+      .settings-nav { position: static; width: 100%; flex-direction: row; flex-wrap: wrap; gap: 8px; }
+      .nav-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+      .nav-group-title { display: none; }
+    }
+
+    /* ── Collapsible field groups (Widget tab) ─────────────────────── */
+    .settings-group { border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+    .settings-group summary {
+      cursor: pointer; padding: 12px 16px; font-size: 14px; font-weight: 600;
+      list-style: none; display: flex; align-items: center; justify-content: space-between;
+      background: var(--bg-3);
+    }
+    .settings-group summary::-webkit-details-marker { display: none; }
+    .settings-group summary::after { content: '▾'; color: var(--text-dim); transition: transform .15s; }
+    .settings-group:not([open]) summary::after { transform: rotate(-90deg); }
+    .settings-group summary .muted { font-weight: 400; }
+    .settings-group .settings-group-body { padding: 16px; }
+
+    /* ── Widget tab split view: settings + live preview ────────────── */
+    .widget-split { display: grid; grid-template-columns: 1fr 360px; gap: 20px; align-items: start; }
+    .widget-preview-col { position: sticky; top: 16px; }
+    .widget-preview-col iframe {
+      width: 100%; height: 620px; border: 1px solid var(--border);
+      border-radius: 12px; background: var(--bg-2);
+    }
+    @media (max-width: 1100px) {
+      .widget-split { grid-template-columns: 1fr; }
+      .widget-preview-col { position: static; }
+      .widget-preview-col iframe { height: 480px; }
+    }
+
+    /* ── Chip list (conversation starters, allowed domains) ────────── */
+    .chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--bg-3); border: 1px solid var(--border); border-radius: 999px;
+      padding: 5px 6px 5px 12px; font-size: 13px;
+    }
+    .chip button {
+      background: none; border: none; color: var(--text-dim); cursor: pointer;
+      font-size: 14px; line-height: 1; padding: 2px 4px; border-radius: 50%;
+    }
+    .chip button:hover { background: var(--bg-4); color: var(--text); }
+
+    /* ── Unified save bar ───────────────────────────────────────────── */
+    .savebar {
+      position: sticky; bottom: 0; left: 0; right: 0;
+      display: none; align-items: center; justify-content: space-between;
+      gap: 12px; margin-top: 16px; padding: 12px 16px;
+      background: var(--bg-2); border: 1px solid var(--border-strong);
+      border-radius: 12px; box-shadow: var(--shadow-lg);
+      z-index: 5;
+    }
+    .savebar.visible { display: flex; }
+    .savebar-msg { font-size: 13px; color: var(--text-2); display: flex; align-items: center; gap: 8px; }
+    .savebar-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn, #d97706); flex: none; }
+
+    /* ── Inline voice-preview control ──────────────────────────────── */
+    .voice-row { display: flex; gap: 8px; align-items: center; }
+    .voice-row > *:first-child { flex: 1; }
+    .voice-preview-btn {
+      flex: none; width: 38px; height: 38px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--bg-3); border: 1px solid var(--border); color: var(--text);
+      cursor: pointer; font-size: 14px;
+    }
+    .voice-preview-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .voice-preview-btn:disabled { opacity: .5; cursor: default; }
+  </style>
 </head>
 <body>
   <div class="container mt-md">
@@ -24,30 +121,90 @@
       </div>
     </div>
 
-    <div class="tabs">
-      <button class="tab active" data-tab="settings">Settings</button>
-      <button class="tab" data-tab="knowledge">Knowledge</button>
-      <button class="tab" data-tab="capture">Capture</button>
-      <button class="tab" data-tab="quiz">Quiz</button>
-      <button class="tab" data-tab="flashcards">Flashcards</button>
-      <button class="tab" data-tab="videos">Videos</button>
-      <button class="tab" data-tab="widget">Widget</button>
-      <button class="tab" data-tab="preview">Preview</button>
-      <button class="tab" data-tab="analytics">Analytics</button>
-      <button class="tab" data-tab="embed">Embed</button>
-      <button class="tab" data-tab="conversations">Conversations</button>
-      <button class="tab" data-tab="leads" id="leads-tab">Leads</button>
-    </div>
+    <div class="settings-shell">
+      <nav class="settings-nav">
+        <div class="nav-group">
+          <div class="nav-group-title">Setup</div>
+          <button class="tab active" data-tab="settings">Basics &amp; Voice</button>
+          <button class="tab" data-tab="knowledge">Knowledge</button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">Conversation</div>
+          <button class="tab" data-tab="capture">Lead Capture</button>
+          <button class="tab" data-tab="quiz">Quiz</button>
+          <button class="tab" data-tab="flashcards">Flashcards</button>
+          <button class="tab" data-tab="videos">Videos</button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">Widget</div>
+          <button class="tab" data-tab="widget">Appearance &amp; Preview</button>
+          <button class="tab" data-tab="embed">Embed code</button>
+        </div>
+        <div class="nav-group">
+          <div class="nav-group-title">Insights</div>
+          <button class="tab" data-tab="analytics">Analytics</button>
+          <button class="tab" data-tab="conversations">Conversations</button>
+          <button class="tab" data-tab="leads" id="leads-tab">Leads</button>
+        </div>
+      </nav>
+
+      <div class="settings-main">
 
     <!-- ── Settings tab ───────────────────────────────────── -->
     <section class="tab-panel" id="panel-settings">
-      <div class="card">
-        <h2 class="card-title mb-md">Basic info</h2>
-        <div class="col gap-md">
+      <details class="settings-group" open>
+        <summary>Basics</summary>
+        <div class="settings-group-body col gap-md">
           <div class="field">
             <label>Name</label>
             <input class="input" id="f-name" />
           </div>
+          <div class="grid grid-2">
+            <div class="field">
+              <label>Character</label>
+              <select class="select" id="f-character"></select>
+            </div>
+            <div class="field">
+              <label>Capability tier</label>
+              <select class="select" id="f-tier">
+                <option value="basic">Basic — chat, knowledge base, lead capture</option>
+                <option value="medium">Medium — adds referenced images, video recs, slides</option>
+                <option value="advanced">Advanced — adds quizzes, flashcards, progress tracking</option>
+              </select>
+              <span class="help">Higher tiers include everything in the ones below them.</span>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="settings-group" open>
+        <summary>Voice</summary>
+        <div class="settings-group-body col gap-md">
+          <div class="field">
+            <label>Speech engine</label>
+            <select class="select" id="f-voice-engine">
+              <option value="gemini-live">Gemini Live — real-time speech-to-speech + vision (default)</option>
+              <option value="elevenlabs">ElevenLabs — text-to-speech with precise timestamp-based lip-sync</option>
+              <option value="fish-audio">Fish Audio — text-to-speech voices</option>
+              <option value="cartesia">Cartesia Sonic — text-to-speech voices</option>
+            </select>
+          </div>
+          <div class="field">
+            <label id="f-voice-label">Voice</label>
+            <div class="voice-row">
+              <select class="select" id="f-voice"></select>
+              <input class="input" id="f-voice-id" type="text" placeholder="Voice / reference ID from your Fish Audio or Cartesia account" style="display:none" />
+              <button class="voice-preview-btn" id="voice-preview-btn" type="button" title="Play a sample of this voice">▶</button>
+            </div>
+            <span class="help" id="f-voice-help">One of Gemini Live's 30 built-in voices.</span>
+            <span class="help" id="voice-preview-error" style="display:none;color:var(--danger)"></span>
+          </div>
+        </div>
+      </details>
+
+      <details class="settings-group" open>
+        <summary>Conversation</summary>
+        <div class="settings-group-body col gap-md">
           <div class="field">
             <label>Welcome message</label>
             <input class="input" id="f-welcome" placeholder="Hi! Ask me anything." />
@@ -58,36 +215,64 @@
             <textarea class="textarea" id="f-prompt" rows="6"></textarea>
             <span class="help">The AI's persona and rules. Knowledge-base content is appended automatically at runtime.</span>
           </div>
-          <div class="grid grid-2">
-            <div class="field">
-              <label>Character</label>
-              <select class="select" id="f-character"></select>
+          <div class="field">
+            <label>Conversation starters</label>
+            <div class="row" style="gap:8px">
+              <input class="input" id="f-starter-input" placeholder="e.g. What can you help me with?" style="flex:1" maxlength="200" />
+              <button class="btn btn-ghost btn-sm" id="f-starter-add" type="button">Add</button>
             </div>
-            <div class="field">
-              <label>Speech engine</label>
-              <select class="select" id="f-voice-engine">
-                <option value="gemini-live">Gemini Live — real-time speech-to-speech + vision (default)</option>
-                <option value="elevenlabs">ElevenLabs — text-to-speech with precise timestamp-based lip-sync</option>
-                <option value="fish-audio">Fish Audio — text-to-speech voices</option>
-                <option value="cartesia">Cartesia Sonic — text-to-speech voices</option>
-              </select>
-            </div>
+            <div class="chip-list" id="f-starters-list"></div>
+            <input type="hidden" id="f-starters-json" value="[]" />
+            <span class="help">Up to 6 suggested first questions, shown as buttons when the widget opens.</span>
           </div>
           <div class="field">
-            <label id="f-voice-label">Voice</label>
-            <select class="select" id="f-voice"></select>
-            <input class="input" id="f-voice-id" type="text" placeholder="Voice / reference ID from your Fish Audio or Cartesia account" style="display:none" />
-            <span class="help" id="f-voice-help">One of Gemini Live's 30 built-in voices.</span>
+            <label>Fallback message</label>
+            <textarea class="textarea" id="f-fallback" rows="2" placeholder="I don't have information on that yet — try asking about [topic], or contact us at support@example.com."></textarea>
+            <span class="help">Shown instead of a guess when nothing in the knowledge base is relevant. Leave blank to let the AI answer from general knowledge as it does today.</span>
           </div>
+        </div>
+      </details>
+
+      <details class="settings-group">
+        <summary>Availability</summary>
+        <div class="settings-group-body col gap-md">
           <div class="field">
-            <label>Capability tier</label>
-            <select class="select" id="f-tier">
-              <option value="basic">Basic — chat, knowledge base, lead capture</option>
-              <option value="medium">Medium — adds referenced images, video recs, slides</option>
-              <option value="advanced">Advanced — adds quizzes, flashcards, progress tracking</option>
+            <label>Business hours</label>
+            <select class="select" id="f-hours-enabled">
+              <option value="false">Always available (default)</option>
+              <option value="true">Only during set hours — show an away message otherwise</option>
             </select>
-            <span class="help">Which study-tool features this chatbot has. Higher tiers include everything in the ones below them.</span>
           </div>
+          <div id="f-hours-detail" style="display:none" class="col gap-md">
+            <div class="field">
+              <label>Days</label>
+              <div class="row" style="gap:10px;flex-wrap:wrap" id="f-hours-days"></div>
+            </div>
+            <div class="grid grid-3">
+              <div class="field">
+                <label>Opens</label>
+                <input class="input" type="time" id="f-hours-open" value="09:00" />
+              </div>
+              <div class="field">
+                <label>Closes</label>
+                <input class="input" type="time" id="f-hours-close" value="17:00" />
+              </div>
+              <div class="field">
+                <label>Timezone</label>
+                <select class="select" id="f-hours-tz"></select>
+              </div>
+            </div>
+            <div class="field">
+              <label>Away message</label>
+              <textarea class="textarea" id="f-away" rows="2" placeholder="We're offline right now — back tomorrow at 9am. Leave a message and we'll follow up!"></textarea>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <details class="settings-group">
+        <summary>Integrations &amp; access</summary>
+        <div class="settings-group-body col gap-md">
           <div class="field">
             <label>Webhook URL</label>
             <input class="input" id="f-webhook-url" type="url" placeholder="https://yoursite.com/webhooks/avatar" />
@@ -102,10 +287,22 @@
             <span class="help">Verify requests with HMAC-SHA256 using this secret and the <code>X-Avatar-Signature</code> header.</span>
           </div>
           <div class="row" style="gap:8px">
-            <button class="btn btn-primary" id="save-settings">Save changes</button>
             <button class="btn btn-ghost" id="test-webhook-btn" hidden>Send test event</button>
           </div>
           <div id="webhook-test-result" class="muted text-sm" style="display:none"></div>
+          <div class="field">
+            <label>Allowed domains</label>
+            <input class="input" id="f-allowed-domains" placeholder="example.com, *.example.com" />
+            <span class="help">Comma-separated. Restricts which sites can embed this widget. Leave blank to allow anywhere (default).</span>
+          </div>
+        </div>
+      </details>
+
+      <div class="savebar" id="settings-savebar">
+        <span class="savebar-msg"><span class="savebar-dot"></span>Unsaved changes</span>
+        <div class="row" style="gap:8px">
+          <button class="btn btn-ghost btn-sm" id="settings-discard-btn">Discard</button>
+          <button class="btn btn-primary btn-sm" id="save-settings">Save changes</button>
         </div>
       </div>
     </section>
@@ -173,176 +370,198 @@
 
     <!-- ── Widget customization tab ───────────────────────── -->
     <section class="tab-panel" id="panel-widget" hidden>
-      <div class="card mb-md">
-        <h2 class="card-title mb-md">Widget appearance</h2>
-        <div class="grid grid-2">
-          <div class="field">
-            <label>Position</label>
-            <select class="select" id="f-position">
-              <option value="bottom-right">Bottom right (default)</option>
-              <option value="bottom-left">Bottom left</option>
-              <option value="inline">Inline (full iframe)</option>
-            </select>
-            <span class="help">Where the widget appears on host sites.</span>
-          </div>
-          <div class="field">
-            <label>Start state</label>
-            <select class="select" id="f-startopen">
-              <option value="false">Minimized (visitor clicks to open)</option>
-              <option value="true">Open by default</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Text direction</label>
-            <select class="select" id="f-direction">
-              <option value="auto">Auto (detect from language)</option>
-              <option value="ltr">Left-to-right</option>
-              <option value="rtl">Right-to-left (Arabic, Hebrew…)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Theme color</label>
-            <input class="input" type="color" id="f-theme" style="height:42px;padding:4px;cursor:pointer" />
-            <span class="help">Primary color for buttons and gradients.</span>
-          </div>
-          <div class="field">
-            <label>Widget theme</label>
-            <select class="select" id="f-widget-theme">
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-            <span class="help">Light/dark look of the chat panel itself.</span>
-          </div>
-          <div class="field">
-            <label>Show source cards</label>
-            <select class="select" id="f-sources">
-              <option value="true">Yes — cite the docs / URLs used</option>
-              <option value="false">No</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Show quick-reply buttons</label>
-            <select class="select" id="f-quickreplies">
-              <option value="false">No</option>
-              <option value="true">Yes — let visitors tap a choice instead of typing</option>
-            </select>
-            <span class="help">When the assistant offers a short menu of choices, show them as tappable buttons.</span>
-          </div>
-          <div class="field">
-            <label>Allow drag &amp; drop image upload</label>
-            <select class="select" id="f-dragdrop">
-              <option value="false">No — click-to-upload button only (default)</option>
-              <option value="true">Yes — visitors can also drag an image onto the widget</option>
-            </select>
-            <span class="help">The image upload button is always available regardless of this setting; this only controls whether dropping a file onto the widget also works.</span>
-          </div>
-          <div class="field">
-            <label>Full-screen on desktop</label>
-            <select class="select" id="f-fullscreen-desktop">
-              <option value="false">No — floating panel (default)</option>
-              <option value="true">Yes — open panel fills the screen</option>
-            </select>
-            <span class="help">No effect when Position is Inline.</span>
-          </div>
-          <div class="field">
-            <label>Full-screen on mobile</label>
-            <select class="select" id="f-fullscreen-mobile">
-              <option value="false">No — floating panel (default)</option>
-              <option value="true">Yes — open panel fills the screen</option>
-            </select>
-            <span class="help">No effect when Position is Inline.</span>
-          </div>
-          <div class="field">
-            <label>Show maximize/restore button</label>
-            <select class="select" id="f-fullscreen-toggle">
-              <option value="false">No</option>
-              <option value="true">Yes — let visitors switch modes themselves</option>
-            </select>
-            <span class="help">Adds a header button so visitors can toggle full screen regardless of the defaults above.</span>
-          </div>
-          <div class="field">
-            <label>Show "Powered by" branding</label>
-            <select class="select" id="f-branding">
-              <option value="true">Yes</option>
-              <option value="false">No (paid plans)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Horizontal offset (px)</label>
-            <input class="input" type="number" id="f-offset-x" min="0" max="100" value="0" />
-            <span class="help">Distance from the left/right edge. Applies to floating widget.</span>
-          </div>
-          <div class="field">
-            <label>Vertical offset (px)</label>
-            <input class="input" type="number" id="f-offset-y" min="0" max="100" value="0" />
-            <span class="help">Distance from the bottom edge.</span>
+      <div class="widget-split">
+        <div>
+          <details class="settings-group" open>
+            <summary>Appearance</summary>
+            <div class="settings-group-body grid grid-2">
+              <div class="field">
+                <label>Position</label>
+                <select class="select" id="f-position">
+                  <option value="bottom-right">Bottom right (default)</option>
+                  <option value="bottom-left">Bottom left</option>
+                  <option value="inline">Inline (full iframe)</option>
+                </select>
+                <span class="help">Where the widget appears on host sites.</span>
+              </div>
+              <div class="field">
+                <label>Start state</label>
+                <select class="select" id="f-startopen">
+                  <option value="false">Minimized (visitor clicks to open)</option>
+                  <option value="true">Open by default</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Text direction</label>
+                <select class="select" id="f-direction">
+                  <option value="auto">Auto (detect from language)</option>
+                  <option value="ltr">Left-to-right</option>
+                  <option value="rtl">Right-to-left (Arabic, Hebrew…)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Theme color</label>
+                <input class="input" type="color" id="f-theme" style="height:42px;padding:4px;cursor:pointer" />
+                <span class="help">Primary color for buttons and gradients.</span>
+              </div>
+              <div class="field">
+                <label>Widget theme</label>
+                <select class="select" id="f-widget-theme">
+                  <option value="light">Light</option>
+                  <option value="dark">Dark</option>
+                </select>
+                <span class="help">Light/dark look of the chat panel itself.</span>
+              </div>
+              <div class="field">
+                <label>Show "Powered by" branding</label>
+                <select class="select" id="f-branding">
+                  <option value="true">Yes</option>
+                  <option value="false">No (paid plans)</option>
+                </select>
+              </div>
+            </div>
+          </details>
+
+          <details class="settings-group" open>
+            <summary>Behavior</summary>
+            <div class="settings-group-body grid grid-2">
+              <div class="field">
+                <label>Show source cards</label>
+                <select class="select" id="f-sources">
+                  <option value="true">Yes — cite the docs / URLs used</option>
+                  <option value="false">No</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Show quick-reply buttons</label>
+                <select class="select" id="f-quickreplies">
+                  <option value="false">No</option>
+                  <option value="true">Yes — let visitors tap a choice instead of typing</option>
+                </select>
+                <span class="help">When the assistant offers a short menu of choices, show them as tappable buttons.</span>
+              </div>
+              <div class="field">
+                <label>Allow drag &amp; drop image upload</label>
+                <select class="select" id="f-dragdrop">
+                  <option value="false">No — click-to-upload button only (default)</option>
+                  <option value="true">Yes — visitors can also drag an image onto the widget</option>
+                </select>
+                <span class="help">The image upload button is always available regardless of this setting; this only controls whether dropping a file onto the widget also works.</span>
+              </div>
+              <div class="field">
+                <label>Full-screen on desktop</label>
+                <select class="select" id="f-fullscreen-desktop">
+                  <option value="false">No — floating panel (default)</option>
+                  <option value="true">Yes — open panel fills the screen</option>
+                </select>
+                <span class="help">No effect when Position is Inline.</span>
+              </div>
+              <div class="field">
+                <label>Full-screen on mobile</label>
+                <select class="select" id="f-fullscreen-mobile">
+                  <option value="false">No — floating panel (default)</option>
+                  <option value="true">Yes — open panel fills the screen</option>
+                </select>
+                <span class="help">No effect when Position is Inline.</span>
+              </div>
+              <div class="field">
+                <label>Show maximize/restore button</label>
+                <select class="select" id="f-fullscreen-toggle">
+                  <option value="false">No</option>
+                  <option value="true">Yes — let visitors switch modes themselves</option>
+                </select>
+                <span class="help">Adds a header button so visitors can toggle full screen regardless of the defaults above.</span>
+              </div>
+            </div>
+          </details>
+
+          <details class="settings-group" open>
+            <summary>Avatar</summary>
+            <div class="settings-group-body grid grid-2">
+              <div class="field">
+                <label>Avatar position (open panel)</label>
+                <select class="select" id="f-avatar-position">
+                  <option value="right">Right side (default)</option>
+                  <option value="left">Left side</option>
+                </select>
+                <span class="help">Which side of the chat panel the character appears on.</span>
+              </div>
+              <div class="field">
+                <label>Avatar size</label>
+                <select class="select" id="f-avatar-size">
+                  <option value="small">Small (80px)</option>
+                  <option value="medium">Medium (120px)</option>
+                  <option value="large">Large (160px) — default</option>
+                  <option value="xlarge">Extra large (200px)</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Show avatar in launcher button</label>
+                <select class="select" id="f-avatar-launcher">
+                  <option value="true">Yes — Rive avatar in the FAB</option>
+                  <option value="false">No — use icon/emoji</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Keep avatar visible while AI speaks</label>
+                <select class="select" id="f-avatar-keep">
+                  <option value="true">Yes (recommended)</option>
+                  <option value="false">No</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>Compact avatar on mobile</label>
+                <select class="select" id="f-avatar-compact">
+                  <option value="true">Yes — reduce to 80px on small screens</option>
+                  <option value="false">No — keep full size</option>
+                </select>
+              </div>
+            </div>
+          </details>
+
+          <details class="settings-group">
+            <summary>Advanced placement <span class="muted text-sm">pixel offsets</span></summary>
+            <div class="settings-group-body grid grid-2">
+              <div class="field">
+                <label>Widget horizontal offset (px)</label>
+                <input class="input" type="number" id="f-offset-x" min="0" max="100" value="0" />
+                <span class="help">Distance from the left/right edge. Applies to floating widget.</span>
+              </div>
+              <div class="field">
+                <label>Widget vertical offset (px)</label>
+                <input class="input" type="number" id="f-offset-y" min="0" max="100" value="0" />
+                <span class="help">Distance from the bottom edge.</span>
+              </div>
+              <div class="field">
+                <label>Avatar horizontal offset (px)</label>
+                <input class="input" type="number" id="f-avatar-offset-x" min="-100" max="100" value="0" />
+              </div>
+              <div class="field">
+                <label>Avatar vertical offset (px)</label>
+                <input class="input" type="number" id="f-avatar-offset-y" min="-100" max="100" value="0" />
+              </div>
+            </div>
+          </details>
+
+          <div class="savebar" id="widget-savebar">
+            <span class="savebar-msg"><span class="savebar-dot"></span>Unsaved changes</span>
+            <div class="row" style="gap:8px">
+              <button class="btn btn-ghost btn-sm" id="widget-discard-btn">Discard</button>
+              <button class="btn btn-primary btn-sm" id="save-widget">Save changes</button>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="card mb-md">
-        <h2 class="card-title mb-md">Avatar placement</h2>
-        <div class="grid grid-2">
-          <div class="field">
-            <label>Avatar position (open panel)</label>
-            <select class="select" id="f-avatar-position">
-              <option value="right">Right side (default)</option>
-              <option value="left">Left side</option>
-            </select>
-            <span class="help">Which side of the chat panel the character appears on.</span>
-          </div>
-          <div class="field">
-            <label>Avatar size</label>
-            <select class="select" id="f-avatar-size">
-              <option value="small">Small (80px)</option>
-              <option value="medium">Medium (120px)</option>
-              <option value="large">Large (160px) — default</option>
-              <option value="xlarge">Extra large (200px)</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Show avatar in launcher button</label>
-            <select class="select" id="f-avatar-launcher">
-              <option value="true">Yes — Rive avatar in the FAB</option>
-              <option value="false">No — use icon/emoji</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Keep avatar visible while AI speaks</label>
-            <select class="select" id="f-avatar-keep">
-              <option value="true">Yes (recommended)</option>
-              <option value="false">No</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Compact avatar on mobile</label>
-            <select class="select" id="f-avatar-compact">
-              <option value="true">Yes — reduce to 80px on small screens</option>
-              <option value="false">No — keep full size</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Avatar horizontal offset (px)</label>
-            <input class="input" type="number" id="f-avatar-offset-x" min="-100" max="100" value="0" />
-          </div>
-          <div class="field">
-            <label>Avatar vertical offset (px)</label>
-            <input class="input" type="number" id="f-avatar-offset-y" min="-100" max="100" value="0" />
+        <div class="widget-preview-col">
+          <div class="card">
+            <div class="card-header">
+              <h3 class="card-title">Live preview</h3>
+              <button class="btn btn-sm btn-ghost" id="refresh-preview-btn" style="margin-left:auto" title="Reload preview">↺</button>
+            </div>
+            <p class="muted text-sm mb-md">Updates automatically after you save. Exactly what visitors see.</p>
+            <iframe id="preview-frame"></iframe>
           </div>
         </div>
-      </div>
-
-      <div class="row" style="justify-content:flex-end">
-        <button class="btn btn-primary" id="save-widget">Save all changes</button>
-      </div>
-    </section>
-
-    <!-- ── Preview tab ───────────────────────────────────── -->
-    <section class="tab-panel" id="panel-preview" hidden>
-      <div class="card">
-        <h2 class="card-title mb-md">Test your chatbot</h2>
-        <p class="muted text-sm mb-md">This iframe loads the live public widget — exactly as visitors will see it.</p>
-        <iframe id="preview-frame" style="width:100%;height:640px;border:1px solid var(--border);border-radius:12px;background:var(--bg-2)"></iframe>
       </div>
     </section>
 
@@ -681,6 +900,9 @@
         </div>
       </div>
     </section>
+
+      </div>
+    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -708,9 +930,7 @@
       t.classList.add('active');
       document.querySelectorAll('.tab-panel').forEach(p => p.hidden = true);
       document.getElementById('panel-' + t.dataset.tab).hidden = false;
-      if (t.dataset.tab === 'preview') {
-        document.getElementById('preview-frame').src = `/e/${project.publicId}?_=${Date.now()}`;
-      }
+      if (t.dataset.tab === 'widget') refreshPreview();
       if (t.dataset.tab === 'knowledge') loadFiles();
       if (t.dataset.tab === 'analytics') loadProjectAnalytics();
       if (t.dataset.tab === 'conversations') loadSessions();
@@ -761,6 +981,164 @@
       : `The voice or reference ID from your ${VOICE_ENGINE_NAMES[engine]} account. Requires ${VOICE_ENGINE_ENV_VARS[engine]} to be configured on the server.${engine === 'elevenlabs' ? ' ElevenLabs also gives the most accurate lip-sync of the text-to-speech engines, using its real per-character timestamps.' : ''}`;
   }
   document.getElementById('f-voice-engine').addEventListener('change', updateVoiceFieldVisibility);
+
+  // ── Voice preview ────────────────────────────────────────────────
+  // Previews whatever engine/voice is currently selected in the form
+  // (even if unsaved) — hits POST /:id/voice-preview, which calls the same
+  // synthesizeSpeech() backend/services/tts.js uses for real replies.
+  // Gemini Live has no simple one-shot TTS call outside a live session, so
+  // it's not supported here; point owners at the Widget tab's live preview
+  // instead of faking it.
+  const previewAudio = new Audio();
+  document.getElementById('voice-preview-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('voice-preview-btn');
+    const errEl = document.getElementById('voice-preview-error');
+    errEl.style.display = 'none';
+    const engine = document.getElementById('f-voice-engine').value;
+    if (engine === 'gemini-live') {
+      errEl.textContent = 'Gemini Live voices can\'t be previewed here — connect in the Widget tab\'s live preview to hear it.';
+      errEl.style.display = '';
+      return;
+    }
+    const voice = document.getElementById('f-voice-id').value.trim();
+    if (!voice) {
+      errEl.textContent = 'Enter a voice / reference ID first.';
+      errEl.style.display = '';
+      return;
+    }
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const { audio } = await API.previewVoice(projectId, { voiceEngine: engine, voice });
+      // The endpoint returns raw PCM16 (audio/pcm), which <audio> can't
+      // decode directly — wrap it in a minimal WAV header client-side.
+      previewAudio.src = pcm16ToWavDataUrl(audio, 24000);
+      await previewAudio.play();
+    } catch (e) {
+      errEl.textContent = e.message || 'Could not play a preview.';
+      errEl.style.display = '';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '▶';
+    }
+  });
+
+  /** Wrap base64-encoded raw PCM16 mono samples in a minimal WAV header so <audio>/data: URIs can play them (browsers don't decode bare PCM). */
+  function pcm16ToWavDataUrl(base64Pcm, sampleRate) {
+    const pcmBytes = Uint8Array.from(atob(base64Pcm), c => c.charCodeAt(0));
+    const header = new ArrayBuffer(44);
+    const view = new DataView(header);
+    const writeStr = (offset, str) => { for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i)); };
+    writeStr(0, 'RIFF'); view.setUint32(4, 36 + pcmBytes.length, true);
+    writeStr(8, 'WAVE'); writeStr(12, 'fmt ');
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true);
+    view.setUint16(32, 2, true); view.setUint16(34, 16, true);
+    writeStr(36, 'data'); view.setUint32(40, pcmBytes.length, true);
+    const wavBytes = new Uint8Array(44 + pcmBytes.length);
+    wavBytes.set(new Uint8Array(header), 0);
+    wavBytes.set(pcmBytes, 44);
+    let bin = ''; wavBytes.forEach(b => bin += String.fromCharCode(b));
+    return `data:audio/wav;base64,${btoa(bin)}`;
+  }
+
+  // ── Conversation starters (chip list) ───────────────────────────
+  let conversationStarters = [];
+  function renderStarterChips() {
+    const wrap = document.getElementById('f-starters-list');
+    wrap.innerHTML = '';
+    conversationStarters.forEach((text, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.append(document.createTextNode(text));
+      const btn = document.createElement('button');
+      btn.type = 'button'; btn.textContent = '✕'; btn.title = 'Remove';
+      btn.addEventListener('click', () => { conversationStarters.splice(i, 1); renderStarterChips(); wrap.dispatchEvent(new Event('change', { bubbles: true })); });
+      chip.appendChild(btn);
+      wrap.appendChild(chip);
+    });
+    // Mirrors conversationStarters into a hidden input purely so the
+    // generic panel-wide dirty-tracker (which snapshots inputs by id, not
+    // this plain JS array) notices when starters are added/removed.
+    document.getElementById('f-starters-json').value = JSON.stringify(conversationStarters);
+  }
+  document.getElementById('f-starter-add').addEventListener('click', () => {
+    const input = document.getElementById('f-starter-input');
+    const text = input.value.trim();
+    if (!text || conversationStarters.length >= 6) return;
+    conversationStarters.push(text);
+    input.value = '';
+    renderStarterChips();
+    document.getElementById('f-starters-list').dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  document.getElementById('f-starter-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('f-starter-add').click(); }
+  });
+
+  // ── Availability (business hours) ───────────────────────────────
+  const WEEKDAYS = [['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
+  (function buildHoursDayCheckboxes() {
+    const wrap = document.getElementById('f-hours-days');
+    wrap.innerHTML = WEEKDAYS.map(([code, label]) => `
+      <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer">
+        <input type="checkbox" id="f-hours-day-${code}" value="${code}" /> ${label}
+      </label>
+    `).join('');
+  })();
+  function getSelectedHoursDays() {
+    return WEEKDAYS.map(([code]) => code).filter(code => document.getElementById(`f-hours-day-${code}`).checked);
+  }
+  function populateTimezones(selected) {
+    const sel = document.getElementById('f-hours-tz');
+    let zones;
+    try { zones = Intl.supportedValuesOf('timeZone'); } catch (_) { zones = null; }
+    if (!zones || !zones.length) {
+      zones = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Berlin', 'Asia/Kolkata', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney'];
+    }
+    const guess = selected || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    if (!zones.includes(guess)) zones = [guess, ...zones];
+    sel.innerHTML = zones.map(z => `<option value="${z}" ${z === guess ? 'selected' : ''}>${z}</option>`).join('');
+  }
+  document.getElementById('f-hours-enabled').addEventListener('change', (e) => {
+    document.getElementById('f-hours-detail').style.display = e.target.value === 'true' ? '' : 'none';
+  });
+
+  // ── Unified save bar (Setup + Widget tabs) ──────────────────────
+  // Generic, form-agnostic dirty tracking: snapshots every input/select/
+  // textarea inside the panel by id, and flags "unsaved changes" whenever
+  // that snapshot drifts from the last-saved baseline. Deliberately not
+  // wired per-field — new fields added to either panel are picked up
+  // automatically with no extra plumbing here.
+  function serializePanel(panelEl) {
+    const out = {};
+    panelEl.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => {
+      out[el.id] = el.type === 'checkbox' ? el.checked : el.value;
+    });
+    return out;
+  }
+
+  function setupSaveBar(panelId, savebarId, discardBtnId, onDiscard) {
+    const panel = document.getElementById(panelId);
+    const savebar = document.getElementById(savebarId);
+    let baseline = JSON.stringify(serializePanel(panel));
+    const check = () => savebar.classList.toggle('visible', JSON.stringify(serializePanel(panel)) !== baseline);
+    panel.addEventListener('input', check);
+    panel.addEventListener('change', check);
+    document.getElementById(discardBtnId).addEventListener('click', async () => {
+      await onDiscard();
+      baseline = JSON.stringify(serializePanel(panel));
+      savebar.classList.remove('visible');
+    });
+    return { markClean: () => { baseline = JSON.stringify(serializePanel(panel)); savebar.classList.remove('visible'); } };
+  }
+
+  let settingsSaveBar, widgetSaveBar;
+
+  function refreshPreview() {
+    if (!project) return;
+    document.getElementById('preview-frame').src = `/e/${project.publicId}?_=${Date.now()}`;
+  }
+  document.getElementById('refresh-preview-btn').addEventListener('click', refreshPreview);
 
   async function load() {
     try {
@@ -842,6 +1220,24 @@
         document.getElementById('f-webhook-secret-row').hidden = false;
         document.getElementById('test-webhook-btn').hidden = !p.webhookUrl;
       }
+      document.getElementById('f-allowed-domains').value = p.allowedDomains || '';
+
+      // Conversation starters + fallback message
+      conversationStarters = Array.isArray(p.conversationStarters) ? p.conversationStarters.slice() : [];
+      renderStarterChips();
+      document.getElementById('f-fallback').value = p.fallbackMessage || '';
+
+      // Availability (business hours)
+      const bh = p.businessHours || {};
+      document.getElementById('f-hours-enabled').value = String(bh.enabled === true);
+      document.getElementById('f-hours-detail').style.display = bh.enabled === true ? '' : 'none';
+      WEEKDAYS.forEach(([code]) => {
+        document.getElementById(`f-hours-day-${code}`).checked = (bh.days || []).includes(code);
+      });
+      document.getElementById('f-hours-open').value = bh.openTime || '09:00';
+      document.getElementById('f-hours-close').value = bh.closeTime || '17:00';
+      populateTimezones(bh.timezone);
+      document.getElementById('f-away').value = p.awayMessage || '';
 
       // Embed snippets
       const origin = location.origin;
@@ -879,6 +1275,17 @@
         voiceEngine: document.getElementById('f-voice-engine').value,
         capabilityTier: document.getElementById('f-tier').value,
         webhookUrl: document.getElementById('f-webhook-url').value.trim() || null,
+        allowedDomains: document.getElementById('f-allowed-domains').value.trim() || null,
+        conversationStarters,
+        fallbackMessage: document.getElementById('f-fallback').value.trim() || null,
+        businessHours: document.getElementById('f-hours-enabled').value === 'true' ? {
+          enabled: true,
+          timezone: document.getElementById('f-hours-tz').value,
+          days: getSelectedHoursDays(),
+          openTime: document.getElementById('f-hours-open').value,
+          closeTime: document.getElementById('f-hours-close').value,
+        } : null,
+        awayMessage: document.getElementById('f-away').value.trim() || null,
       };
       // Omit `voice` entirely when the free-text provider field is still
       // blank (e.g. right after switching engine) rather than sending an
@@ -893,6 +1300,7 @@
       document.getElementById('title').textContent = p.name;
       document.getElementById('test-webhook-btn').hidden = !p.webhookUrl;
       applyTierVisibility(p.capabilityTier || 'basic');
+      settingsSaveBar?.markClean();
       toast('Saved', 'success');
     } catch (e) { toast(e.message, 'error'); }
   });
@@ -949,6 +1357,8 @@
       };
       const { project: p } = await API.updateProject(projectId, patch);
       project = p;
+      widgetSaveBar?.markClean();
+      refreshPreview();
       toast('Widget & avatar settings saved', 'success');
     } catch (e) { toast(e.message, 'error'); }
   });
@@ -1978,7 +2388,10 @@
     if (lt) { lt.classList.add('active'); document.getElementById('panel-leads').hidden = false; }
   }
 
-  load();
+  load().then(() => {
+    settingsSaveBar = setupSaveBar('panel-settings', 'settings-savebar', 'settings-discard-btn', load);
+    widgetSaveBar = setupSaveBar('panel-widget', 'widget-savebar', 'widget-discard-btn', load);
+  });
   </script>
 </body>
 </html>

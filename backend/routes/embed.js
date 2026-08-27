@@ -18,6 +18,7 @@ const { projectCache, invalidateProjectCache } = require('../cache');
 const { validate, schemas } = require('../middleware/validate');
 const { toolsForTier } = require('../services/tools');
 const { synthesizeSpeech, TtsError } = require('../services/tts');
+const { isWithinBusinessHours } = require('../services/hours');
 const { resolveLearnerKey, backfillLearnerKey } = require('../services/learner');
 const { checkLimit, userPlanId } = require('../services/usage');
 const logger = require('../logger').child({ module: 'embed' });
@@ -172,6 +173,12 @@ router.get('/:publicId/config', async (req, res) => {
         avatarOffsetY:         project.avatarOffsetY         || 0,
         avatarKeepVisible:     project.avatarKeepVisible     !== false,
         avatarCompactOnMobile: project.avatarCompactOnMobile !== false,
+        // Away message / business hours: isOpen is computed server-side (not
+        // just the raw config) so the widget doesn't need its own timezone
+        // logic — see backend/services/hours.js.
+        isOpen:                isWithinBusinessHours(project.businessHours),
+        awayMessage:           project.awayMessage || null,
+        conversationStarters:  Array.isArray(project.conversationStarters) ? project.conversationStarters : [],
       },
       character: character ? {
         id: character.slug,
@@ -362,18 +369,23 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
       ? `Knowledge base context:\n\n${contextParts.join('\n\n---\n\n')}`
       : 'No relevant context found in the knowledge base.';
 
-    const prompt = `${systemPrompt}\n\n${contextText}\n\nUser question: ${String(question).slice(0, 1000)}\n\nAnswer:`;
-
-    // 4. Call Gemini REST
+    // 4. Answer — either the owner's fallback message (no relevant knowledge-
+    // base content at all, so skip the model call rather than let it guess),
+    // or a normal Gemini REST call grounded in the retrieved context.
     let answer = '';
-    try {
-      const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-      const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      const result = await model.generateContent(prompt);
-      answer = result.response.text();
-    } catch (e) {
-      logger.error({ err: e.message }, 'ask Gemini call failed');
-      return res.status(502).json({ error: 'AI service unavailable' });
+    if (hits.length === 0 && project.fallbackMessage) {
+      answer = project.fallbackMessage;
+    } else {
+      const prompt = `${systemPrompt}\n\n${contextText}\n\nUser question: ${String(question).slice(0, 1000)}\n\nAnswer:`;
+      try {
+        const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
+        const result = await model.generateContent(prompt);
+        answer = result.response.text();
+      } catch (e) {
+        logger.error({ err: e.message }, 'ask Gemini call failed');
+        return res.status(502).json({ error: 'AI service unavailable' });
+      }
     }
 
     // 5. Persist session + messages

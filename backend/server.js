@@ -33,6 +33,7 @@ const pinoHttp = require('pino-http');
 const logger = require('./logger');
 const { AppError } = require('./errors');
 const { getRateLimitStore, embedKeyGenerator } = require('./services/rateLimitStore');
+const db = require('./db');
 
 const authRoutes = require('./routes/auth');
 const { router: projectsRoutes } = require('./routes/projects');
@@ -204,8 +205,23 @@ for (const p of DOCS_PAGES) {
   app.get(`/docs/${p}`, (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'docs', `${p}.html`)));
 }
 
-// Pretty embed URL
-app.get('/e/:publicId', (_req, res) => {
+// Pretty embed URL. When the project has allowedDomains configured (see
+// projects.allowed_domains, set via Settings), sets a Content-Security-
+// Policy: frame-ancestors header so browsers refuse to render the widget
+// in an iframe on any other site — enforced client-side by the visitor's
+// own browser, not spoofable the way a Referer-header check would be.
+// Unconfigured (the default) stays exactly as before: unrestricted.
+app.get('/e/:publicId', async (req, res) => {
+  try {
+    const project = await db.findOne('projects', { publicId: req.params.publicId });
+    const hosts = (project?.allowedDomains || '').split(',').map(h => h.trim()).filter(Boolean);
+    if (hosts.length) {
+      const sources = hosts.flatMap(h => [`https://${h}`, `http://${h}`]).join(' ');
+      res.setHeader('Content-Security-Policy', `frame-ancestors ${sources}`);
+    }
+  } catch (e) {
+    logger.warn({ err: e.message }, 'allowedDomains lookup failed — serving embed unrestricted');
+  }
   res.sendFile(path.join(PUBLIC_DIR, 'embed.html'));
 });
 

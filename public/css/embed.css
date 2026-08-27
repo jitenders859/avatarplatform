@@ -434,6 +434,28 @@ a.source-card:hover {
 .quick-reply:disabled { cursor: default; opacity: .6; }
 .quick-reply.selected { background: rgba(124,106,245,.18); border-color: var(--accent); opacity: 1; }
 
+/* ── Conversation starters (owner-defined, shown once on boot) ────── */
+.starters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-self: flex-start;
+  max-width: 90%;
+  margin-top: 4px;
+}
+[dir="rtl"] .starters-row { align-self: flex-end; }
+.starter-btn {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.starter-btn:hover { border-color: var(--accent); background: rgba(124,106,245,.1); }
+
 /* ── Flashcard ─────────────────────────────────────────────── */
 .flash-face {
   font-size: 15px;

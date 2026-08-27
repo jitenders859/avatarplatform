@@ -271,16 +271,47 @@
     return RTL_REGEX.test(text) ? 'rtl' : 'ltr';
   }
 
+  // Away message overrides the greeting (not the rest of the bot's
+  // functionality) when the project's business hours are configured and
+  // the server-computed isOpen says we're outside them — see
+  // backend/services/hours.js / GET /embed/:publicId/config.
+  function effectiveWelcomeMessage() {
+    if (config.project.isOpen === false && config.project.awayMessage) return config.project.awayMessage;
+    return config.project.welcomeMessage || '';
+  }
+
+  // Owner-defined suggested first questions, shown once as tappable buttons
+  // right after the welcome/away message on boot (all three modes call this
+  // from finishBoot). Distinct from the AI-driven mid-conversation
+  // quick-replies (extractOptionsTag) — these are fixed, not model-chosen.
+  function renderConversationStarters() {
+    const starters = config.project.conversationStarters;
+    if (!starters || !starters.length) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'starters-row';
+    for (const text of starters) {
+      const btn = document.createElement('button');
+      btn.className = 'starter-btn';
+      btn.type = 'button';
+      btn.textContent = text;
+      btn.addEventListener('click', () => { wrap.remove(); sendMessage(text); });
+      wrap.appendChild(btn);
+    }
+    messagesEl.appendChild(wrap);
+    scrollToBottom();
+  }
+
   // ── 2. SDK init ─────────────────────────────────────────────
   function initSDK() {
     const GREET_TRIGGER = '__GREET_USER_NOW__';
-    const welcomeMessage = (config.project.welcomeMessage || '').trim();
+    const welcomeMessage = effectiveWelcomeMessage().trim();
 
     captureFields = config.captureFields || [];
     const baseSystemPrompt = (config.project.systemPrompt || '')
       + buildKnowledgeBaseToolInstructions()
       + buildCaptureInstructions(captureFields)
-      + buildQuickReplyInstructions(config.project.showQuickReplies);
+      + buildQuickReplyInstructions(config.project.showQuickReplies)
+      + buildFallbackInstruction(config.project.fallbackMessage);
     const systemPromptWithGreeting = welcomeMessage
       ? `${baseSystemPrompt}
 
@@ -359,8 +390,9 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     statusDot.className = 'status-dot connected';
     statusText.textContent = 'Text mode';
 
-    if (config.project.welcomeMessage) {
-      addMessage('bot', config.project.welcomeMessage, { welcome: true });
+    const welcome = effectiveWelcomeMessage();
+    if (welcome) {
+      addMessage('bot', welcome, { welcome: true });
     }
     finishBoot(!!config.project.widgetStartOpen);
   }
@@ -456,9 +488,10 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     statusDot.className = 'status-dot connected';
     statusText.textContent = `${engineLabel(config.project.voiceEngine)} voice`;
 
-    if (config.project.welcomeMessage) {
-      addMessage('bot', config.project.welcomeMessage, { welcome: true });
-      speakReply(config.project.welcomeMessage);
+    const welcome = effectiveWelcomeMessage();
+    if (welcome) {
+      addMessage('bot', welcome, { welcome: true });
+      speakReply(welcome);
     }
     finishBoot(!!config.project.widgetStartOpen);
   }
@@ -596,6 +629,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     }
     setupDrag();
     setupImageDragDrop();
+    renderConversationStarters();
     notifyParent({ type: 'ready' });
   }
 
@@ -1482,6 +1516,20 @@ Always tag a value as soon as you receive it. If the visitor provides multiple v
 
 QUICK REPLY INSTRUCTIONS: When you offer the user a small, closed set of choices to pick from (a menu of next steps, an either/or decision, a short list of topics) — and only then — append a line in this exact format after your response: [[OPTIONS:Choice one|Choice two|Choice three]]
 Use 2 to 5 short options. Do not mention the tag to the user — it will be stripped before display and shown as tappable buttons. Do not use this for open-ended questions or when collecting free-text information.`;
+  }
+
+  // Only used by the Gemini Live path (initSDK) — /ask and /study enforce
+  // this deterministically server-side instead (see backend/routes/embed.js)
+  // since a REST call can just short-circuit before invoking the model at
+  // all. The live session has no such hook (search_knowledge_base is a
+  // mid-conversation tool call, not a pre-check), so this is a prompt-level
+  // instruction instead — less strictly enforced than the REST path, but
+  // still steers the model away from guessing.
+  function buildFallbackInstruction(message) {
+    if (!message) return '';
+    return `
+
+FALLBACK INSTRUCTION: If search_knowledge_base returns nothing relevant to the user's question, respond with exactly this message and nothing else: "${message}"`;
   }
 
   const OPTIONS_TAG_RE = /\[\[OPTIONS:([^\]]+)\]\]/g;
