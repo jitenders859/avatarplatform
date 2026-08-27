@@ -64,9 +64,19 @@
               <select class="select" id="f-character"></select>
             </div>
             <div class="field">
-              <label>Voice</label>
-              <select class="select" id="f-voice"></select>
+              <label>Speech engine</label>
+              <select class="select" id="f-voice-engine">
+                <option value="gemini-live">Gemini Live — real-time speech-to-speech + vision (default)</option>
+                <option value="fish-audio">Fish Audio — text-to-speech voices</option>
+                <option value="cartesia">Cartesia Sonic — text-to-speech voices</option>
+              </select>
             </div>
+          </div>
+          <div class="field">
+            <label id="f-voice-label">Voice</label>
+            <select class="select" id="f-voice"></select>
+            <input class="input" id="f-voice-id" type="text" placeholder="Voice / reference ID from your Fish Audio or Cartesia account" style="display:none" />
+            <span class="help" id="f-voice-help">One of Gemini Live's 30 built-in voices.</span>
           </div>
           <div class="field">
             <label>Capability tier</label>
@@ -733,6 +743,22 @@
     applyTierVisibility(e.target.value);
   });
 
+  // Gemini Live uses one of the 30 prebuilt voice names (dropdown); Fish
+  // Audio and Cartesia use a provider-issued voice/reference id, which is an
+  // arbitrary string we can't offer as a dropdown, so those engines get a
+  // free-text field instead.
+  function updateVoiceFieldVisibility() {
+    const engine = document.getElementById('f-voice-engine').value;
+    const isGemini = engine === 'gemini-live';
+    document.getElementById('f-voice').style.display = isGemini ? '' : 'none';
+    document.getElementById('f-voice-id').style.display = isGemini ? 'none' : '';
+    document.getElementById('f-voice-label').textContent = isGemini ? 'Voice' : 'Voice / reference ID';
+    document.getElementById('f-voice-help').textContent = isGemini
+      ? "One of Gemini Live's 30 built-in voices."
+      : `The voice or reference ID from your ${engine === 'fish-audio' ? 'Fish Audio' : 'Cartesia'} account. Requires ${engine === 'fish-audio' ? 'FISH_AUDIO_API_KEY' : 'CARTESIA_API_KEY'} to be configured on the server.`;
+  }
+  document.getElementById('f-voice-engine').addEventListener('change', updateVoiceFieldVisibility);
+
   async function load() {
     try {
       const [{ project: p }, { characters: chars }, sub] = await Promise.all([
@@ -757,6 +783,10 @@
       voiceSel.innerHTML = VOICES.map(v =>
         `<option value="${v}" ${v === p.voice ? 'selected' : ''}>${v}</option>`
       ).join('');
+
+      document.getElementById('f-voice-engine').value = p.voiceEngine || 'gemini-live';
+      document.getElementById('f-voice-id').value = p.voiceEngine && p.voiceEngine !== 'gemini-live' ? (p.voice || '') : '';
+      updateVoiceFieldVisibility();
 
       // Widget tab
       document.getElementById('f-position').value  = p.widgetPosition || 'bottom-right';
@@ -843,10 +873,18 @@
         welcomeMessage: document.getElementById('f-welcome').value,
         systemPrompt: document.getElementById('f-prompt').value,
         characterId: document.getElementById('f-character').value,
-        voice: document.getElementById('f-voice').value,
+        voiceEngine: document.getElementById('f-voice-engine').value,
         capabilityTier: document.getElementById('f-tier').value,
         webhookUrl: document.getElementById('f-webhook-url').value.trim() || null,
       };
+      // Omit `voice` entirely when the free-text provider field is still
+      // blank (e.g. right after switching engine) rather than sending an
+      // empty string, which the server rejects — this leaves whatever voice
+      // was previously stored in place until one is typed in and saved.
+      const voiceValue = patch.voiceEngine === 'gemini-live'
+        ? document.getElementById('f-voice').value
+        : document.getElementById('f-voice-id').value.trim();
+      if (voiceValue) patch.voice = voiceValue;
       const { project: p } = await API.updateProject(projectId, patch);
       project = p;
       document.getElementById('title').textContent = p.name;

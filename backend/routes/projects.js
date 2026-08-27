@@ -10,6 +10,14 @@ const storage = require('../services/storage');
 
 const router = express.Router();
 
+// Which env var backs each TTS-only voice engine — checked at PATCH time so
+// an owner switching engines gets a clear error immediately instead of a
+// silently broken widget once a visitor tries to speak to it.
+const VOICE_ENGINE_ENV_KEY = {
+  'fish-audio': 'FISH_AUDIO_API_KEY',
+  cartesia: 'CARTESIA_API_KEY',
+};
+
 // Characters assignable to a project: admin-published (status='active') and
 // either globally available or explicitly granted to this user. Ordered
 // oldest-first so the pre-migration default (the original "character_1"/
@@ -48,7 +56,7 @@ router.get('/', authRequired, async (req, res) => {
 });
 
 router.post('/', authRequired, validate(schemas.createProject), async (req, res) => {
-  const { name, characterId, systemPrompt, voice } = req.body;
+  const { name, characterId, systemPrompt, voice, voiceEngine } = req.body;
 
   const { checkLimit } = require('../services/usage');
   const limitCheck = await checkLimit(req.user.id, 'project', 1);
@@ -63,6 +71,7 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
     name: name.trim(),
     characterId: ch.id,
     systemPrompt: systemPrompt || 'You are a friendly, helpful AI assistant. Speak naturally and conversationally.',
+    voiceEngine: voiceEngine || 'gemini-live',
     voice: voice || 'Puck',
     welcomeMessage: 'Hi! Ask me anything.',
     publicId: uuid().replace(/-/g, '').slice(0, 16),
@@ -119,6 +128,12 @@ router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, r
     const available = await listAvailableCharacters(req.user.id);
     if (!available.find(c => c.id === patch.characterId)) {
       return res.status(400).json({ error: 'Unknown character' });
+    }
+  }
+  if (patch.voiceEngine) {
+    const envKey = VOICE_ENGINE_ENV_KEY[patch.voiceEngine];
+    if (envKey && !process.env[envKey]) {
+      return res.status(400).json({ error: `This server isn't configured for ${patch.voiceEngine} yet (missing ${envKey}).` });
     }
   }
   if (patch.webhookUrl) {

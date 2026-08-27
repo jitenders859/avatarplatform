@@ -17,6 +17,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { projectCache, invalidateProjectCache } = require('../cache');
 const { validate, schemas } = require('../middleware/validate');
 const { toolsForTier } = require('../services/tools');
+const { synthesizeSpeech, TtsError } = require('../services/tts');
 const { resolveLearnerKey, backfillLearnerKey } = require('../services/learner');
 const { checkLimit, userPlanId } = require('../services/usage');
 const logger = require('../logger').child({ module: 'embed' });
@@ -144,6 +145,7 @@ router.get('/:publicId/config', async (req, res) => {
         publicId: project.publicId,
         name: project.name,
         voice: project.voice,
+        voiceEngine: project.voiceEngine || 'gemini-live',
         systemPrompt: project.systemPrompt,
         welcomeMessage: project.welcomeMessage,
         capabilityTier: project.capabilityTier || 'basic',
@@ -401,6 +403,46 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
     res.json({ answer, sources, sessionId: sid });
   } catch (e) {
     logger.error({ err: e.message }, 'ask error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
+ * POST /embed/:publicId/speak
+ *
+ * Synthesizes text into audio through the project's TTS-only voice engine
+ * (Fish Audio / Cartesia — see backend/services/tts.js). Used only by
+ * projects configured with one of those engines: the widget still gets its
+ * reply text from POST /ask (unchanged), then calls this endpoint with that
+ * text to get audio to play through the avatar. Gemini Live and OpenAI
+ * Realtime projects never call this — they get audio directly from their
+ * own live session and don't need a separate synthesis step.
+ *
+ * Shares /ask's per-(visitor, project) rate limit since this is the other
+ * paid step of the same "answer a question" flow.
+ */
+router.post('/:publicId/speak', validate(schemas.speak), aiCostLimiter, async (req, res) => {
+  try {
+    const project = await findByPublicId(req.params.publicId);
+    if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+
+    const engine = project.voiceEngine || 'gemini-live';
+    if (engine === 'gemini-live') {
+      return res.status(400).json({ error: 'This project uses Gemini Live, which does not use /speak.' });
+    }
+
+    const limitCheck = await checkLimit(project.userId, 'message', 1);
+    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason });
+
+    const { audioBase64, mimeType, sampleRate } = await synthesizeSpeech({
+      engine,
+      voiceId: project.voice,
+      text: req.body.text,
+    });
+    res.json({ audio: audioBase64, mimeType, sampleRate });
+  } catch (e) {
+    if (e instanceof TtsError) return res.status(502).json({ error: e.message });
+    logger.error({ err: e.message }, 'speak error');
     res.status(500).json({ error: 'Server error' });
   }
 });

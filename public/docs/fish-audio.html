@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Fish Audio Avatar — AvatarPlatform Docs</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">Fish Audio Avatar</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <div id="theme-toggle-slot" style="padding:0 20px 12px"></div>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link active" href="/docs/fish-audio">Fish Audio Avatar</a>
+          <a class="docs-nav-link" href="/docs/cartesia">Cartesia Sonic Avatar</a>
+          <a class="docs-nav-link" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>SDK Introduction</div>
+        <h1>Fish Audio Avatar</h1>
+        <p class="docs-lead">Use a Fish Audio voice instead of Gemini Live. Fish Audio is text-to-speech only, so this is a different pipeline shape than Gemini Live or OpenAI Realtime — see "How it works" below.</p>
+
+        <div class="callout callout-warn">
+          <span class="callout-icon">⚠️</span>
+          <div class="callout-body"><p>Fish Audio does not do speech understanding or live conversation — it only turns text into audio. Setting a project's speech engine to Fish Audio changes how it answers: no native vision (image upload is unavailable), and microphone input is transcribed by the browser's own Web Speech API (Chrome/Edge) instead of being streamed to the provider.</p></div>
+        </div>
+
+        <h2>How it works</h2>
+        <p>Unlike Gemini Live's single bidirectional session, a Fish Audio turn is two server calls chained together:</p>
+        <ol>
+          <li>The visitor's message goes to the existing <code>POST /embed/:publicId/ask</code> endpoint, which runs the normal Gemini-backed knowledge-base RAG pipeline and returns reply text — completely unchanged by which voice engine is selected.</li>
+          <li>The widget then calls <code>POST /embed/:publicId/speak</code> with that text. The server calls the Fish Audio TTS API (<code>backend/services/tts.js</code>) and returns raw PCM16 audio, base64-encoded.</li>
+          <li>The browser plays that audio through the avatar's existing amplitude-driven lip-sync pipeline (<code>avatar.speakPCM()</code> in <code>public/lipsync-sdk.js</code>) — the same code path that drives the mouth when no phoneme timing is available from Gemini.</li>
+        </ol>
+
+        <h2>Configuration</h2>
+        <h3>Step 1 — Add your Fish Audio API key</h3>
+        <pre><code class="language-bash"># .env — server-side only, never sent to the browser
+FISH_AUDIO_API_KEY=your-fish-audio-api-key</code></pre>
+
+        <h3>Step 2 — Set the engine and voice for a project</h3>
+        <p>In the dashboard, open your project → <strong>Settings</strong> tab and set <strong>Speech engine</strong> to <em>Fish Audio</em>, then paste your voice's reference ID into the field that appears. You can also do this via the API:</p>
+        <pre><code class="language-bash">PATCH /api/projects/:id
+Content-Type: application/json
+Authorization: Bearer YOUR_JWT
+
+{
+  "voiceEngine": "fish-audio",
+  "voice": "your-fish-audio-reference-id"
+}</code></pre>
+        <p>Find your reference IDs in the Fish Audio dashboard under your saved/cloned voice models.</p>
+
+        <div class="callout callout-info">
+          <span class="callout-icon">ℹ️</span>
+          <div class="callout-body"><p>Saving is rejected with a clear error if <code>FISH_AUDIO_API_KEY</code> isn't set on the server yet — this is checked at save time so a broken engine choice can't silently ship to visitors.</p></div>
+        </div>
+
+        <h2>Output format</h2>
+        <p><code>backend/services/tts.js</code> requests raw PCM16 little-endian mono audio at 24kHz directly from Fish Audio, matching the sample rate the avatar's playback pipeline already expects (no client-side resampling). As a defensive fallback, a response wrapped in a WAV container is detected and unwrapped automatically, in case your account's API response shape differs slightly from what's documented.</p>
+
+        <div class="callout callout-tip">
+          <span class="callout-icon">💡</span>
+          <div class="callout-body"><p><strong>If synthesis calls fail in your account:</strong> Fish Audio's request fields (e.g. <code>reference_id</code>, <code>format</code>) are set based on their public API — if your account uses different field names, adjust <code>synthesizeFishAudio()</code> in <code>backend/services/tts.js</code>; failures are logged server-side with the response body to make this quick to diagnose.</p></div>
+        </div>
+
+        <h2>When to use this instead of Gemini Live</h2>
+        <table class="props-table">
+          <thead><tr><th></th><th>Gemini Live (default)</th><th>Fish Audio</th></tr></thead>
+          <tbody>
+            <tr><td><strong>Speech understanding</strong></td><td>Native, live</td><td>None — text comes from <code>/ask</code>, mic uses the browser's Web Speech API</td></tr>
+            <tr><td><strong>Vision (image upload)</strong></td><td>Yes</td><td>Not supported</td></tr>
+            <tr><td><strong>Voice selection</strong></td><td>30 built-in voices</td><td>Any voice/clone in your Fish Audio account</td></tr>
+            <tr><td><strong>Latency</strong></td><td>Lowest — one streaming session</td><td>Higher — two sequential HTTP calls per turn</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/theme.js"></script>
+
+  <script>mountThemeToggle(document.getElementById('theme-toggle-slot'));</script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

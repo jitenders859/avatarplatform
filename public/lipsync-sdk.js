@@ -1081,9 +1081,16 @@
     constructor(opts = {}) {
       if (!opts.container) throw new Error('[LipsyncAvatar] opts.container is required');
       if (!opts.riveSrc)   throw new Error('[LipsyncAvatar] opts.riveSrc is required');
-      if (!opts.apiKey)    throw new Error('[LipsyncAvatar] opts.apiKey is required');
+      // apiKey is only needed to open the Gemini Live WebSocket (connect(),
+      // sendText(), sendImage(), the mic). Projects on a TTS-only voice
+      // engine (Fish Audio, Cartesia — see speakPCM()) never call those and
+      // don't have a Gemini key to give.
+      if (!opts.apiKey && (opts.voiceEngine || 'gemini-live') === 'gemini-live') {
+        throw new Error('[LipsyncAvatar] opts.apiKey is required');
+      }
 
       this._opts = Object.assign({
+        voiceEngine: 'gemini-live',
         model: DEFAULT_MODEL,
         voice: 'Puck',
         systemPrompt: 'You are a friendly, expressive AI assistant. Speak naturally.',
@@ -1247,6 +1254,21 @@
           turn_complete: true,
         },
       }));
+    }
+
+    /**
+     * Play a base64-encoded raw PCM16 (mono, 24kHz) audio buffer through the
+     * avatar's existing playback + amplitude-driven lip-sync pipeline,
+     * without opening a Gemini Live session — used by TTS-only voice
+     * engines (Fish Audio, Cartesia), where the reply text/audio come from
+     * REST calls (see backend/routes/embed.js's /ask + /speak) rather than
+     * a live WebSocket. Safe to call whether or not connect() was ever
+     * called; does not require opts.apiKey.
+     */
+    speakPCM(base64Pcm16) {
+      if (!base64Pcm16 || this._destroyed) return;
+      this._ensureAudioCtx();
+      this._playPCM(base64ToInt16(base64Pcm16));
     }
 
     /** Start microphone capture (hold-to-speak) */
@@ -1843,16 +1865,21 @@ When answering, speak naturally and conversationally — do not read the knowled
     // ─────────────────────────────────────────────────────
     //  SESSION
     // ─────────────────────────────────────────────────────
-    _startSession() {
+    /** Create (or resume) the AudioContext/analyser used for playback + lip-sync. Shared by _startSession() and speakPCM(). */
+    _ensureAudioCtx() {
       if (this._audioCtx) {
         this._audioCtx.resume();
-      } else {
-        this._audioCtx  = new AudioContext({ sampleRate: OUT_RATE });
-        this._analyser  = this._audioCtx.createAnalyser();
-        this._analyser.fftSize = FFT_SIZE;
-        this._analyser.smoothingTimeConstant = 0;
-        this._analyser.connect(this._audioCtx.destination);
+        return;
       }
+      this._audioCtx  = new AudioContext({ sampleRate: OUT_RATE });
+      this._analyser  = this._audioCtx.createAnalyser();
+      this._analyser.fftSize = FFT_SIZE;
+      this._analyser.smoothingTimeConstant = 0;
+      this._analyser.connect(this._audioCtx.destination);
+    }
+
+    _startSession() {
+      this._ensureAudioCtx();
 
       this._audioStart  = 0;
       this._nextPlayAt  = 0;

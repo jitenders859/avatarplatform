@@ -38,6 +38,9 @@ You can run without `STRIPE_SECRET_KEY` — billing endpoints return 503 and the
 |---|---|---|
 | `GEMINI_API_KEY` | Yes | Used server-side for embeddings, extraction, and async Q&A |
 | `PUBLIC_GEMINI_API_KEY` | Recommended | Served to the client for Gemini Live WebSocket (use a restricted key with quotas) |
+| `FISH_AUDIO_API_KEY` | Optional | Enables the Fish Audio voice engine (server-side only, never sent to the client — see `backend/services/tts.js`) |
+| `CARTESIA_API_KEY` | Optional | Enables the Cartesia Sonic voice engine (server-side only — see `backend/services/tts.js`) |
+| `CARTESIA_MODEL_ID` | Optional | Cartesia TTS model, defaults to `sonic-3.5` |
 | `JWT_SECRET` | Yes | Signs auth tokens |
 | `STRIPE_SECRET_KEY` | Optional | Enables billing endpoints |
 | `STRIPE_WEBHOOK_SECRET` | Optional | Validates Stripe webhook signatures |
@@ -214,6 +217,7 @@ public/
 | GET | `/embed/:publicId/config` | — | Public bot config + API key |
 | POST | `/embed/:publicId/retrieve` | — | RAG vector search (rate-limited) |
 | POST | `/embed/:publicId/ask` | — | Async Q&A via Gemini 2.0 Flash (rate-limited) |
+| POST | `/embed/:publicId/speak` | — | Synthesize text to audio via the project's TTS voice engine (rate-limited) |
 | POST | `/embed/:publicId/log` | — | Log a conversation message |
 | POST | `/embed/:publicId/lead` | — | Upsert lead capture data |
 | GET | `/embed/:publicId/file/:fid` | — | Serve image file |
@@ -221,6 +225,7 @@ public/
 ## Notes
 
 - **`PUBLIC_GEMINI_API_KEY`**: the Gemini Live WebSocket is opened client-side and requires a key. Use a key restricted by HTTP referrer and with per-minute quotas in production. A future version could proxy the WebSocket through this server.
+- **Voice engines**: each project picks one via the Settings tab. `gemini-live` (default) is real-time speech-to-speech with native vision (image upload). `fish-audio` and `cartesia` are text-to-speech only — the reply text still comes from the existing Gemini-backed `/ask`, and `/speak` (see `backend/services/tts.js`) turns it into audio server-side; these two don't support image upload or Gemini's native mic streaming (voice input instead uses the browser's Web Speech API, Chrome/Edge only). See `public/docs/fish-audio.html` and `public/docs/cartesia.html`.
 - **Vector store**: in-memory cosine search, computed on demand from the `chunks` table. For 10k+ chunks per project, replace `services/vector.js` with sqlite-vec, pgvector, or Pinecone.
 - **Database**: JSON-file based with per-table atomic writes — fine for early scale. Swap for Postgres by reimplementing the exported surface of `db.js`.
 - **Sessions**: anonymous visitors are tracked per IP per project. The analytics API rolls them up into 30-day charts.

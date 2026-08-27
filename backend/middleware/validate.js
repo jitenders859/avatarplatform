@@ -32,8 +32,29 @@ const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const YOUTUBE_URL_RE = /^https:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/;
 const CAPTURE_FIELD_TYPES = ['text', 'email', 'phone', 'number', 'date', 'time', 'select'];
 
+const VOICE_ENGINES = ['gemini-live', 'fish-audio', 'cartesia'];
+
 const systemPrompt = z.string().max(4000, 'systemPrompt too long').optional();
-const voice = z.enum(VOICES, { error: 'Invalid voice' }).optional();
+// Gemini Live projects must use one of the 30 prebuilt voice names; Fish
+// Audio / Cartesia projects use a provider-issued voice/reference id, which
+// is an arbitrary string we can't enumerate here. The enum check against
+// voiceEngine happens below, in a superRefine on each schema that uses this
+// (so it sees both fields from the same request body).
+const voice = z.string().trim().min(1).max(200, 'Invalid voice').optional();
+const voiceEngine = z.enum(VOICE_ENGINES, { error: 'Invalid voiceEngine' }).optional();
+
+// Shared by createProject/patchProject: voice must be one of the 30 Gemini
+// Live names unless voiceEngine opts into a provider with its own IDs. Only
+// sees the fields sent in this one request — a PATCH that changes `voice`
+// alone on a project already using a non-gemini-live engine (set in an
+// earlier request) still needs voiceEngine echoed back in the same call to
+// pass this check; the project.html UI always sends both together.
+function checkVoiceForEngine(d, ctx) {
+  const engine = d.voiceEngine || 'gemini-live';
+  if (engine === 'gemini-live' && d.voice !== undefined && !VOICES.includes(d.voice)) {
+    ctx.addIssue({ code: 'custom', message: 'Invalid voice', path: ['voice'] });
+  }
+}
 
 const schemas = {
   signup: z.object({
@@ -61,7 +82,8 @@ const schemas = {
     characterId: z.string().optional(),
     systemPrompt,
     voice,
-  }),
+    voiceEngine,
+  }).superRefine(checkVoiceForEngine),
 
   // All fields optional — this backs a PATCH where any subset may be sent.
   // Cross-field checks that need DB state (characterId existence,
@@ -72,6 +94,7 @@ const schemas = {
     characterId: z.string().optional(),
     systemPrompt,
     voice,
+    voiceEngine,
     welcomeMessage: z.string().max(300, 'welcomeMessage too long').optional(),
     widgetPosition: z.enum(['bottom-right', 'bottom-left', 'inline'], { error: 'Invalid widgetPosition' }).optional(),
     widgetStartOpen: z.boolean().optional(),
@@ -98,7 +121,7 @@ const schemas = {
     // runs in routes/projects.js before this is persisted.
     webhookUrl: z.string().url('Invalid webhookUrl').max(2048).nullable().optional(),
     capabilityTier: z.enum(CAPABILITY_TIERS, { error: 'Invalid capabilityTier' }).optional(),
-  }),
+  }).superRefine(checkVoiceForEngine),
 
   filesInit: z.object({
     files: z.array(z.object({
@@ -240,6 +263,13 @@ const schemas = {
   ask: z.object({
     question: z.string().min(1, 'question is required').max(1000, 'Question too long'),
     sessionId: z.string().optional().nullable(),
+  }),
+
+  // Backs POST /embed/:publicId/speak — synthesizes already-generated reply
+  // text (from /ask) through the project's TTS-only voice engine (Fish
+  // Audio / Cartesia). See backend/services/tts.js.
+  speak: z.object({
+    text: z.string().min(1, 'text is required').max(2000, 'text too long'),
   }),
 
   study: z.object({

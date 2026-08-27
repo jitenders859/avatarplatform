@@ -41,6 +41,12 @@ CREATE TABLE IF NOT EXISTS projects (
   name                     TEXT    NOT NULL,
   character_id             TEXT    NOT NULL DEFAULT 'character_1',
   system_prompt            TEXT,
+  -- 'gemini-live' (default, real-time speech-to-speech + native vision via
+  -- lipsync-sdk.js's direct browser WebSocket) | 'fish-audio' | 'cartesia'
+  -- (server-synthesized TTS-only voices, see backend/services/tts.js).
+  -- `voice` holds a Gemini prebuilt voice name for gemini-live, or the
+  -- provider's own voice/reference id string for fish-audio/cartesia.
+  voice_engine             TEXT    NOT NULL DEFAULT 'gemini-live',
   voice                    TEXT    DEFAULT 'Puck',
   welcome_message          TEXT,
   -- Capability tier: 'basic' | 'medium' | 'advanced' — gates study-tool

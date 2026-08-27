@@ -141,6 +141,7 @@
   let fullscreenActive = false;
   let avatarCanvas = null;   // single Rive canvas element shuttled between slots
   let textOnly = false;      // true when no voice key (server answers via /ask)
+  let ttsMode = false;       // true for TTS-only voice engines (Fish Audio, Cartesia)
 
   const AVATAR_SIZES = { small: 80, medium: 120, large: 160, xlarge: 200 };
 
@@ -231,6 +232,12 @@
     }
 
     if (config.limitReached) { showFatal(config.limitMessage || 'This assistant has reached its usage limit for this month. Please check back later.'); return; }
+
+    // Project configured for a TTS-only voice engine (Fish Audio, Cartesia)
+    // instead of the default Gemini Live speech-to-speech. These providers
+    // only synthesize audio from text, so unlike Gemini Live this mode
+    // doesn't open a live WebSocket at all — see initTtsMode().
+    if ((config.project.voiceEngine || 'gemini-live') !== 'gemini-live') { initTtsMode(); return; }
 
     // No voice key issued by the server (PUBLIC_GEMINI_API_KEY unset, or the
     // owner's quota was exhausted between config load and now). Degrade to
@@ -406,6 +413,155 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     }
   }
 
+  // ── 2c. TTS-only mode (Fish Audio / Cartesia) ────────────────────
+  // These providers only synthesize audio from text — no live session, no
+  // speech understanding, no vision. Reply text still comes from the same
+  // Gemini-backed POST /ask used by text-only mode; this mode additionally
+  // calls POST /speak with that text and plays the resulting audio through
+  // the avatar's existing playback + amplitude-driven lip-sync pipeline
+  // (avatar.speakPCM — see public/lipsync-sdk.js), so the avatar stays
+  // visible and animated even though there's no live Gemini connection.
+  function engineLabel(engine) {
+    return engine === 'fish-audio' ? 'Fish Audio' : engine === 'cartesia' ? 'Cartesia' : 'Voice';
+  }
+
+  function initTtsMode() {
+    ttsMode = true;
+    captureFields = config.captureFields || [];
+
+    // Neither provider can see images — only Gemini Live's native vision
+    // (avatar.sendImage) supports the image-upload feature today.
+    imageBtn.style.display = 'none';
+    imageInput.style.display = 'none';
+
+    avatar = new LipsyncAvatar({
+      container:    '#sdk-host',
+      riveSrc:      config.character.rivePath,
+      voiceEngine:  config.project.voiceEngine,
+      showVoiceSelect: false, showTranscript: false,
+      showTextInput: false,   showBands: false,
+      width: 300, height: 300,
+    });
+
+    waitForCanvas(canvas => {
+      avatarCanvas = canvas;
+      Object.assign(canvas.style, { width: '100%', height: '100%', display: 'block', borderRadius: '12px' });
+      avatarCanvasSlot.appendChild(canvas);
+      launcherFallback.style.display = 'none';
+    });
+
+    statusDot.className = 'status-dot connected';
+    statusText.textContent = `${engineLabel(config.project.voiceEngine)} voice`;
+
+    if (config.project.welcomeMessage) {
+      addMessage('bot', config.project.welcomeMessage, { welcome: true });
+      speakReply(config.project.welcomeMessage);
+    }
+    finishBoot(!!config.project.widgetStartOpen);
+  }
+
+  /** Synthesize `text` via POST /speak and play it through the avatar. Best-effort: the text reply already rendered, so a synthesis failure just means no audio this turn. */
+  async function speakReply(text) {
+    if (!text) return;
+    try {
+      const res = await fetch(`/embed/${publicId}/speak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.audio) avatar.speakPCM(data.audio);
+    } catch (_) { /* voice is best-effort */ }
+  }
+
+  async function sendTtsMessage(text) {
+    addMessage('user', text);
+    textInput.value = '';
+    textInput.style.height = 'auto';
+    sendBtn.disabled = true;
+    statusText.textContent = 'Thinking…';
+
+    try {
+      const res = await fetch(`/embed/${publicId}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: text, sessionId }),
+      });
+
+      if (res.status === 429) {
+        addMessage('bot', '⚠️ Slow down a bit — too many messages in a short time.');
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 402 || data.limitReached) {
+        addMessage('bot', data.limitMessage || data.error || 'This assistant has reached its usage limit for this month. Please check back later.');
+        return;
+      }
+      if (!res.ok) {
+        addMessage('bot', data.error || 'Something went wrong — please try again in a moment.');
+        return;
+      }
+
+      if (data.sessionId) sessionId = data.sessionId;
+
+      const answerEl = addMessage('bot', data.answer || '…');
+      if (config.project.showSourceCards !== false && data.sources && data.sources.length) {
+        attachSources(answerEl, data.sources.map(s => ({
+          fileId: null, fileName: s.title, kind: s.url ? 'url' : null, url: s.url || null, previewUrl: null,
+        })));
+      }
+      speakReply(data.answer || '');
+    } catch (e) {
+      addMessage('bot', 'Something went wrong — please try again in a moment.');
+    } finally {
+      sendBtn.disabled = false;
+      statusText.textContent = `${engineLabel(config.project.voiceEngine)} voice`;
+    }
+  }
+
+  // Mic input for TTS-only engines: neither provider does speech-to-text,
+  // so this uses the browser's built-in Web Speech API instead of a
+  // streamed mic feed. Chrome/Edge only — browsers without support (Firefox,
+  // Safari) fall back to a clear inline message; typing always still works.
+  let speechRecognizer = null;
+  function getSpeechRecognizer() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
+    if (!speechRecognizer) {
+      speechRecognizer = new SR();
+      speechRecognizer.continuous = false;
+      speechRecognizer.interimResults = false;
+      speechRecognizer.lang = document.documentElement.lang || 'en-US';
+    }
+    return speechRecognizer;
+  }
+
+  let ttsMicOn = false;
+  function handleTtsMicClick() {
+    const rec = getSpeechRecognizer();
+    if (!rec) {
+      addMessage('bot', "⚠️ Voice input isn't supported in this browser — please type instead.");
+      return;
+    }
+    if (ttsMicOn) { rec.stop(); return; }
+
+    ttsMicOn = true;
+    micBtn.classList.add('active');
+    statusText.textContent = 'Listening…';
+
+    rec.onresult = (e) => sendMessage(e.results[0][0].transcript);
+    rec.onerror = () => addMessage('bot', '⚠️ Could not hear that — please try again or type.');
+    rec.onend = () => {
+      ttsMicOn = false;
+      micBtn.classList.remove('active');
+      statusText.textContent = `${engineLabel(config.project.voiceEngine)} voice`;
+    };
+    rec.start();
+  }
+
   function waitForCanvas(cb, attempts = 60) {
     const host = document.getElementById('sdk-host');
     const canvas = host && host.querySelector('canvas');
@@ -457,7 +613,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
   // ── Drag-and-drop image upload (opt-in per project) ────────────
   function setupImageDragDrop() {
-    if (!config.project.allowDragDropUpload) return;
+    if (!config.project.allowDragDropUpload || ttsMode) return;
     let dragDepth = 0;
     const hasFiles = e => e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files');
 
@@ -499,6 +655,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     text = (text || '').trim();
     if (!text) return;
     if (textOnly) return sendTextOnly(text);
+    if (ttsMode) return sendTtsMessage(text);
 
     addMessage('user', text);
     textInput.value = '';
@@ -1195,6 +1352,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
   let micOn = false;
   micBtn.addEventListener('click', async () => {
+    if (ttsMode) return handleTtsMicClick();
     if (!avatar) return;
     if (!statusDot.classList.contains('connected')) {
       avatar.connect();
