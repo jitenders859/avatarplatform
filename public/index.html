@@ -3,9 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>AvatarPlatform — AI Talking Agents for any website</title>
-  <meta name="description" content="Host AI agents with animated Rive characters. Embed with one script tag. Customize looks, voice, and knowledge. Works async." />
-  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <title data-i18n="index.pageTitle">AvatarPlatform — AI Talking Agents for any website</title>
+  <meta name="description" data-i18n-attr="content:index.pageDescription" content="Host AI agents with animated Rive characters. Embed with one script tag. Customize looks, voice, and knowledge. Works async." />
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';
+    (function () {
+      // Self-contained, mirrors the theme line above — i18n.js (which needs
+      // the dictionaries loaded) runs later, but lang/dir must be set before
+      // first paint to avoid an LTR/English flash. Keep RTL_LANGS in sync
+      // with I18N.LANGS in public/js/i18n.js.
+      var RTL_LANGS = { ar: 1 };
+      var KNOWN = ['en', 'es', 'fr', 'ar', 'hi'];
+      var saved = localStorage.getItem('apLang');
+      var lang = KNOWN.indexOf(saved) !== -1 ? saved : 'en';
+      document.documentElement.lang = lang;
+      document.documentElement.dir = RTL_LANGS[lang] ? 'rtl' : 'ltr';
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -382,14 +396,15 @@
       </a>
       <div class="spacer"></div>
       <div class="nav-links">
-        <a class="nav-link" href="/docs">Docs</a>
-        <a class="nav-link" href="/pricing">Pricing</a>
-        <a class="nav-link" href="/characters">Characters</a>
-        <a class="nav-link" href="/blog">Blog</a>
+        <a class="nav-link" href="/docs" data-i18n="common.nav.docs">Docs</a>
+        <a class="nav-link" href="/pricing" data-i18n="common.nav.pricing">Pricing</a>
+        <a class="nav-link" href="/characters" data-i18n="common.nav.characters">Characters</a>
+        <a class="nav-link" href="/blog" data-i18n="common.nav.blog">Blog</a>
       </div>
+      <div id="lang-switch-slot"></div>
       <div id="theme-toggle-slot"></div>
-      <a class="nav-link" href="/login" style="font-size:13px;color:var(--text-2)">Log in</a>
-      <a class="btn btn-primary btn-sm" href="/signup">Get started free</a>
+      <a class="nav-link" href="/login" style="font-size:13px;color:var(--text-2)" data-i18n="common.nav.login">Log in</a>
+      <a class="btn btn-primary btn-sm" href="/signup" data-i18n="common.nav.getStarted">Get started free</a>
     </div>
   </nav>
 
@@ -400,13 +415,13 @@
       <div>
         <div class="hero-eyebrow">
           <span class="eyebrow-dot"></span>
-          Powered by Gemini Live + Rive
+          <span data-i18n="index.hero.eyebrow">Powered by Gemini Live + Rive</span>
         </div>
-        <h1 class="lp-h1">Add a talking AI agent<br>to any website<br>in minutes</h1>
-        <p class="lp-sub">Host agents with animated Rive characters. Embed with one script tag. Customize looks, voice, and knowledge. Works async.</p>
+        <h1 class="lp-h1" data-i18n-html="index.hero.title">Add a talking AI agent<br>to any website<br>in minutes</h1>
+        <p class="lp-sub" data-i18n="index.hero.subtitle">Host agents with animated Rive characters. Embed with one script tag. Customize looks, voice, and knowledge. Works async.</p>
         <div class="hero-btns">
-          <a class="btn btn-primary btn-lg" href="/signup">Start free →</a>
-          <a class="btn btn-ghost btn-lg" href="/docs">Read the docs</a>
+          <a class="btn btn-primary btn-lg" href="/signup" data-i18n="index.hero.ctaStart">Start free →</a>
+          <a class="btn btn-ghost btn-lg" href="/docs" data-i18n="index.hero.ctaDocs">Read the docs</a>
         </div>
       </div>
 
@@ -434,7 +449,7 @@
 
     <!-- Integrations row -->
     <div class="integrations-row">
-      <span class="int-label">Works with</span>
+      <span class="int-label" data-i18n="index.hero.worksWith">Works with</span>
       <span class="int-pill">
         <span class="int-badge" style="background:#1a73e8;color:#fff">G</span>
         Gemini Live
@@ -458,30 +473,30 @@
   <section class="lp-section">
     <div class="container">
       <div class="section-header">
-        <p class="section-eyebrow">Platform</p>
-        <h2 class="section-heading">Everything you need<br>to ship a talking agent</h2>
-        <p class="section-sub">From knowledge ingestion to pixel-perfect lip sync — the full stack, already built.</p>
+        <p class="section-eyebrow" data-i18n="index.features.eyebrow">Platform</p>
+        <h2 class="section-heading" data-i18n-html="index.features.title">Everything you need<br>to ship a talking agent</h2>
+        <p class="section-sub" data-i18n="index.features.subtitle">From knowledge ingestion to pixel-perfect lip sync — the full stack, already built.</p>
       </div>
       <div class="grid grid-2">
         <div class="feat-card">
           <div class="feat-icon">🤖</div>
-          <h3 class="feat-title">Host Agents</h3>
-          <p class="feat-body">Deploy AI agents backed by your knowledge base. Each agent has its own Rive character, voice, and personality. Upload PDFs, website URLs, or paste text — your agent learns it instantly.</p>
+          <h3 class="feat-title" data-i18n="index.features.hostAgents.title">Host Agents</h3>
+          <p class="feat-body" data-i18n="index.features.hostAgents.body">Deploy AI agents backed by your knowledge base. Each agent has its own Rive character, voice, and personality. Upload PDFs, website URLs, or paste text — your agent learns it instantly.</p>
         </div>
         <div class="feat-card">
           <div class="feat-icon">🪄</div>
-          <h3 class="feat-title">Embed Widgets</h3>
-          <p class="feat-body">One script tag, zero build step. Drop a floating launcher or inline panel into any site — React, Vue, plain HTML. The widget handles auth, streaming, and lip-sync automatically.</p>
+          <h3 class="feat-title" data-i18n="index.features.embedWidgets.title">Embed Widgets</h3>
+          <p class="feat-body" data-i18n="index.features.embedWidgets.body">One script tag, zero build step. Drop a floating launcher or inline panel into any site — React, Vue, plain HTML. The widget handles auth, streaming, and lip-sync automatically.</p>
         </div>
         <div class="feat-card">
           <div class="feat-icon">🎨</div>
-          <h3 class="feat-title">Customize Looks</h3>
-          <p class="feat-body">Pick from 4 animated Rive characters or bring your own <code>.riv</code> file. Theme colour, position, launcher size, and panel layout are all configurable per project — no code required.</p>
+          <h3 class="feat-title" data-i18n="index.features.customizeLooks.title">Customize Looks</h3>
+          <p class="feat-body" data-i18n-html="index.features.customizeLooks.body">Pick from 4 animated Rive characters or bring your own <code>.riv</code> file. Theme colour, position, launcher size, and panel layout are all configurable per project — no code required.</p>
         </div>
         <div class="feat-card">
           <div class="feat-icon">⚡</div>
-          <h3 class="feat-title">Use Async</h3>
-          <p class="feat-body">Non-blocking SDK: fire <code>AvatarPlatform.ask(botId, question)</code> from anywhere. Get back a Promise with the answer and source citations. Stream tokens directly into your own UI.</p>
+          <h3 class="feat-title" data-i18n="index.features.useAsync.title">Use Async</h3>
+          <p class="feat-body" data-i18n-html="index.features.useAsync.body">Non-blocking SDK: fire <code>AvatarPlatform.ask(botId, question)</code> from anywhere. Get back a Promise with the answer and source citations. Stream tokens directly into your own UI.</p>
         </div>
       </div>
     </div>
@@ -491,16 +506,16 @@
   <section class="lp-section lp-section-alt">
     <div class="container">
       <div class="section-header">
-        <p class="section-eyebrow">Integration</p>
-        <h2 class="section-heading">Integrate in any stack</h2>
-        <p class="section-sub">Script tag, React component, or headless async API — pick the integration style that fits your app.</p>
+        <p class="section-eyebrow" data-i18n="index.demo.eyebrow">Integration</p>
+        <h2 class="section-heading" data-i18n="index.demo.title">Integrate in any stack</h2>
+        <p class="section-sub" data-i18n="index.demo.subtitle">Script tag, React component, or headless async API — pick the integration style that fits your app.</p>
       </div>
 
       <div class="demo-card">
         <div class="demo-tabbar">
-          <button class="demo-tab active" onclick="switchTab(event,'script')">Script tag</button>
-          <button class="demo-tab" onclick="switchTab(event,'react')">React</button>
-          <button class="demo-tab" onclick="switchTab(event,'async')">Async</button>
+          <button class="demo-tab active" onclick="switchTab(event,'script')" data-i18n="index.demo.tabScript">Script tag</button>
+          <button class="demo-tab" onclick="switchTab(event,'react')" data-i18n="index.demo.tabReact">React</button>
+          <button class="demo-tab" onclick="switchTab(event,'async')" data-i18n="index.demo.tabAsync">Async</button>
         </div>
         <div class="demo-body">
 
@@ -568,28 +583,28 @@ console.<span class="s-fn">log</span>(result.sources);
   <section class="lp-section">
     <div class="container">
       <div class="section-header">
-        <p class="section-eyebrow">SDKs</p>
-        <h2 class="section-heading">Build with our SDKs</h2>
-        <p class="section-sub">Native packages for every major platform. TypeScript-first, same API everywhere.</p>
+        <p class="section-eyebrow" data-i18n="index.sdk.eyebrow">SDKs</p>
+        <h2 class="section-heading" data-i18n="index.sdk.title">Build with our SDKs</h2>
+        <p class="section-sub" data-i18n="index.sdk.subtitle">Native packages for every major platform. TypeScript-first, same API everywhere.</p>
       </div>
       <div class="sdk-row">
         <div class="sdk-card">
           <div class="sdk-icon">⚛️</div>
           <div class="sdk-info">
-            <h3 class="sdk-title">React SDK</h3>
-            <p class="sdk-desc">Drop-in &lt;AvatarWidget /&gt; with hooks for open/close control, async asks, and token streaming. Full TypeScript types. Works with Next.js, Vite, Remix, and CRA.</p>
+            <h3 class="sdk-title" data-i18n="index.sdk.react.title">React SDK</h3>
+            <p class="sdk-desc" data-i18n="index.sdk.react.body">Drop-in &lt;AvatarWidget /&gt; with hooks for open/close control, async asks, and token streaming. Full TypeScript types. Works with Next.js, Vite, Remix, and CRA.</p>
             <code class="sdk-install">npm install @avatar-platform/react</code>
           </div>
-          <a class="btn btn-ghost" href="/docs/react-sdk" style="flex-shrink:0">View docs →</a>
+          <a class="btn btn-ghost" href="/docs/react-sdk" style="flex-shrink:0" data-i18n="index.sdk.viewDocs">View docs →</a>
         </div>
         <div class="sdk-card">
           <div class="sdk-icon">📱</div>
           <div class="sdk-info">
-            <h3 class="sdk-title">React Native SDK</h3>
-            <p class="sdk-desc">WebView-based widget for iOS and Android with the same props API as the web SDK. Works with Expo and bare React Native. No native module linking required.</p>
+            <h3 class="sdk-title" data-i18n="index.sdk.reactNative.title">React Native SDK</h3>
+            <p class="sdk-desc" data-i18n="index.sdk.reactNative.body">WebView-based widget for iOS and Android with the same props API as the web SDK. Works with Expo and bare React Native. No native module linking required.</p>
             <code class="sdk-install">npm install @avatar-platform/react-native</code>
           </div>
-          <a class="btn btn-ghost" href="/docs/react-native-sdk" style="flex-shrink:0">View docs →</a>
+          <a class="btn btn-ghost" href="/docs/react-native-sdk" style="flex-shrink:0" data-i18n="index.sdk.viewDocs">View docs →</a>
         </div>
       </div>
     </div>
@@ -599,24 +614,24 @@ console.<span class="s-fn">log</span>(result.sources);
   <section class="lp-section lp-section-alt">
     <div class="container">
       <div class="section-header section-header-c">
-        <p class="section-eyebrow" style="text-align:center">How it works</p>
-        <h2 class="section-heading" style="text-align:center">Three steps to live</h2>
+        <p class="section-eyebrow" style="text-align:center" data-i18n="index.steps.eyebrow">How it works</p>
+        <h2 class="section-heading" style="text-align:center" data-i18n="index.steps.title">Three steps to live</h2>
       </div>
       <div class="steps-wrap">
         <div class="step-cell">
-          <p class="step-num">Step 01</p>
-          <h3 class="step-title">Upload your knowledge</h3>
-          <p class="step-body">Upload PDFs, Word docs, images, audio, video, or paste website URLs. Files are chunked with semantic awareness and embedded via Gemini into searchable pgvector storage.</p>
+          <p class="step-num" data-i18n="index.steps.step1.num">Step 01</p>
+          <h3 class="step-title" data-i18n="index.steps.step1.title">Upload your knowledge</h3>
+          <p class="step-body" data-i18n="index.steps.step1.body">Upload PDFs, Word docs, images, audio, video, or paste website URLs. Files are chunked with semantic awareness and embedded via Gemini into searchable pgvector storage.</p>
         </div>
         <div class="step-cell">
-          <p class="step-num">Step 02</p>
-          <h3 class="step-title">Pick a character</h3>
-          <p class="step-body">Choose from 4 animated Rive avatars — each with full lip-sync, idle animations, and expression states driven by a Rive state machine. BYO .riv file coming soon.</p>
+          <p class="step-num" data-i18n="index.steps.step2.num">Step 02</p>
+          <h3 class="step-title" data-i18n="index.steps.step2.title">Pick a character</h3>
+          <p class="step-body" data-i18n="index.steps.step2.body">Choose from 4 animated Rive avatars — each with full lip-sync, idle animations, and expression states driven by a Rive state machine. BYO .riv file coming soon.</p>
         </div>
         <div class="step-cell">
-          <p class="step-num">Step 03</p>
-          <h3 class="step-title">Embed anywhere</h3>
-          <p class="step-body">Copy one script tag. Your agent is live. Visitors chat in 30+ languages with full real-time lip-sync, source citations, and optional lead capture forms.</p>
+          <p class="step-num" data-i18n="index.steps.step3.num">Step 03</p>
+          <h3 class="step-title" data-i18n="index.steps.step3.title">Embed anywhere</h3>
+          <p class="step-body" data-i18n="index.steps.step3.body">Copy one script tag. Your agent is live. Visitors chat in 30+ languages with full real-time lip-sync, source citations, and optional lead capture forms.</p>
         </div>
       </div>
     </div>
@@ -626,12 +641,12 @@ console.<span class="s-fn">log</span>(result.sources);
   <section class="lp-section">
     <div class="container">
       <div class="pricing-callout">
-        <p class="section-eyebrow" style="text-align:center">Pricing</p>
-        <h2 class="section-heading" style="text-align:center;margin:0 0 14px">Simple pricing.<br>Start free.</h2>
-        <p style="color:var(--text-2);font-size:16px;max-width:380px;margin:0 auto 36px;line-height:1.6;text-align:center">No credit card required. Upgrade when you outgrow the free tier.</p>
+        <p class="section-eyebrow" style="text-align:center" data-i18n="index.pricingCallout.eyebrow">Pricing</p>
+        <h2 class="section-heading" style="text-align:center;margin:0 0 14px" data-i18n-html="index.pricingCallout.title">Simple pricing.<br>Start free.</h2>
+        <p style="color:var(--text-2);font-size:16px;max-width:380px;margin:0 auto 36px;line-height:1.6;text-align:center" data-i18n="index.pricingCallout.subtitle">No credit card required. Upgrade when you outgrow the free tier.</p>
         <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-          <a class="btn btn-primary btn-lg" href="/signup">Get started free →</a>
-          <a class="btn btn-ghost btn-lg" href="/pricing">See all plans</a>
+          <a class="btn btn-primary btn-lg" href="/signup" data-i18n="index.pricingCallout.ctaStart">Get started free →</a>
+          <a class="btn btn-ghost btn-lg" href="/pricing" data-i18n="index.pricingCallout.ctaPlans">See all plans</a>
         </div>
       </div>
     </div>
@@ -645,26 +660,33 @@ console.<span class="s-fn">log</span>(result.sources);
           <span class="brand-mark">AP</span>
           <span style="color:var(--text);font-weight:700;font-size:15px">AvatarPlatform</span>
         </a>
-        <p class="footer-tagline">AI talking agents for any website.</p>
+        <p class="footer-tagline" data-i18n="common.footer.tagline">AI talking agents for any website.</p>
       </div>
       <nav class="footer-links">
-        <a class="footer-link" href="/docs">Docs</a>
-        <a class="footer-link" href="/pricing">Pricing</a>
-        <a class="footer-link" href="/characters">Characters</a>
-        <a class="footer-link" href="/terms">Terms</a>
-        <a class="footer-link" href="/contact">Contact</a>
-        <a class="footer-link" href="#">GitHub</a>
+        <a class="footer-link" href="/docs" data-i18n="common.nav.docs">Docs</a>
+        <a class="footer-link" href="/pricing" data-i18n="common.nav.pricing">Pricing</a>
+        <a class="footer-link" href="/characters" data-i18n="common.nav.characters">Characters</a>
+        <a class="footer-link" href="/terms" data-i18n="common.footer.terms">Terms</a>
+        <a class="footer-link" href="/contact" data-i18n="common.footer.contact">Contact</a>
+        <a class="footer-link" href="#" data-i18n="common.footer.github">GitHub</a>
       </nav>
       <a class="footer-x" href="#">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.632zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-        Follow on X
+        <span data-i18n="common.footer.followX">Follow on X</span>
       </a>
     </div>
   </footer>
 
   <script src="/js/theme.js"></script>
+  <script src="/js/i18n.js"></script>
+  <script src="/js/i18n/en.js"></script>
+  <script src="/js/i18n/es.js"></script>
+  <script src="/js/i18n/fr.js"></script>
+  <script src="/js/i18n/ar.js"></script>
+  <script src="/js/i18n/hi.js"></script>
   <script>
   mountThemeToggle(document.getElementById('theme-toggle-slot'));
+  I18N.init(document.getElementById('lang-switch-slot'));
 
   function switchTab(e, name) {
     document.querySelectorAll('.demo-tab').forEach(t => t.classList.remove('active'));

@@ -3,8 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Pricing — AvatarPlatform</title>
-  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <title data-i18n="pricing.pageTitle">Pricing — AvatarPlatform</title>
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';
+    (function () {
+      var RTL_LANGS = { ar: 1 };
+      var KNOWN = ['en', 'es', 'fr', 'ar', 'hi'];
+      var saved = localStorage.getItem('apLang');
+      var lang = KNOWN.indexOf(saved) !== -1 ? saved : 'en';
+      document.documentElement.lang = lang;
+      document.documentElement.dir = RTL_LANGS[lang] ? 'rtl' : 'ltr';
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -16,33 +26,56 @@
       <a class="brand" href="/"><span class="brand-mark">A</span><span>AvatarPlatform</span></a>
       <div class="spacer"></div>
       <div class="nav-links">
-        <a class="nav-link" href="/docs">Docs</a>
-        <a class="nav-link active" href="/pricing">Pricing</a>
-        <a class="nav-link" href="/characters">Characters</a>
-        <a class="nav-link" href="/login">Log in</a>
+        <a class="nav-link" href="/docs" data-i18n="common.nav.docs">Docs</a>
+        <a class="nav-link active" href="/pricing" data-i18n="common.nav.pricing">Pricing</a>
+        <a class="nav-link" href="/characters" data-i18n="common.nav.characters">Characters</a>
+        <a class="nav-link" href="/login" data-i18n="common.nav.login">Log in</a>
       </div>
+      <div id="lang-switch-slot"></div>
       <div id="theme-toggle-slot"></div>
-      <a class="btn btn-primary btn-sm" href="/signup">Get started</a>
+      <a class="btn btn-primary btn-sm" href="/signup" data-i18n="common.nav.getStartedShort">Get started</a>
     </div>
   </nav>
 
   <div class="container mt-lg" style="text-align:center">
-    <h1 style="font-size:36px;letter-spacing:-0.02em;margin:32px 0 8px">Pricing</h1>
-    <p class="muted">Start free. No card required. Upgrade when you outgrow it.</p>
+    <h1 style="font-size:36px;letter-spacing:-0.02em;margin:32px 0 8px" data-i18n="pricing.title">Pricing</h1>
+    <p class="muted" data-i18n="pricing.subtitle">Start free. No card required. Upgrade when you outgrow it.</p>
   </div>
 
   <div class="container mt-lg">
     <div class="row gap-sm mb-md" id="coupon-row" style="align-items:center;justify-content:center;display:none">
-      <input type="text" id="coupon-input" class="input" placeholder="Have a coupon code?" style="max-width:220px;text-transform:uppercase" />
-      <span class="text-sm muted">Applied when you upgrade below</span>
+      <input type="text" id="coupon-input" class="input" data-i18n-attr="placeholder:pricing.couponPlaceholder" placeholder="Have a coupon code?" style="max-width:220px;text-transform:uppercase" />
+      <span class="text-sm muted" data-i18n="pricing.couponHint">Applied when you upgrade below</span>
     </div>
     <div class="grid grid-4" id="plans-grid"></div>
   </div>
 
   <script src="/js/theme.js"></script>
+  <script src="/js/i18n.js"></script>
+  <script src="/js/i18n/en.js"></script>
+  <script src="/js/i18n/es.js"></script>
+  <script src="/js/i18n/fr.js"></script>
+  <script src="/js/i18n/ar.js"></script>
+  <script src="/js/i18n/hi.js"></script>
   <script src="/js/api.js"></script>
   <script>
   mountThemeToggle(document.getElementById('theme-toggle-slot'));
+  I18N.init(document.getElementById('lang-switch-slot'));
+
+  // Plan name/description/features come from the server (backend/plans.js)
+  // in English only — translating those would mean threading a language
+  // param through the billing API. Instead, translate client-side by plan
+  // id for the four built-in plans (stable ids: free/starter/pro/business);
+  // an admin-created custom tier has no id we know ahead of time, so it
+  // falls back to the API's own (English) text rather than showing blank.
+  function localizePlan(p) {
+    const key = `pricing.plans.${p.id}`;
+    return {
+      name: I18N.t(`${key}.name`, p.name),
+      description: I18N.t(`${key}.description`, p.description),
+      features: p.features.map((f, i) => I18N.t(`${key}.features.${i}`, f)),
+    };
+  }
 
   async function load() {
     try {
@@ -57,24 +90,27 @@
       // meaningless (and confusing) for them.
       if (loggedIn) document.getElementById('coupon-row').style.display = 'flex';
 
-      document.getElementById('plans-grid').innerHTML = plans.map(p => `
+      document.getElementById('plans-grid').innerHTML = plans.map(p => {
+        const l = localizePlan(p);
+        return `
         <div class="card" style="position:relative;${p.popular ? 'border-color:var(--accent)' : ''}">
-          ${p.popular ? '<span class="pill pill-info" style="position:absolute;top:-10px;left:20px">Most popular</span>' : ''}
-          <h3 style="margin:0 0 4px;font-size:18px">${p.name}</h3>
-          <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em">$${p.priceMonthly}<span class="muted text-sm" style="font-weight:400">/mo</span></div>
-          <p class="muted text-sm" style="margin:6px 0 16px">${p.description}</p>
+          ${p.popular ? `<span class="pill pill-info" style="position:absolute;top:-10px;left:20px">${I18N.t('pricing.mostPopular', 'Most popular')}</span>` : ''}
+          <h3 style="margin:0 0 4px;font-size:18px">${l.name}</h3>
+          <div style="font-size:32px;font-weight:700;letter-spacing:-0.02em">$${p.priceMonthly}<span class="muted text-sm" style="font-weight:400">${I18N.t('pricing.perMonth', '/mo')}</span></div>
+          <p class="muted text-sm" style="margin:6px 0 16px">${l.description}</p>
           <ul style="list-style:none;padding:0;margin:0 0 20px;font-size:13px">
-            ${p.features.map(f => `<li style="padding:4px 0">✓ ${f}</li>`).join('')}
+            ${l.features.map(f => `<li style="padding:4px 0">✓ ${f}</li>`).join('')}
           </ul>
           ${cta(p, loggedIn, currentPlanId, stripeEnabled)}
         </div>
-      `).join('');
+      `;
+      }).join('');
 
       document.querySelectorAll('[data-checkout-plan]').forEach(btn => {
         btn.addEventListener('click', () => checkout(btn.dataset.checkoutPlan));
       });
     } catch (e) {
-      document.getElementById('plans-grid').innerHTML = '<p class="muted">Could not load plans</p>';
+      document.getElementById('plans-grid').innerHTML = `<p class="muted">${I18N.t('pricing.loadError', 'Could not load plans')}</p>`;
     }
   }
 
@@ -82,20 +118,21 @@
     const btnStyle = 'width:100%;justify-content:center';
 
     if (loggedIn && p.id === currentPlanId) {
-      return `<button class="btn btn-ghost" disabled style="${btnStyle}">Current plan</button>`;
+      return `<button class="btn btn-ghost" disabled style="${btnStyle}">${I18N.t('pricing.cta.currentPlan', 'Current plan')}</button>`;
     }
     if (p.id === 'free') {
       return loggedIn
-        ? `<a class="btn btn-ghost" href="/billing" style="${btnStyle}">Downgrade</a>`
-        : `<a class="btn btn-ghost" href="/signup" style="${btnStyle}">Get started</a>`;
+        ? `<a class="btn btn-ghost" href="/billing" style="${btnStyle}">${I18N.t('pricing.cta.downgrade', 'Downgrade')}</a>`
+        : `<a class="btn btn-ghost" href="/signup" style="${btnStyle}">${I18N.t('common.nav.getStartedShort', 'Get started')}</a>`;
     }
     if (!p.hasStripe || !stripeEnabled) {
-      return `<a class="btn btn-ghost" href="/contact" style="${btnStyle}">Contact sales</a>`;
+      return `<a class="btn btn-ghost" href="/contact" style="${btnStyle}">${I18N.t('pricing.cta.contactSales', 'Contact sales')}</a>`;
     }
     if (loggedIn) {
-      return `<button class="btn ${p.popular ? 'btn-primary' : 'btn-ghost'}" style="${btnStyle}" data-checkout-plan="${p.id}">${currentPlanId && currentPlanId !== 'free' ? 'Switch plan' : 'Upgrade'} →</button>`;
+      const label = currentPlanId && currentPlanId !== 'free' ? I18N.t('pricing.cta.switchPlan', 'Switch plan') : I18N.t('pricing.cta.upgrade', 'Upgrade');
+      return `<button class="btn ${p.popular ? 'btn-primary' : 'btn-ghost'}" style="${btnStyle}" data-checkout-plan="${p.id}">${label} →</button>`;
     }
-    return `<a class="btn ${p.popular ? 'btn-primary' : 'btn-ghost'}" href="/signup?plan=${p.id}" style="${btnStyle}">Get started →</a>`;
+    return `<a class="btn ${p.popular ? 'btn-primary' : 'btn-ghost'}" href="/signup?plan=${p.id}" style="${btnStyle}">${I18N.t('pricing.cta.getStartedArrow', 'Get started →')}</a>`;
   }
 
   window.checkout = async (planId) => {

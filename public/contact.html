@@ -3,8 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Contact — AvatarPlatform</title>
-  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <title data-i18n="contact.pageTitle">Contact — AvatarPlatform</title>
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';
+    (function () {
+      var RTL_LANGS = { ar: 1 };
+      var KNOWN = ['en', 'es', 'fr', 'ar', 'hi'];
+      var saved = localStorage.getItem('apLang');
+      var lang = KNOWN.indexOf(saved) !== -1 ? saved : 'en';
+      document.documentElement.lang = lang;
+      document.documentElement.dir = RTL_LANGS[lang] ? 'rtl' : 'ltr';
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -145,30 +155,31 @@
       </a>
       <div class="spacer"></div>
       <div class="nav-links">
-        <a class="nav-link" href="/docs">Docs</a>
-        <a class="nav-link" href="/pricing">Pricing</a>
-        <a class="nav-link" href="/characters">Characters</a>
-        <a class="nav-link active" href="/contact">Contact</a>
-        <a class="nav-link" href="/login">Log in</a>
+        <a class="nav-link" href="/docs" data-i18n="common.nav.docs">Docs</a>
+        <a class="nav-link" href="/pricing" data-i18n="common.nav.pricing">Pricing</a>
+        <a class="nav-link" href="/characters" data-i18n="common.nav.characters">Characters</a>
+        <a class="nav-link active" href="/contact" data-i18n="common.footer.contact">Contact</a>
+        <a class="nav-link" href="/login" data-i18n="common.nav.login">Log in</a>
       </div>
+      <div id="lang-switch-slot"></div>
       <div id="theme-toggle-slot"></div>
-      <a class="btn btn-primary btn-sm" href="/signup">Get started free</a>
+      <a class="btn btn-primary btn-sm" href="/signup" data-i18n="common.nav.getStarted">Get started free</a>
     </div>
   </nav>
 
   <div class="contact-page">
-    <p class="contact-eyebrow">Get in touch</p>
-    <h1 class="contact-title">Let's talk</h1>
+    <p class="contact-eyebrow" data-i18n="contact.eyebrow">Get in touch</p>
+    <h1 class="contact-title" data-i18n="contact.title">Let's talk</h1>
 
     <div class="contact-grid">
       <!-- LEFT: info -->
       <div>
-        <p class="contact-sub">Book a free 30-minute setup call. We'll help you get your first agent live — from knowledge base to embedded widget.</p>
+        <p class="contact-sub" data-i18n="contact.subtitle">Book a free 30-minute setup call. We'll help you get your first agent live — from knowledge base to embedded widget.</p>
 
         <div class="contact-info-block">
           <div class="contact-info-icon">📧</div>
           <div>
-            <p class="contact-info-label">Email</p>
+            <p class="contact-info-label" data-i18n="contact.email">Email</p>
             <p class="contact-info-value"><a href="mailto:support@avatarplatform.ai">support@avatarplatform.ai</a></p>
           </div>
         </div>
@@ -176,7 +187,7 @@
         <div class="contact-info-block">
           <div class="contact-info-icon">𝕏</div>
           <div>
-            <p class="contact-info-label">Twitter / X</p>
+            <p class="contact-info-label" data-i18n="contact.twitter">Twitter / X</p>
             <p class="contact-info-value"><a href="#" target="_blank" rel="noopener">@avatarplatform</a></p>
           </div>
         </div>
@@ -184,29 +195,29 @@
         <div class="contact-info-block">
           <div class="contact-info-icon">💬</div>
           <div>
-            <p class="contact-info-label">Discord</p>
+            <p class="contact-info-label" data-i18n="contact.discord">Discord</p>
             <p class="contact-info-value"><a href="#" target="_blank" rel="noopener">discord.gg/avatarplatform</a></p>
           </div>
         </div>
 
         <div class="contact-async">
-          <p class="contact-async-label">Prefer async?</p>
-          <p>Browse the <a href="/docs" style="color:var(--accent-2)">documentation</a> for self-serve setup guides, or email us and we'll respond within one business day.</p>
+          <p class="contact-async-label" data-i18n="contact.asyncLabel">Prefer async?</p>
+          <p data-i18n-html="contact.asyncBody">Browse the <a href="/docs" style="color:var(--accent-2)">documentation</a> for self-serve setup guides, or email us and we'll respond within one business day.</p>
         </div>
       </div>
 
       <!-- RIGHT: cal.com booking -->
       <div>
-        <h2 class="cal-header">Book a 30-minute call</h2>
-        <p class="cal-sub">Pick a time that works for you. We'll send a confirmation with a video call link.</p>
+        <h2 class="cal-header" data-i18n="contact.calHeader">Book a 30-minute call</h2>
+        <p class="cal-sub" data-i18n="contact.calSub">Pick a time that works for you. We'll send a confirmation with a video call link.</p>
         <div class="cal-card">
           <div id="cal-embed">
             <!-- Cal.com embed loads here -->
             <div class="cal-placeholder" id="cal-fallback">
               <div class="cal-placeholder-icon">📅</div>
-              <h3>Book a setup call</h3>
-              <p>Configure your cal.com username in the page source to enable inline booking.</p>
-              <a class="btn btn-primary" href="https://cal.com" target="_blank" rel="noopener">Open cal.com →</a>
+              <h3 data-i18n="contact.calFallback.title">Book a setup call</h3>
+              <p data-i18n="contact.calFallback.body">Configure your cal.com username in the page source to enable inline booking.</p>
+              <a class="btn btn-primary" href="https://cal.com" target="_blank" rel="noopener" data-i18n="contact.calFallback.cta">Open cal.com →</a>
             </div>
           </div>
         </div>
@@ -218,14 +229,23 @@
   <footer style="border-top:1px solid var(--border);padding:32px 24px;text-align:center">
     <p style="font-size:12px;color:var(--text-dim);margin:0">
       <a href="/" style="color:var(--text-dim)">AvatarPlatform</a> ·
-      <a href="/terms" style="color:var(--text-dim)">Terms</a> ·
-      <a href="/contact" style="color:var(--text-dim)">Contact</a> ·
-      <a href="/docs" style="color:var(--text-dim)">Docs</a>
+      <a href="/terms" style="color:var(--text-dim)" data-i18n="common.footer.terms">Terms</a> ·
+      <a href="/contact" style="color:var(--text-dim)" data-i18n="common.footer.contact">Contact</a> ·
+      <a href="/docs" style="color:var(--text-dim)" data-i18n="common.nav.docs">Docs</a>
     </p>
   </footer>
 
   <script src="/js/theme.js"></script>
-  <script>mountThemeToggle(document.getElementById('theme-toggle-slot'));</script>
+  <script src="/js/i18n.js"></script>
+  <script src="/js/i18n/en.js"></script>
+  <script src="/js/i18n/es.js"></script>
+  <script src="/js/i18n/fr.js"></script>
+  <script src="/js/i18n/ar.js"></script>
+  <script src="/js/i18n/hi.js"></script>
+  <script>
+    mountThemeToggle(document.getElementById('theme-toggle-slot'));
+    I18N.init(document.getElementById('lang-switch-slot'));
+  </script>
   <script type="text/javascript">
     // Replace YOUR_CAL_USERNAME with your actual cal.com username.
     // Example: if your booking link is cal.com/jane/30min, set CAL_USERNAME = 'jane'

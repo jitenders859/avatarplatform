@@ -3,8 +3,18 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Characters — AvatarPlatform</title>
-  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <title data-i18n="characters.pageTitle">Characters — AvatarPlatform</title>
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';
+    (function () {
+      var RTL_LANGS = { ar: 1 };
+      var KNOWN = ['en', 'es', 'fr', 'ar', 'hi'];
+      var saved = localStorage.getItem('apLang');
+      var lang = KNOWN.indexOf(saved) !== -1 ? saved : 'en';
+      document.documentElement.lang = lang;
+      document.documentElement.dir = RTL_LANGS[lang] ? 'rtl' : 'ltr';
+    })();
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -146,19 +156,20 @@
         <span>AvatarPlatform</span>
       </a>
       <div class="nav-links">
-        <a class="nav-link" href="/docs">Docs</a>
-        <a class="nav-link" href="/pricing">Pricing</a>
-        <a class="nav-link active" href="/characters">Characters</a>
+        <a class="nav-link" href="/docs" data-i18n="common.nav.docs">Docs</a>
+        <a class="nav-link" href="/pricing" data-i18n="common.nav.pricing">Pricing</a>
+        <a class="nav-link active" href="/characters" data-i18n="common.nav.characters">Characters</a>
       </div>
       <div class="spacer"></div>
+      <div id="lang-switch-slot"></div>
       <div id="nav-cta" class="nav-links" style="gap:8px"></div>
     </div>
   </nav>
 
   <!-- ── Hero ────────────────────────────────────────────────── -->
   <div class="chars-hero">
-    <h1>Meet the characters</h1>
-    <p>Real-time lip sync, multilingual, fully embeddable. Pick the face that fits your brand.</p>
+    <h1 data-i18n="characters.title">Meet the characters</h1>
+    <p data-i18n="characters.subtitle">Real-time lip sync, multilingual, fully embeddable. Pick the face that fits your brand.</p>
   </div>
 
   <!-- ── Grid ────────────────────────────────────────────────── -->
@@ -167,16 +178,24 @@
   </div>
 
   <script src="/js/theme.js"></script>
+  <script src="/js/i18n.js"></script>
+  <script src="/js/i18n/en.js"></script>
+  <script src="/js/i18n/es.js"></script>
+  <script src="/js/i18n/fr.js"></script>
+  <script src="/js/i18n/ar.js"></script>
+  <script src="/js/i18n/hi.js"></script>
   <script src="/js/api.js"></script>
   <script>
+  I18N.init(document.getElementById('lang-switch-slot'));
+
   // ── Nav CTA: show Dashboard if logged in, else Login + Sign up ──
   const navCta = document.getElementById('nav-cta');
   if (Auth.loggedIn()) {
-    navCta.innerHTML = '<a class="btn btn-primary btn-sm" href="/dashboard">Dashboard →</a>';
+    navCta.innerHTML = `<a class="btn btn-primary btn-sm" href="/dashboard">${I18N.t('characters.navDashboard', 'Dashboard →')}</a>`;
   } else {
     navCta.innerHTML =
-      '<a class="nav-link" href="/login">Log in</a>' +
-      '<a class="btn btn-primary btn-sm" href="/signup">Get started</a>';
+      `<a class="nav-link" href="/login">${I18N.t('common.nav.login', 'Log in')}</a>` +
+      `<a class="btn btn-primary btn-sm" href="/signup">${I18N.t('common.nav.getStartedShort', 'Get started')}</a>`;
   }
 
   const FALLBACKS = ['🤖', '🧑', '👩', '🙂'];
@@ -205,7 +224,7 @@
       ({ characters } = await API.characters());
     } catch (_) {
       document.getElementById('char-grid').innerHTML =
-        '<p class="muted" style="grid-column:1/-1;padding:24px 0">Could not load characters — please refresh.</p>';
+        `<p class="muted" style="grid-column:1/-1;padding:24px 0">${I18N.t('characters.loadError', 'Could not load characters — please refresh.')}</p>`;
       return;
     }
     renderCards(characters);
@@ -216,7 +235,7 @@
     grid.innerHTML = '';
 
     const ctaHref  = Auth.loggedIn() ? '/dashboard' : '/signup';
-    const ctaLabel = Auth.loggedIn() ? 'Use in dashboard →' : 'Get started free →';
+    const ctaLabel = Auth.loggedIn() ? I18N.t('characters.useInDashboard', 'Use in dashboard →') : I18N.t('index.pricingCallout.ctaStart', 'Get started free →');
 
     chars.forEach((char, i) => {
       // ── Card shell ────────────────────────────────────────────

@@ -446,3 +446,32 @@ h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
 .text-sm { font-size: 12px; } .text-lg { font-size: 16px; }
 .text-center { text-align: center; }
 .divider { height: 1px; background: var(--border); margin: 16px 0; border: 0; }
+
+/* ── Language switcher (public/js/i18n.js) ───────────────────── */
+.lang-switch-btn { display: inline-flex; align-items: center; gap: 6px; }
+.lang-switch-menu {
+  position: absolute; top: calc(100% + 6px); right: 0;
+  min-width: 160px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  padding: 6px;
+  z-index: 50;
+  display: flex; flex-direction: column; gap: 2px;
+}
+[dir="rtl"] .lang-switch-menu { right: auto; left: 0; }
+.lang-switch-item {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0; background: transparent;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+[dir="rtl"] .lang-switch-item { text-align: right; }
+.lang-switch-item:hover { background: var(--bg-3); }
+.lang-switch-item.active { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
