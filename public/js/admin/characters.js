@@ -75,6 +75,21 @@ async function inspectRiveSource(src) {
   return { ok: true, artboardNames, artboards, contract: checkRiveContract(artboards) };
 }
 
+// The character artboard's non-viseme state machine inputs, as discovered by
+// the browser inspector at upload time (characters.inspectorMeta) — used to
+// offer a dropdown of real Rive inputs when defining a behavior trigger,
+// instead of free text. Returns null when no inspection data exists yet
+// (e.g. a character uploaded before this feature, or a non-conforming file).
+function getCandidateRiveInputs(character) {
+  const artboards = character?.inspectorMeta?.artboards;
+  if (!Array.isArray(artboards)) return null;
+  const cb = artboards.find(a => a.name === RIVE_ARTBOARD);
+  const sm = cb?.stateMachines?.find(s => s.name === RIVE_STATE_MACHINE);
+  if (!sm) return null;
+  const visemeNames = new Set(RIVE_REQUIRED_INPUTS);
+  return sm.inputs.filter(i => !visemeNames.has(i.name));
+}
+
 function checkRiveContract(artboards) {
   const character = artboards.find(a => a.name === RIVE_ARTBOARD);
   if (!character) return { conforms: false, missing: [`artboard "${RIVE_ARTBOARD}"`], missingInputs: [] };
@@ -330,7 +345,7 @@ async function openManageCharacterModal(id) {
     adminToast(err.message, 'error');
     return;
   }
-  const { character, versions, access } = detail;
+  const { character, versions, access, triggers } = detail;
   // Both the main preview and the "upload new version" panel's preview
   // (nested inside this same modal) register their Rive instance here, so
   // closing the modal via the X/Esc/backdrop always cleans up whichever is
@@ -363,6 +378,7 @@ async function openManageCharacterModal(id) {
         <div id="mc-preview"><div class="adm-skeleton-row"></div></div>
       </div>
       <div id="mc-access-wrap" ${character.visibility === 'global' ? 'hidden' : ''}></div>
+      <div id="mc-triggers-wrap"></div>
       <div>
         <h4 class="text-sm" style="margin:0 0 6px">Version history</h4>
         <div class="table-scroll"><table class="table">
@@ -417,6 +433,7 @@ async function openManageCharacterModal(id) {
   });
 
   if (character.visibility !== 'global') renderAccessSection(id, access);
+  renderTriggersSection(id, character, triggers);
 
   document.getElementById('mc-new-version-btn').addEventListener('click', () => {
     openNewVersionPanel(id, character, liveRiveInstances);
@@ -482,6 +499,173 @@ function wireRevokeButtons(characterId) {
         adminToast('Access revoked', 'success');
       } catch (err) { adminToast(err.message, 'error'); }
     };
+  });
+}
+
+// ── Behavior triggers ─────────────────────────────────────────
+// Named gestures (thinking, listening, laughing, joking, or anything else)
+// mapped to a real Rive input on this character. The SDK
+// (CharacterBehaviorController.reactToEmotion in lipsync-sdk.js) fires one
+// automatically when its keywords appear in the AI's spoken reply — same
+// mechanism the built-in happy/sad/surprised gestures already use — or on
+// demand via LipsyncAvatar#fireCharacterTrigger(name). Keywords are
+// optional: leave them blank for a manual-only trigger.
+const TRIGGER_TYPE_LABEL = { trigger: 'Trigger (one-shot)', boolean: 'Boolean (hold)', number: 'Number (hold)' };
+
+function renderTriggersSection(characterId, character, triggers) {
+  const wrap = document.getElementById('mc-triggers-wrap');
+  wrap.hidden = false;
+  wrap.innerHTML = `
+    <h4 class="text-sm" style="margin:0 0 6px">Behavior triggers</h4>
+    <p class="text-sm muted" style="margin:0 0 8px">
+      Name a gesture (thinking, listening, laughing, joking, or anything else) and map it to one of this
+      character's Rive inputs. Add keywords and the SDK fires it automatically whenever the AI's spoken
+      reply contains one — leave keywords blank to fire it only by calling the SDK's
+      <code>fireCharacterTrigger()</code> yourself.
+    </p>
+    <div class="table-scroll"><table class="table">
+      <thead><tr><th>Name</th><th>Rive input</th><th>Type</th><th>Keywords</th><th></th></tr></thead>
+      <tbody id="mc-triggers-body">${
+        triggers.length
+          ? triggers.map(triggerRow).join('')
+          : '<tr><td colspan="5" class="muted">No triggers yet — this character only does lip-sync and idle animation until you add one.</td></tr>'
+      }</tbody>
+    </table></div>
+    <div id="mc-trigger-form"></div>
+    <button class="btn btn-ghost btn-sm mt-sm" id="mc-add-trigger-btn">Add trigger</button>
+  `;
+
+  wireTriggerRowButtons(characterId, character, triggers);
+
+  document.getElementById('mc-add-trigger-btn').addEventListener('click', () => {
+    openTriggerForm(characterId, character, triggers, null);
+  });
+}
+
+function triggerRow(t) {
+  return `<tr data-trigger-row="${t.id}">
+    <td>${escapeHtml(t.name)}</td>
+    <td><code>${escapeHtml(t.riveInput)}</code></td>
+    <td>${escapeHtml(TRIGGER_TYPE_LABEL[t.inputType] || t.inputType)}</td>
+    <td class="text-sm muted">${t.keywords ? escapeHtml(t.keywords) : '<em>manual only</em>'}</td>
+    <td class="row gap-sm">
+      <button class="btn btn-ghost text-sm" data-edit-trigger="${t.id}">Edit</button>
+      <button class="btn btn-ghost text-sm" data-delete-trigger="${t.id}" style="color:var(--danger)">Delete</button>
+    </td>
+  </tr>`;
+}
+
+function wireTriggerRowButtons(characterId, character, triggers) {
+  document.querySelectorAll('[data-edit-trigger]').forEach(btn => {
+    btn.onclick = () => {
+      const t = triggers.find(x => x.id === btn.dataset.editTrigger);
+      if (t) openTriggerForm(characterId, character, triggers, t);
+    };
+  });
+  document.querySelectorAll('[data-delete-trigger]').forEach(btn => {
+    btn.onclick = async () => {
+      const t = triggers.find(x => x.id === btn.dataset.deleteTrigger);
+      if (!confirm(`Delete the "${t?.name || ''}" trigger?`)) return;
+      try {
+        await AdminAPI.deleteCharacterTrigger(characterId, btn.dataset.deleteTrigger);
+        const idx = triggers.findIndex(x => x.id === btn.dataset.deleteTrigger);
+        if (idx >= 0) triggers.splice(idx, 1);
+        renderTriggersSection(characterId, character, triggers);
+        adminToast('Trigger deleted', 'success');
+      } catch (err) { adminToast(err.message, 'error'); }
+    };
+  });
+}
+
+function openTriggerForm(characterId, character, triggers, editing) {
+  const formEl = document.getElementById('mc-trigger-form');
+  const candidates = getCandidateRiveInputs(character); // null = no inspection data, fall back to free text
+  const isNumber = (editing?.inputType || 'trigger') === 'number';
+  const needsHold = (editing?.inputType || 'trigger') !== 'trigger';
+
+  const riveInputField = candidates && candidates.length
+    ? `<select id="tf-rive-input" class="select">
+        ${candidates.map(i => `<option value="${escapeHtml(i.name)}" data-type="${i.type}" ${editing?.riveInput === i.name ? 'selected' : ''}>${escapeHtml(i.name)} (${i.type})</option>`).join('')}
+      </select>`
+    : `<input type="text" id="tf-rive-input" class="input" placeholder="e.g. Laugh" value="${editing ? escapeHtml(editing.riveInput) : ''}" />`;
+
+  formEl.innerHTML = `
+    <div class="card mt-sm">
+      <div class="row gap-sm" style="flex-wrap:wrap">
+        <div class="field" style="flex:1;min-width:140px">
+          <label for="tf-name">Name</label>
+          <input type="text" id="tf-name" class="input" placeholder="e.g. laughing" maxlength="40" value="${editing ? escapeHtml(editing.name) : ''}" />
+        </div>
+        <div class="field" style="flex:1;min-width:160px">
+          <label for="tf-rive-input">Rive input</label>
+          ${riveInputField}
+        </div>
+        <div class="field" style="flex:1;min-width:140px">
+          <label for="tf-input-type">Type</label>
+          <select id="tf-input-type" class="select">
+            ${Object.entries(TRIGGER_TYPE_LABEL).map(([v, label]) => `<option value="${v}" ${(editing?.inputType || 'trigger') === v ? 'selected' : ''}>${label}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div class="row gap-sm mt-sm" style="flex-wrap:wrap">
+        <div class="field" id="tf-active-value-field" style="flex:1;min-width:140px;${isNumber ? '' : 'display:none'}">
+          <label for="tf-active-value">Active value (0-100)</label>
+          <input type="number" id="tf-active-value" class="input" min="0" max="100" value="${editing?.activeValue ?? 100}" />
+        </div>
+        <div class="field" id="tf-hold-ms-field" style="flex:1;min-width:140px;${needsHold ? '' : 'display:none'}">
+          <label for="tf-hold-ms">Hold (ms)</label>
+          <input type="number" id="tf-hold-ms" class="input" min="100" max="10000" step="100" value="${editing?.holdMs ?? 1200}" />
+        </div>
+        <div class="field" style="flex:2;min-width:220px">
+          <label for="tf-keywords">Auto-fire keywords (comma-separated, optional)</label>
+          <input type="text" id="tf-keywords" class="input" placeholder="e.g. haha, lol, that's funny" value="${editing?.keywords ? escapeHtml(editing.keywords) : ''}" />
+        </div>
+      </div>
+      <div class="row gap-sm mt-sm">
+        <button class="btn btn-primary btn-sm" id="tf-save-btn">${editing ? 'Save' : 'Add trigger'}</button>
+        <button class="btn btn-ghost btn-sm" id="tf-cancel-btn">Cancel</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('tf-cancel-btn').addEventListener('click', () => { formEl.innerHTML = ''; });
+
+  document.getElementById('tf-input-type').addEventListener('change', (e) => {
+    document.getElementById('tf-active-value-field').style.display = e.target.value === 'number' ? '' : 'none';
+    document.getElementById('tf-hold-ms-field').style.display = e.target.value === 'trigger' ? 'none' : '';
+  });
+
+  document.getElementById('tf-save-btn').addEventListener('click', async () => {
+    const name = document.getElementById('tf-name').value.trim();
+    const riveInput = document.getElementById('tf-rive-input').value.trim();
+    const inputType = document.getElementById('tf-input-type').value;
+    if (!name) { adminToast('Name is required', 'error'); return; }
+    if (!riveInput) { adminToast('Rive input is required', 'error'); return; }
+
+    const body = {
+      name, riveInput, inputType,
+      keywords: document.getElementById('tf-keywords').value.trim() || null,
+    };
+    if (inputType === 'number') body.activeValue = Number(document.getElementById('tf-active-value').value) || 0;
+    if (inputType !== 'trigger') body.holdMs = Number(document.getElementById('tf-hold-ms').value) || 1200;
+
+    const btn = document.getElementById('tf-save-btn');
+    btn.disabled = true;
+    try {
+      if (editing) {
+        const { trigger } = await AdminAPI.patchCharacterTrigger(characterId, editing.id, body);
+        Object.assign(editing, trigger);
+      } else {
+        const { trigger } = await AdminAPI.createCharacterTrigger(characterId, body);
+        triggers.push(trigger);
+      }
+      formEl.innerHTML = '';
+      renderTriggersSection(characterId, character, triggers);
+      adminToast(editing ? 'Trigger updated' : 'Trigger added', 'success');
+    } catch (err) {
+      adminToast(err.message, 'error');
+      btn.disabled = false;
+    }
   });
 }
 

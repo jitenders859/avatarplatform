@@ -414,3 +414,38 @@ test('embedRetrieve defaults are left to the route (k is optional here)', () => 
   assert.equal(result.success, true);
   assert.equal(result.data.k, undefined);
 });
+
+test('characterTriggerCreate accepts a minimal trigger (defaults to type trigger)', () => {
+  const result = schemas.characterTriggerCreate.safeParse({ name: 'laughing', riveInput: 'Laugh' });
+  assert.equal(result.success, true);
+  assert.equal(result.data.inputType, undefined);
+});
+
+test('characterTriggerCreate rejects a name with disallowed symbols', () => {
+  const result = schemas.characterTriggerCreate.safeParse({ name: 'laughing!!', riveInput: 'Laugh' });
+  assert.equal(result.success, false);
+});
+
+test('characterTriggerCreate rejects activeValue above 100', () => {
+  const result = schemas.characterTriggerCreate.safeParse({
+    name: 'smile', riveInput: 'Smile', inputType: 'number', activeValue: 150,
+  });
+  assert.equal(result.success, false);
+});
+
+test('characterTriggerCreate accepts a number trigger with keywords', () => {
+  const result = schemas.characterTriggerCreate.safeParse({
+    name: 'laughing', riveInput: 'Smile', inputType: 'number', activeValue: 90, holdMs: 1500, keywords: 'haha, lol',
+  });
+  assert.equal(result.success, true);
+});
+
+test('characterTriggerPatch rejects an empty patch (nothing to update)', () => {
+  const result = schemas.characterTriggerPatch.safeParse({});
+  assert.equal(result.success, false);
+});
+
+test('characterTriggerPatch accepts keywords alone', () => {
+  const result = schemas.characterTriggerPatch.safeParse({ keywords: 'joke, funny' });
+  assert.equal(result.success, true);
+});

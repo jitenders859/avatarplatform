@@ -291,6 +291,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       showTextInput: false,   showBands: false,
       width: 300, height: 300,
       enableBehavior: true,
+      characterTriggers: config.character?.triggers || [],
 
       onConnected: () => {
         statusDot.className = 'status-dot connected';

@@ -34,6 +34,10 @@ router.param('id', (req, res, next, id) => {
   if (!UUID_RE.test(id)) return res.status(404).json({ error: 'Character not found' });
   next();
 });
+router.param('triggerId', (req, res, next, id) => {
+  if (!UUID_RE.test(id)) return res.status(404).json({ error: 'Trigger not found' });
+  next();
+});
 
 function slugify(name) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/(^_|_$)/g, '') || 'character';
@@ -80,7 +84,7 @@ router.get('/:id', async (req, res) => {
   const character = await findCharacterOr404(req, res);
   if (!character) return;
 
-  const [versions, access, usage] = await Promise.all([
+  const [versions, access, usage, triggers] = await Promise.all([
     db.findAll('character_versions', { characterId: character.id }, { orderBy: 'version', order: 'desc' }),
     db.query(
       `SELECT ca.user_id, ca.created_at, u.email
@@ -89,6 +93,7 @@ router.get('/:id', async (req, res) => {
       [character.id]
     ),
     db.queryOne('SELECT COUNT(*)::int AS count FROM projects WHERE character_id = $1', [character.slug]),
+    db.findAll('character_triggers', { characterId: character.id }, { orderBy: 'createdAt', order: 'asc' }),
   ]);
 
   res.json({
@@ -103,6 +108,7 @@ router.get('/:id', async (req, res) => {
       publicUrl: storage.characterAssets.getPublicUrl(v.storageKey),
     })),
     access,
+    triggers,
   });
 });
 
@@ -278,6 +284,83 @@ router.delete('/:id/access/:userId', async (req, res) => {
     targetUserId: req.params.userId,
     targetEmail: user?.email || null,
     meta: { characterId: character.id, slug: character.slug },
+  });
+  res.json({ ok: true });
+});
+
+// ── Behavior triggers ────────────────────────────────────────
+// Named gestures (thinking/listening/laughing/joking/anything) an admin
+// maps to a specific Rive state machine input on this character. The SDK
+// (public/lipsync-sdk.js, CharacterBehaviorController) fires one either
+// automatically — when its keywords appear in the AI's spoken transcript,
+// same mechanism as the built-in happy/sad/surprised gestures — or on
+// demand via LipsyncAvatar#fireCharacterTrigger(name).
+router.get('/:id/triggers', async (req, res) => {
+  const character = await findCharacterOr404(req, res);
+  if (!character) return;
+  const triggers = await db.findAll('character_triggers', { characterId: character.id }, { orderBy: 'createdAt', order: 'asc' });
+  res.json({ triggers });
+});
+
+router.post('/:id/triggers', validate(schemas.characterTriggerCreate), async (req, res) => {
+  const character = await findCharacterOr404(req, res);
+  if (!character) return;
+
+  const existing = await db.findOne('character_triggers', { characterId: character.id, name: req.body.name });
+  if (existing) return res.status(409).json({ error: 'A trigger with this name already exists on this character' });
+
+  const trigger = await db.insert('character_triggers', {
+    id: crypto.randomUUID(),
+    characterId: character.id,
+    name: req.body.name,
+    riveInput: req.body.riveInput,
+    inputType: req.body.inputType || 'trigger',
+    activeValue: req.body.activeValue ?? null,
+    holdMs: req.body.holdMs ?? 1200,
+    keywords: req.body.keywords || null,
+    createdBy: req.admin.id,
+    createdAt: Date.now(),
+  });
+
+  await logAdminAction({
+    adminId: req.admin.id,
+    action: 'character_trigger_create',
+    meta: { characterId: character.id, slug: character.slug, triggerId: trigger.id, name: trigger.name },
+  });
+  res.json({ trigger });
+});
+
+router.patch('/:id/triggers/:triggerId', validate(schemas.characterTriggerPatch), async (req, res) => {
+  const character = await findCharacterOr404(req, res);
+  if (!character) return;
+  const trigger = await db.findOne('character_triggers', { id: req.params.triggerId, characterId: character.id });
+  if (!trigger) return res.status(404).json({ error: 'Trigger not found' });
+
+  if (req.body.name && req.body.name !== trigger.name) {
+    const dupe = await db.findOne('character_triggers', { characterId: character.id, name: req.body.name });
+    if (dupe) return res.status(409).json({ error: 'A trigger with this name already exists on this character' });
+  }
+
+  const updated = await db.update('character_triggers', trigger.id, req.body);
+  await logAdminAction({
+    adminId: req.admin.id,
+    action: 'character_trigger_update',
+    meta: { characterId: character.id, slug: character.slug, triggerId: trigger.id, name: updated.name },
+  });
+  res.json({ trigger: updated });
+});
+
+router.delete('/:id/triggers/:triggerId', async (req, res) => {
+  const character = await findCharacterOr404(req, res);
+  if (!character) return;
+  const trigger = await db.findOne('character_triggers', { id: req.params.triggerId, characterId: character.id });
+  if (!trigger) return res.status(404).json({ error: 'Trigger not found' });
+
+  await db.remove('character_triggers', { id: trigger.id });
+  await logAdminAction({
+    adminId: req.admin.id,
+    action: 'character_trigger_delete',
+    meta: { characterId: character.id, slug: character.slug, triggerId: trigger.id, name: trigger.name },
   });
   res.json({ ok: true });
 });

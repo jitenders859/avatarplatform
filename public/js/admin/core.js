@@ -52,6 +52,9 @@ const AdminAPI = {
   patchCharacter: (id, patch) => adminApiCall(`/api/admin/characters/${id}`, { method: 'PATCH', body: patch }),
   grantCharacterAccess: (id, userId) => adminApiCall(`/api/admin/characters/${id}/access`, { method: 'POST', body: { userId } }),
   revokeCharacterAccess: (id, userId) => adminApiCall(`/api/admin/characters/${id}/access/${userId}`, { method: 'DELETE' }),
+  createCharacterTrigger: (id, data) => adminApiCall(`/api/admin/characters/${id}/triggers`, { method: 'POST', body: data }),
+  patchCharacterTrigger: (id, triggerId, patch) => adminApiCall(`/api/admin/characters/${id}/triggers/${triggerId}`, { method: 'PATCH', body: patch }),
+  deleteCharacterTrigger: (id, triggerId) => adminApiCall(`/api/admin/characters/${id}/triggers/${triggerId}`, { method: 'DELETE' }),
 
   listCoupons: () => adminApiCall('/api/admin/coupons'),
   createCoupon: (data) => adminApiCall('/api/admin/coupons', { method: 'POST', body: data }),

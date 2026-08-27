@@ -124,6 +124,9 @@ router.get('/:publicId/config', async (req, res) => {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
     const character = await findCharacterForEmbed(project.characterId);
+    const triggers = character
+      ? await db.findAll('character_triggers', { characterId: character.id }, { orderBy: 'createdAt', order: 'asc' })
+      : [];
 
     const captureFields = await db.findAll('captureFields', { projectId: project.id }, { orderBy: 'order', order: 'asc' });
 
@@ -172,6 +175,14 @@ router.get('/:publicId/config', async (req, res) => {
         id: character.slug,
         name: character.name,
         rivePath: storage.characterAssets.getPublicUrl(character.storageKey),
+        triggers: triggers.map(t => ({
+          name: t.name,
+          riveInput: t.riveInput,
+          inputType: t.inputType,
+          activeValue: t.activeValue,
+          holdMs: t.holdMs,
+          keywords: t.keywords,
+        })),
       } : null,
       captureFields: captureFields.map(f => ({
         id: f.id, label: f.label, key: f.key,

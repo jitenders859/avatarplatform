@@ -793,6 +793,23 @@
       this._gestureCooldownMs = 0;
       this._emotionKeywords = mergeEmotionKeywords(opts.emotionKeywords);
       this._moodSlowUntilMs = 0;
+
+      // Admin-defined triggers (backend `characters.triggers`, wired through
+      // LipsyncAvatar's `characterTriggers` opt) — named gestures mapped to a
+      // real Rive input on this character, e.g. { name:'laughing',
+      // riveInput:'Laugh', inputType:'trigger', keywords:'haha, lol' }.
+      // Keeps a lowercased keyword list per trigger so reactToEmotion() can
+      // substring-match cheaply every time new transcript text arrives.
+      this._customTriggers = (opts.customTriggers || [])
+        .filter(t => t && t.name && t.riveInput)
+        .map(t => ({
+          ...t,
+          _keywordList: String(t.keywords || '')
+            .split(',')
+            .map(k => k.trim().toLowerCase())
+            .filter(Boolean),
+        }));
+      this._customTriggersByName = Object.fromEntries(this._customTriggers.map(t => [t.name, t]));
     }
 
     start() {
@@ -815,12 +832,53 @@
 
     reactToEmotion(text) {
       if (!text) return;
+      // Admin-defined triggers take priority — an admin naming "laughing"
+      // with keywords "haha, lol" is explicit intent, more specific than the
+      // built-in happy/sad/surprised heuristics below. First match wins and
+      // stops here, same one-gesture-per-call behavior the built-ins have.
+      if (this._customTriggers.length) {
+        const lower = text.toLowerCase();
+        for (const t of this._customTriggers) {
+          if (t._keywordList.length && t._keywordList.some(k => lower.includes(k))) {
+            if (this.fireCustomTrigger(t.name)) return;
+          }
+        }
+      }
       const lang  = detectLanguage(text) || 'english';
       const table = this._emotionKeywords[lang] || this._emotionKeywords.english;
       if (table.surprised && table.surprised.test(text)) { this._triggerBrows(); return; }
       if (table.happy     && table.happy.test(text))     { this._triggerSmile(); return; }
       if (table.sad       && table.sad.test(text))       { this._triggerSad(); return; }
       if (/[?？؟]/.test(text)) { this._triggerThinkingLook(); }
+    }
+
+    /**
+     * Fire an admin-defined character trigger by name (see `customTriggers`
+     * ctor opt). Respects the same gesture cooldown as the built-in
+     * gestures so a repeated keyword match can't spam the animation.
+     * Returns true if it actually fired, false if unknown or on cooldown.
+     */
+    fireCustomTrigger(name) {
+      const t = this._customTriggersByName[name];
+      if (!t || !this._canGesture()) return false;
+
+      if (t.inputType === 'boolean') {
+        this._setBooleanByName(t.riveInput, true);
+        const holdMs = t.holdMs || 1200;
+        setTimeout(() => this._setBooleanByName(t.riveInput, false), holdMs);
+        this._markGesture(holdMs);
+      } else if (t.inputType === 'number') {
+        const value = (t.activeValue ?? 100) * this._gestureIntensity;
+        const holdMs = t.holdMs || 1200;
+        this._setNumberByName(t.riveInput, value);
+        setTimeout(() => this._setNumberByName(t.riveInput, 0), holdMs);
+        this._markGesture(holdMs);
+      } else {
+        // 'trigger' (default): a one-shot Rive pulse, nothing to revert.
+        this._fireInputByName(t.riveInput);
+        this._markGesture(500);
+      }
+      return true;
     }
 
     _tick() {
@@ -937,7 +995,27 @@
     }
 
     _fireTrigger(key) {
-      const inp = this._inputs[this._map[key]];
+      this._fireInputByName(this._map[key]);
+    }
+
+    // Same as _setNumber/_fireTrigger but address a Rive input directly by
+    // its name instead of going through the built-in gesture _map — used by
+    // admin-defined custom triggers, which name an arbitrary input on
+    // whatever character they were configured against.
+    _setNumberByName(name, value) {
+      const inp = this._inputs[name];
+      if (!inp) return;
+      inp.value = Math.max(-100, Math.min(100, value));
+    }
+
+    _setBooleanByName(name, value) {
+      const inp = this._inputs[name];
+      if (!inp) return;
+      inp.value = !!value;
+    }
+
+    _fireInputByName(name) {
+      const inp = this._inputs[name];
       if (!inp) return;
       if (typeof inp.fire === 'function') inp.fire();
       else if ('value' in inp) inp.value = true;
@@ -984,6 +1062,13 @@
      * @param {Function}           [opts.onTranscript]  - (role:'user'|'model', text:string)
      * @param {Function}           [opts.onViseme]      - (azId:number, label:string)
      * @param {Function}           [opts.onError]       - (message:string)
+     * @param {boolean}            [opts.enableBehavior] - Run idle/blink/gesture animation (default: false)
+     * @param {object}             [opts.behaviorConfig] - Passed through to CharacterBehaviorController (inputMap, idleIntensity, gestureIntensity, emotionKeywords, ...)
+     * @param {Array<object>}      [opts.characterTriggers] - Admin-defined named gestures for this character, e.g.
+     *   [{ name:'laughing', riveInput:'Laugh', inputType:'trigger'|'boolean'|'number', activeValue, holdMs, keywords:'haha, lol' }].
+     *   Auto-fires when its keywords appear in the AI's spoken reply (see CharacterBehaviorController#reactToEmotion);
+     *   fire one on demand with avatar.fireCharacterTrigger(name). Requires enableBehavior:true. Matches the shape
+     *   returned by GET /embed/:publicId/config's character.triggers.
      */
     constructor(opts = {}) {
       if (!opts.container) throw new Error('[LipsyncAvatar] opts.container is required');
@@ -1020,6 +1105,7 @@
         // Character behavior controller
         enableBehavior: false,
         behaviorConfig: {},
+        characterTriggers: [],
       }, opts);
 
       this._opts.visemeMinValue = Math.max(1, Math.min(99, Number(this._opts.visemeMinValue) || RIVE_ACTIVE_MIN_VALUE));
@@ -1100,6 +1186,18 @@
     disconnect() {
       if (!this._isConnected) return;
       this._stopSession();
+    }
+
+    /**
+     * Manually fire a named character trigger (see opts.characterTriggers) —
+     * for calling from your own site code rather than waiting for the SDK's
+     * automatic keyword-in-speech detection. No-op if behavior isn't
+     * enabled, the name is unknown, or the gesture cooldown hasn't cleared.
+     * @param {string} name
+     * @returns {boolean} whether it actually fired
+     */
+    fireCharacterTrigger(name) {
+      return this._behaviorCtrl ? this._behaviorCtrl.fireCustomTrigger(name) : false;
     }
 
     /** Send a text message to the model */
@@ -1429,7 +1527,7 @@ When answering, speak naturally and conversationally — do not read the knowled
             if (this._opts.enableBehavior) {
               this._behaviorCtrl = new CharacterBehaviorController(
                 this._riveInputs,
-                this._opts.behaviorConfig || {}
+                { ...this._opts.behaviorConfig, customTriggers: this._opts.characterTriggers }
               );
               this._behaviorCtrl.start();
             }

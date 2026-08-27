@@ -581,6 +581,34 @@ CREATE TABLE IF NOT EXISTS character_access (
 -- character_id — this table has no index on that column today.
 CREATE INDEX IF NOT EXISTS idx_projects_character_id ON projects(character_id);
 
+-- ── character_triggers ────────────────────────────────────────────
+-- Admin-named gestures ("thinking", "laughing", "joking", ...) mapped to a
+-- specific Rive state machine input on that character. rive_input is a raw
+-- input name (not one of the 100-122 viseme numbers, which lip-sync alone
+-- owns) — the admin panel's live inspector (public/js/admin/characters.js)
+-- reads the character's actual state machine inputs from inspector_meta so
+-- this can be a dropdown, not free text, when that data exists.
+-- keywords (comma-separated, case-insensitive substring match) is how the
+-- SDK auto-fires a trigger: CharacterBehaviorController.reactToEmotion()
+-- scans the model's spoken transcript for a match, same mechanism the
+-- built-in happy/sad/surprised gestures already use. NULL/empty keywords
+-- means the trigger is manual-only, fired via LipsyncAvatar#fireCharacterTrigger.
+CREATE TABLE IF NOT EXISTS character_triggers (
+  id            UUID    PRIMARY KEY,
+  character_id  UUID    NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
+  name          TEXT    NOT NULL,                    -- admin-facing label, e.g. "laughing"
+  rive_input    TEXT    NOT NULL,                     -- Rive state machine input name on this character
+  input_type    TEXT    NOT NULL DEFAULT 'trigger',   -- 'trigger' | 'boolean' | 'number'
+  active_value  NUMERIC,                              -- 'number' inputs only: value to hold while active (0-100)
+  hold_ms       INTEGER NOT NULL DEFAULT 1200,        -- 'boolean'/'number' only: ms before reverting to rest
+  keywords      TEXT,                                 -- comma-separated auto-fire keywords; NULL = manual-only
+  created_by    UUID    REFERENCES admin_users(id) ON DELETE SET NULL,
+  created_at    BIGINT  NOT NULL,
+  updated_at    BIGINT,
+  UNIQUE (character_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_character_triggers_character_id ON character_triggers(character_id);
+
 -- ── users: tier-override provenance + expiry ─────────────────────
 -- admin_plan_id already exists and already takes precedence over
 -- Stripe in backend/services/usage.js's userPlanId(). These columns

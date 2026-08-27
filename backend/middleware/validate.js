@@ -300,6 +300,26 @@ const schemas = {
     userId: z.string().min(1, 'userId is required'),
   }),
 
+  characterTriggerCreate: z.object({
+    name: z.string().trim().min(1, 'Name is required').max(40, 'Name too long')
+      .regex(/^[a-z0-9][a-z0-9 _-]*$/i, 'Use letters, numbers, spaces, - or _'),
+    riveInput: z.string().trim().min(1, 'riveInput is required').max(80, 'riveInput too long'),
+    inputType: z.enum(['trigger', 'boolean', 'number'], { error: 'inputType must be trigger, boolean, or number' }).optional(),
+    activeValue: z.number().min(0).max(100).optional().nullable(),
+    holdMs: z.number().int().min(100).max(10000).optional(),
+    keywords: z.string().trim().max(500, 'keywords too long').optional().nullable(),
+  }),
+
+  characterTriggerPatch: z.object({
+    name: z.string().trim().min(1, 'Name is required').max(40, 'Name too long')
+      .regex(/^[a-z0-9][a-z0-9 _-]*$/i, 'Use letters, numbers, spaces, - or _').optional(),
+    riveInput: z.string().trim().min(1, 'riveInput is required').max(80, 'riveInput too long').optional(),
+    inputType: z.enum(['trigger', 'boolean', 'number'], { error: 'inputType must be trigger, boolean, or number' }).optional(),
+    activeValue: z.number().min(0).max(100).optional().nullable(),
+    holdMs: z.number().int().min(100).max(10000).optional(),
+    keywords: z.string().trim().max(500, 'keywords too long').optional().nullable(),
+  }).refine(d => Object.keys(d).length > 0, { message: 'Nothing to update' }),
+
   tierUpsert: z.object({
     name: z.string().trim().min(1, 'Name is required').max(80, 'Name too long'),
     limits: z.object({
