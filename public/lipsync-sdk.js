@@ -972,6 +972,11 @@
      * @param {number}             [opts.visemeMaxValue] - Maximum active mouth value, default 100
      * @param {number}             [opts.visemePeakRatio] - 0-1 point in each viseme where value reaches max, default 0.88
      * @param {number}             [opts.visemeOverlapMs] - Start the next viseme slightly early for smoother switching, default 35
+     * @param {number}             [opts.visemeSmoothingMs] - Per-frame glide time constant: how long a mouth input takes to
+     *   ease toward its target instead of snapping (default 55). Applies to every Rive input every frame, so an outgoing
+     *   viseme decays while the incoming one rises instead of hard-cutting — this is what produces an in-between mouth
+     *   shape when two inputs (e.g. 110 and 122) are transitioning at once. Raise it if the mouth still looks too snappy;
+     *   lower it (or set visemeSpeedMode:'instant') if lip movement starts trailing noticeably behind the audio.
      * @param {Function}           [opts.onConnected]
      * @param {Function}           [opts.onDisconnected]
      * @param {Function}           [opts.onSpeaking]
@@ -1005,6 +1010,7 @@
         visemeMaxValue: RIVE_ACTIVE_MAX_VALUE,
         visemePeakRatio: 0.88,
         visemeOverlapMs: 35,
+        visemeSmoothingMs: 55,
         // Hybrid lip-sync params
         anticipationMs: 40,      // pre-roll mouth N ms before phoneme starts
         minVisemeMs: 50,         // minimum hold per viseme (prevents flutter on fast consonants)
@@ -1020,6 +1026,7 @@
       this._opts.visemeMaxValue = Math.max(this._opts.visemeMinValue, Math.min(100, Number(this._opts.visemeMaxValue) || RIVE_ACTIVE_MAX_VALUE));
       this._opts.visemePeakRatio = Math.max(0.1, Math.min(1, Number(this._opts.visemePeakRatio) || 0.88));
       this._opts.visemeOverlapMs = Math.max(0, Math.min(140, Number(this._opts.visemeOverlapMs) || 35));
+      this._opts.visemeSmoothingMs = Math.max(0, Math.min(200, Number(this._opts.visemeSmoothingMs) ?? 55));
 
       this._riveInputByAz = RIVE_INPUT_BY_AZ.slice();
       if (this._opts.riveInputMap && typeof this._opts.riveInputMap === 'object') {
@@ -1049,6 +1056,7 @@
       this._wTarget      = new Float32Array(VISEME_COUNT).fill(0);
       this._wCurrent     = new Float32Array(VISEME_COUNT).fill(0);
       this._lerpRaf      = null;
+      this._lastLerpMs   = 0;
       this._currentAzId  = 0;
       this._schedQueue   = [];
       this._schedRaf     = null;
@@ -1447,33 +1455,50 @@ When answering, speak naturally and conversationally — do not read the knowled
     // ─────────────────────────────────────────────────────
     _startLerpLoop() {
       if (this._lerpRaf) return;
-      // Keep applying the current values every frame. The scheduler updates
-      // _wCurrent with a time-based 1→100 ramp aligned to the spoken audio.
-      const tick = () => {
+      // Keep easing _wCurrent toward _wTarget every frame. _wTarget is set by
+      // the scheduler (a time-based 1→100 ramp aligned to the spoken audio);
+      // _wCurrent is what's actually written to the Rive inputs, and glides
+      // toward that target rather than snapping to it — see _applyVisemeTargets.
+      this._lastLerpMs = performance.now();
+      const tick = (now) => {
         if (this._destroyed) return;
-        this._applyVisemeTargets();
+        const dtMs = Math.max(0, Math.min(100, now - this._lastLerpMs));
+        this._lastLerpMs = now;
+        this._applyVisemeTargets(dtMs);
         this._lerpRaf = requestAnimationFrame(tick);
       };
       this._lerpRaf = requestAnimationFrame(tick);
     }
 
-    _applyVisemeTargets() {
+    _applyVisemeTargets(dtMs) {
       if (!this._riveReady) return;
 
-      // Clear every mapped mouth input first.
-      const mappedInputNames = [...new Set(this._riveInputByAz.map(n => String(n)))];
-      for (const inputName of mappedInputNames) {
-        const inp = this._riveInputs[inputName];
-        if (inp) inp.value = RIVE_INACTIVE_VALUE;
-      }
+      // Frame-rate-independent exponential glide: each input eases toward its
+      // target by a fraction of the remaining distance every frame, governed
+      // by visemeSmoothingMs (time to close ~63% of the gap). This is what
+      // keeps a value like 100 from being slapped on in one frame, and — since
+      // every mapped input is eased independently and in parallel — lets an
+      // outgoing viseme's input decay while the incoming one's input rises,
+      // producing a genuine in-between mouth shape during the crossover
+      // instead of a hard cut (same idea as manually holding e.g. input 110
+      // at 50 and input 122 at 10 at the same time).
+      const tau = this._opts.visemeSmoothingMs;
+      const alpha = tau > 0 ? 1 - Math.exp(-dtMs / tau) : 1;
 
-      // Apply the active viseme value(s). Values are 1-100 while active.
+      const written = Object.create(null);
+
       for (let i = 0; i < VISEME_COUNT; i++) {
-        const value = this._wCurrent[i];
-        if (value <= 0) continue;
+        const target = this._wTarget[i];
+        let cur = this._wCurrent[i];
+        cur = Math.abs(target - cur) < 0.5 ? target : cur + (target - cur) * alpha;
+        this._wCurrent[i] = cur;
+
         const inputName = String(this._riveInputByAz[i] ?? (100 + i));
+        // Two azIds can share one Rive input (custom riveInputMap) — keep the louder one.
+        if (written[inputName] !== undefined && written[inputName] >= cur) continue;
+        written[inputName] = cur;
         const inp = this._riveInputs[inputName];
-        if (inp) inp.value = Math.max(0, Math.min(100, value));
+        if (inp) inp.value = Math.max(0, Math.min(100, cur));
       }
     }
 
@@ -1497,8 +1522,14 @@ When answering, speak naturally and conversationally — do not read the knowled
      * values: { azId: 0-100, ... }
      */
     _setVisemeWeights(values, opts = {}) {
+      // Only the *target* moves here — _wCurrent keeps gliding toward it every
+      // frame in _applyVisemeTargets (via the always-running _startLerpLoop),
+      // which is what turns a target change into a smooth transition instead
+      // of an instant snap. opts.immediate (rest pose on connect/interrupt/
+      // stop) still needs to be visible in this same tick, so it snaps
+      // _wCurrent too and pushes it to Rive right away.
       this._wTarget.fill(RIVE_INACTIVE_VALUE);
-      this._wCurrent.fill(RIVE_INACTIVE_VALUE);
+      if (opts.immediate) this._wCurrent.fill(RIVE_INACTIVE_VALUE);
 
       let domId = 0, domW = -Infinity;
       for (const [id, value] of Object.entries(values || {})) {
@@ -1506,7 +1537,7 @@ When answering, speak naturally and conversationally — do not read the knowled
         const v = Math.max(0, Math.min(100, Number(value) || 0));
         if (i >= 0 && i < VISEME_COUNT && v > 0) {
           this._wTarget[i] = v;
-          this._wCurrent[i] = v;
+          if (opts.immediate) this._wCurrent[i] = v;
           if (v > domW) { domW = v; domId = i; }
         }
       }
@@ -1515,10 +1546,10 @@ When answering, speak naturally and conversationally — do not read the knowled
         domId = 0;
         const v = opts.immediate ? this._opts.visemeMaxValue : this._opts.visemeMinValue;
         this._wTarget[0] = v;
-        this._wCurrent[0] = v;
+        if (opts.immediate) this._wCurrent[0] = v;
       }
 
-      this._applyVisemeTargets();
+      if (opts.immediate) this._applyVisemeTargets(0);
       this._updateVisemePill(domId);
     }
 
