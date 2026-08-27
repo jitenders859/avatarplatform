@@ -32,7 +32,13 @@ async function adminApiCall(path, opts = {}) {
 const AdminAPI = {
   login: (email, password) => adminApiCall('/api/admin/login', { method: 'POST', body: { email, password } }),
   me: () => adminApiCall('/api/admin/me'),
+  overview: () => adminApiCall('/api/admin/overview'),
+  systemStatus: () => adminApiCall('/api/admin/system-status'),
+  listBilling: (page, status) => adminApiCall(`/api/admin/billing?page=${page || 1}${status ? `&status=${encodeURIComponent(status)}` : ''}`),
+  cancelSubscription: (userId) => adminApiCall(`/api/admin/users/${userId}/subscription/cancel`, { method: 'POST' }),
+  patchProject: (id, patch) => adminApiCall(`/api/admin/projects/${id}`, { method: 'PATCH', body: patch }),
   listUsers: (search, page) => adminApiCall(`/api/admin/users?search=${encodeURIComponent(search || '')}&page=${page || 1}`),
+  exportUsers: (search) => adminApiCall(`/api/admin/users/export?search=${encodeURIComponent(search || '')}`),
   getUser: (id) => adminApiCall(`/api/admin/users/${id}`),
   patchUser: (id, patch) => adminApiCall(`/api/admin/users/${id}`, { method: 'PATCH', body: patch }),
   deleteUser: (id, confirmEmail) => adminApiCall(`/api/admin/users/${id}`, { method: 'DELETE', body: { confirmEmail } }),
@@ -41,7 +47,11 @@ const AdminAPI = {
   createTier: (data) => adminApiCall('/api/admin/tiers', { method: 'POST', body: data }),
   updateTier: (id, data) => adminApiCall(`/api/admin/tiers/${id}`, { method: 'PATCH', body: data }),
   deleteTier: (id) => adminApiCall(`/api/admin/tiers/${id}`, { method: 'DELETE' }),
-  auditLog: (page) => adminApiCall(`/api/admin/audit-log?page=${page || 1}`),
+  auditLog: (page, filters = {}) => {
+    const params = new URLSearchParams({ page: page || 1 });
+    for (const [k, v] of Object.entries(filters)) if (v) params.set(k, v);
+    return adminApiCall(`/api/admin/audit-log?${params}`);
+  },
 
   listCharacters: () => adminApiCall('/api/admin/characters'),
   getCharacter: (id) => adminApiCall(`/api/admin/characters/${id}`),
@@ -83,6 +93,30 @@ function adminToast(msg, type = '') {
   document.body.appendChild(el);
   requestAnimationFrame(() => el.classList.add('show'));
   setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); }, 3000);
+}
+
+// Shared pagination control for tables backed by a {page, pageSize, total}
+// API response. Renders into `container` (an element) and wires prev/next.
+function renderPagination(container, { page, pageSize, total, onPage }) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (totalPages <= 1) { container.innerHTML = ''; return; }
+  container.innerHTML = `
+    <div class="row gap-sm" style="align-items:center;justify-content:flex-end;margin-top:10px">
+      <span class="muted text-sm">Page ${page} of ${totalPages} (${formatNum(total)} total)</span>
+      <button class="btn btn-ghost btn-sm" id="pg-prev" ${page <= 1 ? 'disabled' : ''}>← Prev</button>
+      <button class="btn btn-ghost btn-sm" id="pg-next" ${page >= totalPages ? 'disabled' : ''}>Next →</button>
+    </div>`;
+  container.querySelector('#pg-prev')?.addEventListener('click', () => onPage(page - 1));
+  container.querySelector('#pg-next')?.addEventListener('click', () => onPage(page + 1));
+}
+
+function downloadCsv(filename, rows) {
+  const csv = rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
 }
 
 function escapeHtml(s) {
@@ -143,7 +177,7 @@ async function boot() {
     document.getElementById('login-view').hidden = true;
     document.getElementById('admin-view').hidden = false;
     document.getElementById('admin-whoami').textContent = `Signed in as ${admin.email}`;
-    switchTab('users');
+    switchTab('overview');
   } catch {
     // adminApiCall already logged out on 401
   }

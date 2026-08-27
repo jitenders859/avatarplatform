@@ -243,6 +243,11 @@ const schemas = {
     confirmEmail: z.string().min(1, 'confirmEmail is required'),
   }),
 
+  adminPatchProject: z.object({
+    adminSuspended: z.boolean(),
+    reason: z.string().trim().max(500, 'reason too long').optional(),
+  }),
+
   flashcardCreate: z.object({
     front: z.string().trim().min(1, 'front is required').max(2000, 'front too long'),
     back: z.string().trim().min(1, 'back is required').max(2000, 'back too long'),

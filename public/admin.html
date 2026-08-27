@@ -32,18 +32,24 @@
       </div>
 
       <div class="row gap-sm mb-lg" id="tab-bar">
-        <button class="btn btn-ghost tab-btn active" data-tab="users">Users</button>
+        <button class="btn btn-ghost tab-btn active" data-tab="overview">Overview</button>
+        <button class="btn btn-ghost tab-btn" data-tab="users">Users</button>
+        <button class="btn btn-ghost tab-btn" data-tab="billing">Billing</button>
         <button class="btn btn-ghost tab-btn" data-tab="characters">Characters</button>
         <button class="btn btn-ghost tab-btn" data-tab="coupons">Coupons</button>
         <button class="btn btn-ghost tab-btn" data-tab="tiers">Tiers</button>
         <button class="btn btn-ghost tab-btn" data-tab="audit">Audit Log</button>
+        <button class="btn btn-ghost tab-btn" data-tab="status">Status</button>
       </div>
 
-      <section id="tab-users"></section>
+      <section id="tab-overview"></section>
+      <section id="tab-users" hidden></section>
+      <section id="tab-billing" hidden></section>
       <section id="tab-characters" hidden></section>
       <section id="tab-coupons" hidden></section>
       <section id="tab-tiers" hidden></section>
       <section id="tab-audit" hidden></section>
+      <section id="tab-status" hidden></section>
     </div>
   </div>
 
@@ -57,10 +63,13 @@
 
   <script src="/js/theme.js"></script>
   <script src="/js/admin/core.js"></script>
+  <script src="/js/admin/overview.js"></script>
   <script src="/js/admin/users.js"></script>
+  <script src="/js/admin/billing.js"></script>
   <script src="/js/admin/characters.js"></script>
   <script src="/js/admin/coupons.js"></script>
   <script src="/js/admin/tiers.js"></script>
   <script src="/js/admin/audit.js"></script>
+  <script src="/js/admin/status.js"></script>
 </body>
 </html>

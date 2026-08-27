@@ -1,28 +1,43 @@
 // ── Users tab ─────────────────────────────────────────────────
 let usersSearchTimer = null;
+let usersPage = 1;
+let usersSearch = '';
 
 async function loadUsersTab() {
   const section = document.getElementById('tab-users');
   section.innerHTML = `
     <div class="row gap-sm mb-md">
       <input type="text" id="users-search" placeholder="Search by email or name…" class="input" style="max-width:320px" />
+      <button class="btn btn-ghost btn-sm" id="users-export-btn" style="margin-left:auto">↓ Export CSV</button>
     </div>
     <div id="users-table"></div>
+    <div id="users-pagination"></div>
     <div id="user-detail" class="card mt-lg" hidden></div>
   `;
   document.getElementById('users-search').addEventListener('input', (e) => {
     clearTimeout(usersSearchTimer);
-    usersSearchTimer = setTimeout(() => renderUsersTable(e.target.value), 300);
+    usersSearchTimer = setTimeout(() => { usersSearch = e.target.value; usersPage = 1; renderUsersTable(); }, 300);
   });
-  await renderUsersTable('');
+  document.getElementById('users-export-btn').addEventListener('click', async () => {
+    try {
+      const { users } = await AdminAPI.exportUsers(usersSearch);
+      if (!users.length) return adminToast('No users to export', 'error');
+      const rows = [['id', 'email', 'name', 'plan', 'plan_source', 'suspended', 'joined']];
+      for (const u of users) rows.push([u.id, u.email, u.name || '', u.planId, u.planSource, u.suspended ? 'yes' : 'no', new Date(u.createdAt).toISOString()]);
+      downloadCsv('users.csv', rows);
+    } catch (err) { adminToast(err.message, 'error'); }
+  });
+  usersPage = 1;
+  usersSearch = '';
+  await renderUsersTable();
 }
 
-async function renderUsersTable(search) {
+async function renderUsersTable() {
   const tableWrap = document.getElementById('users-table');
   tableWrap.innerHTML = '<div class="adm-skeleton-row"></div><div class="adm-skeleton-row"></div><div class="adm-skeleton-row"></div>';
-  let users;
+  let users, page, pageSize, total;
   try {
-    ({ users } = await AdminAPI.listUsers(search, 1));
+    ({ users, page, pageSize, total } = await AdminAPI.listUsers(usersSearch, usersPage));
   } catch (err) {
     tableWrap.innerHTML = `<div class="adm-error-state">Could not load users: ${escapeHtml(err.message)}</div>`;
     return;
@@ -47,6 +62,10 @@ async function renderUsersTable(search) {
     row.addEventListener('click', open);
     row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
   }
+  renderPagination(document.getElementById('users-pagination'), {
+    page, pageSize, total,
+    onPage: (p) => { usersPage = p; renderUsersTable(); },
+  });
 }
 
 async function renderUserDetail(userId) {
@@ -75,7 +94,15 @@ async function renderUserDetail(userId) {
     </div>`;
   }).join('');
 
-  const projectRows = projects.map(p => `<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.characterId)}</td><td>${p.fileCount}</td><td>${new Date(p.createdAt).toLocaleDateString()}</td></tr>`).join('');
+  const projectRows = projects.map(p => `
+    <tr>
+      <td>${escapeHtml(p.name)}</td>
+      <td>${escapeHtml(p.characterId)}</td>
+      <td>${p.fileCount}</td>
+      <td>${new Date(p.createdAt).toLocaleDateString()}</td>
+      <td>${p.adminSuspended ? `<span class="pill pill-danger" title="${escapeHtml(p.adminSuspendedReason || '')}">Disabled</span>` : ''}</td>
+      <td><button class="btn btn-ghost btn-sm" data-suspend-project="${p.id}" data-suspended="${p.adminSuspended}">${p.adminSuspended ? 'Enable' : 'Disable'}</button></td>
+    </tr>`).join('');
 
   const override = user.adminOverride;
   const tierStatusHtml = override
@@ -97,14 +124,32 @@ async function renderUserDetail(userId) {
       <button class="btn btn-ghost" id="impersonate-btn">View as user</button>
       <button class="btn btn-ghost" id="delete-user-btn" style="color:var(--danger)">Delete account</button>
     </div>
-    <h3 style="font-size:15px;margin:20px 0 10px">Projects (read-only)</h3>
+    <h3 style="font-size:15px;margin:20px 0 10px">Projects</h3>
     <div class="table-scroll">
     <table class="table">
-      <thead><tr><th>Name</th><th>Character</th><th>Files</th><th>Created</th></tr></thead>
-      <tbody>${projectRows || '<tr><td colspan="4" class="muted">No projects</td></tr>'}</tbody>
+      <thead><tr><th>Name</th><th>Character</th><th>Files</th><th>Created</th><th>Status</th><th></th></tr></thead>
+      <tbody>${projectRows || '<tr><td colspan="6" class="muted">No projects</td></tr>'}</tbody>
     </table>
     </div>
   `;
+
+  for (const btn of detail.querySelectorAll('[data-suspend-project]')) {
+    btn.addEventListener('click', async () => {
+      const projectId = btn.dataset.suspendProject;
+      const nowSuspended = btn.dataset.suspended === 'true';
+      let reason = '';
+      if (!nowSuspended) {
+        const typed = prompt('Reason for disabling this chatbot (shown only in the audit log):');
+        if (typed === null) return;
+        reason = typed;
+      }
+      try {
+        await AdminAPI.patchProject(projectId, { adminSuspended: !nowSuspended, reason });
+        adminToast(nowSuspended ? 'Chatbot re-enabled' : 'Chatbot disabled', 'success');
+        renderUserDetail(userId);
+      } catch (err) { adminToast(err.message, 'error'); }
+    });
+  }
 
   document.getElementById('set-override-btn').addEventListener('click', () => {
     openSetOverrideModal(userId, tiers, user.adminPlanId);
@@ -117,7 +162,7 @@ async function renderUserDetail(userId) {
         await AdminAPI.patchUser(userId, { adminPlanId: null });
         adminToast('Override cleared', 'success');
         renderUserDetail(userId);
-        renderUsersTable(document.getElementById('users-search').value);
+        renderUsersTable();
       } catch (err) { adminToast(err.message, 'error'); }
     });
   }
@@ -127,7 +172,7 @@ async function renderUserDetail(userId) {
       await AdminAPI.patchUser(userId, { suspended: !user.suspended });
       adminToast(user.suspended ? 'User unsuspended' : 'User suspended', 'success');
       renderUserDetail(userId);
-      renderUsersTable(document.getElementById('users-search').value);
+      renderUsersTable();
     } catch (err) { adminToast(err.message, 'error'); }
   });
 
@@ -146,7 +191,7 @@ async function renderUserDetail(userId) {
       await AdminAPI.deleteUser(userId, typed);
       adminToast('User deleted', 'success');
       detail.hidden = true;
-      renderUsersTable(document.getElementById('users-search').value);
+      renderUsersTable();
     } catch (err) { adminToast(err.message, 'error'); }
   });
 }
@@ -196,7 +241,7 @@ function openSetOverrideModal(userId, tiers, currentAdminPlanId) {
       adminToast('Tier override set', 'success');
       closeModal();
       renderUserDetail(userId);
-      renderUsersTable(document.getElementById('users-search').value);
+      renderUsersTable();
     } catch (err) { adminToast(err.message, 'error'); }
   });
 }

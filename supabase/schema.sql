@@ -97,6 +97,12 @@ CREATE TABLE IF NOT EXISTS projects (
   -- question, instead of letting the model guess. NULL = no override
   -- (today's behavior).
   fallback_message         TEXT,
+  -- Admin kill switch for one specific chatbot (e.g. abuse, a broken
+  -- config racking up API cost) without suspending the owner's whole
+  -- account — see backend/routes/admin.js PATCH /projects/:id. Enforced in
+  -- backend/routes/embed.js (config/ask/speak/study all refuse to serve).
+  admin_suspended          BOOLEAN NOT NULL DEFAULT false,
+  admin_suspended_reason   TEXT,
   -- Timestamps
   created_at               BIGINT  NOT NULL,
   updated_at               BIGINT
