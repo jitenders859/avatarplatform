@@ -20,6 +20,7 @@ const { fetchUrl } = require('./url');
 const { chunkText, chunkPages } = require('./chunk');
 const { embedMany, MODEL: EMBED_MODEL, OUTPUT_DIM: EMBED_DIM } = require('./embed');
 const { processPdfPageImages } = require('./pageImages');
+const { checkLimit, trackEmbeddingChars } = require('./usage');
 const logger = require('../logger').child({ module: 'services/process' });
 
 function setStage(fileId, stage, pct) {
@@ -59,6 +60,9 @@ async function processFile(fileRecord) {
 
     const cleaned = (extractedText || '').trim();
     if (!cleaned) throw new Error('Extraction returned empty text');
+
+    const charCheck = await checkLimit(fileRecord.userId, 'embeddingChars', cleaned.length);
+    if (!charCheck.ok) throw new Error(charCheck.reason);
 
     await db.update('files', fileId, {
       extractedText: cleaned.slice(0, 50000),
@@ -105,7 +109,6 @@ async function processFile(fileRecord) {
 
     // Track usage
     try {
-      const { trackEmbeddingChars } = require('./usage');
       await trackEmbeddingChars(fileRecord.userId, cleaned.length);
     } catch (_) { /* best effort */ }
 

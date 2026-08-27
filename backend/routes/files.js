@@ -87,14 +87,29 @@ router.post('/projects/:projectId/files/init', authRequired, ownsProject, valida
  *
  * Step 2: called once the browser's direct-to-Storage upload finishes.
  * Confirms the object actually landed in Storage (doesn't trust the client's
- * report alone), then queues background processing.
+ * report alone), reconciles the stored file.size with the real object size,
+ * and re-checks the storage-mb plan limit against that real size before
+ * queuing background processing — closes the gap where a client could pass
+ * `size: 0` (or any understated size) at /init to sail through the pre-check
+ * while actually uploading an arbitrarily large object.
  */
 router.post('/projects/:projectId/files/:fileId/complete', authRequired, ownsProject, async (req, res) => {
   const file = await db.findOne('files', { id: req.params.fileId, projectId: req.project.id });
   if (!file) return res.status(404).json({ error: 'File not found' });
 
-  const exists = await storage.objectExists(file.storageKey);
-  if (!exists) return res.status(400).json({ error: 'Upload did not complete — object not found in storage' });
+  const meta = await storage.getObjectMeta(file.storageKey);
+  if (!meta) return res.status(400).json({ error: 'Upload did not complete — object not found in storage' });
+
+  if (meta.size !== file.size) {
+    await db.update('files', file.id, { size: meta.size });
+  }
+
+  const storageCheck = await checkLimit(req.user.id, 'storageMb', 0);
+  if (!storageCheck.ok) {
+    await storage.removeObject(file.storageKey).catch(() => {});
+    await db.update('files', file.id, { status: 'failed', error: storageCheck.reason, storageKey: null });
+    return res.status(402).json({ error: storageCheck.reason });
+  }
 
   await queueProcessing(file.id);
   res.json({ ok: true });

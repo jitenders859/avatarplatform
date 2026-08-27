@@ -139,6 +139,7 @@ router.delete('/:id', authRequired, async (req, res) => {
   if (!project) return res.status(404).json({ error: 'Project not found' });
   // FK CASCADE handles files, chunks, sessions, messages, capture_fields, leads
   await db.remove('projects', { id: project.id });
+  invalidateProjectCache(project.publicId);
   res.json({ ok: true });
 });
 

@@ -53,6 +53,18 @@ function makeBucketOps(bucketName) {
       return (data || []).some(f => f.name === name);
     },
 
+    // Real, server-verified object size — used to re-check plan storage
+    // limits at upload-complete time instead of trusting the client-reported
+    // size from the /init request body.
+    async getObjectMeta(key) {
+      const dir = key.includes('/') ? key.slice(0, key.lastIndexOf('/')) : '';
+      const name = key.includes('/') ? key.slice(key.lastIndexOf('/') + 1) : key;
+      const { data, error } = await client().storage.from(bucketName).list(dir, { search: name });
+      if (error) throw error;
+      const found = (data || []).find(f => f.name === name);
+      return found ? { size: found.metadata?.size ?? 0 } : null;
+    },
+
     async uploadBuffer(key, buffer, contentType) {
       const { error } = await client().storage.from(bucketName).upload(key, buffer, {
         contentType,
@@ -108,6 +120,7 @@ module.exports = {
   // Private "uploads" bucket — unchanged behavior/signatures for existing callers.
   createSignedUploadUrl: uploadsBucket.createSignedUploadUrl,
   objectExists: uploadsBucket.objectExists,
+  getObjectMeta: uploadsBucket.getObjectMeta,
   uploadBuffer: uploadsBucket.uploadBuffer,
   downloadBuffer: uploadsBucket.downloadBuffer,
   getSignedDownloadUrl: uploadsBucket.getSignedDownloadUrl,
