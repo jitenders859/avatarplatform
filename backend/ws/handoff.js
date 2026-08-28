@@ -179,7 +179,7 @@ async function handleVisitorMessage(project, sessionId, ws, raw) {
     await db.insert('messages', {
       id: crypto.randomUUID(), sessionId, projectId: project.id, role: 'user', text, createdAt: Date.now(),
     });
-    presence.sendToUser(project.id, session.claimedBy, { type: 'chat', text, from: 'visitor' });
+    presence.sendToUser(project.id, session.claimedBy, { type: 'chat', sessionId, text, from: 'visitor' });
   }
 }
 

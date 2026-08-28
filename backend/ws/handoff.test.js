@@ -137,6 +137,7 @@ test('full flow: request -> queue_update to dashboard -> claim -> chat both ways
     assert.equal(relayedToHuman.type, 'chat');
     assert.equal(relayedToHuman.from, 'visitor');
     assert.equal(relayedToHuman.text, 'Hi, I need help');
+    assert.equal(relayedToHuman.sessionId, sessionId);
 
     const visitorChatPromise = waitForMessage(visitorWs);
     dashWs.send(JSON.stringify({ type: 'chat', sessionId, text: 'Sure, happy to help!' }));
