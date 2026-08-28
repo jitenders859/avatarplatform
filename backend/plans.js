@@ -22,7 +22,7 @@ const PLANS = [
     stripePriceId: null,
     limits: {
       projects: 3,
-      filesPerProject: 5,
+      maxFiles: 5,
       storageMb: 50,
       monthlyMessages: 100,
       monthlyEmbeddingChars: 100_000,
@@ -38,7 +38,7 @@ const PLANS = [
     stripePriceId: process.env.STRIPE_PRICE_STARTER || null,
     limits: {
       projects: 3,
-      filesPerProject: 25,
+      maxFiles: 25,
       storageMb: 500,
       monthlyMessages: 2_000,
       monthlyEmbeddingChars: 2_000_000,
@@ -54,7 +54,7 @@ const PLANS = [
     stripePriceId: process.env.STRIPE_PRICE_PRO || null,
     limits: {
       projects: 10,
-      filesPerProject: 100,
+      maxFiles: 100,
       storageMb: 5_000,
       monthlyMessages: 10_000,
       monthlyEmbeddingChars: 10_000_000,
@@ -71,7 +71,7 @@ const PLANS = [
     stripePriceId: process.env.STRIPE_PRICE_BUSINESS || null,
     limits: {
       projects: 50,
-      filesPerProject: 500,
+      maxFiles: 500,
       storageMb: 50_000,
       monthlyMessages: 100_000,
       monthlyEmbeddingChars: 100_000_000,

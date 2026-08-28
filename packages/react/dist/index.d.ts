@@ -14,4 +14,20 @@ interface AvatarWidgetProps {
  */
 declare function AvatarWidget({ serverUrl, botId }: AvatarWidgetProps): null;
 
-export { AvatarWidget, type AvatarWidgetProps };
+interface UseAvatarPlatformResult {
+    open: () => void;
+    close: () => void;
+    hide: () => void;
+    show: () => void;
+}
+/**
+ * Thin wrapper around the `ap:open`/`ap:close`/`ap:hide`/`ap:show` document
+ * events that embed-loader.js (the script AvatarWidget mounts) listens for
+ * — see public/docs/prefetching.html "Controlling the widget". Doesn't talk
+ * to the widget directly; it only dispatches the same events a vanilla-JS
+ * page would, so it works with whichever <AvatarWidget> instance is mounted
+ * for `botId`.
+ */
+declare function useAvatarPlatform(botId: string): UseAvatarPlatformResult;
+
+export { AvatarWidget, type AvatarWidgetProps, type UseAvatarPlatformResult, useAvatarPlatform };

@@ -59,48 +59,106 @@ Browser (embed.html)                   Browser (dashboard)
 
 ```
 avatar-platform/
+├── api/
+│   └── index.js                   # Vercel serverless entry point (wraps backend/server.js)
 ├── backend/
 │   ├── server.js                  # Express entry point
 │   ├── db.js                      # Postgres layer (pg.Pool, camelCase↔snake_case)
 │   ├── plans.js                   # Plan definitions + limits
+│   ├── errors.js                  # AppError class (safe, user-facing error messages)
+│   ├── logger.js                  # pino logger
 │   ├── middleware/
-│   │   └── auth.js                # JWT authRequired middleware + signToken
+│   │   ├── auth.js                # JWT authRequired/adminAuthRequired + signToken
+│   │   └── validate.js            # Zod request-body validation
+│   ├── inngest/
+│   │   ├── client.js              # Inngest client
+│   │   └── functions.js           # Background jobs (file processing)
+│   ├── scripts/
+│   │   ├── create-admin.js        # One-off: create an admin_users row
+│   │   └── migrate-legacy-characters.js
 │   ├── routes/
 │   │   ├── auth.js                # Signup, login, reset password, /me
 │   │   ├── projects.js            # Project CRUD, sessions, leads
 │   │   ├── files.js               # File upload, URL ingest, chunks viewer
 │   │   ├── embed.js               # Public embed: config, retrieve, log, lead
 │   │   ├── captureFields.js       # Lead capture field management
+│   │   ├── quizQuestions.js       # Owner-authored quiz question bank
+│   │   ├── flashcards.js          # Owner-authored flashcard bank
+│   │   ├── videoResources.js      # Owner-curated video recommendations
 │   │   ├── analytics.js           # SQL-aggregate analytics
-│   │   └── billing.js             # Stripe checkout, portal, webhook
+│   │   ├── billing.js             # Stripe checkout, portal, webhook
+│   │   ├── contact.js             # Public contact-form submission
+│   │   ├── admin.js               # Admin: users, tiers, audit log
+│   │   ├── adminCharacters.js     # Admin: character library upload/versions
+│   │   └── adminCoupons.js        # Admin: coupon CRUD + redemptions
 │   └── services/
 │       ├── chunk.js               # Semantic paragraph-aware chunking
-│       ├── embed.js               # Gemini embedding API (single + batch)
+│       ├── embed.js               # Gemini embedding API (single + batch, concurrency-limited)
 │       ├── extract.js             # Text extraction (PDF, DOCX, TXT, images…)
-│       ├── process.js             # Background: extract → chunk → embed → persist
+│       ├── process.js             # extract → chunk → embed → persist pipeline
+│       ├── processMode.js         # inline vs. Inngest background-processing mode
 │       ├── stripe.js              # Stripe client factory
 │       ├── url.js                 # URL fetcher + HTML cleaner
+│       ├── safeFetch.js           # SSRF-safe fetch (webhooks, URL ingestion)
+│       ├── rateLimitStore.js      # Shared Redis-backed express-rate-limit store
 │       ├── usage.js               # Plan-limit checks + usage tracking
-│       └── vector.js              # pgvector cosine search
+│       ├── vector.js              # pgvector cosine search
+│       ├── tiers.js               # Chatbot capability tiers (basic/medium/advanced)
+│       ├── tools.js               # Gemini function-calling tool definitions
+│       ├── storage.js             # Supabase Storage signed URLs
+│       ├── email.js               # SMTP transactional email (password reset, contact)
+│       ├── csvImport.js           # Quiz/flashcard CSV import parsing
+│       ├── coupons.js             # Coupon validation + Stripe integration
+│       ├── auditLog.js            # Admin action audit trail
+│       ├── accountDelete.js       # Full account + data deletion
+│       ├── learner.js             # Anonymous learner-key resolution (quiz/flashcard progress)
+│       ├── figures.js             # Figure/page-image resolution for RAG answers
+│       └── pageImages.js          # PDF page-image rendering (@napi-rs/canvas)
 ├── public/
 │   ├── lipsync-sdk.js             # Client SDK: Gemini Live + Rive lip-sync
+│   ├── embed-loader.js            # (in js/) host-page widget loader — see below
 │   ├── embed.html                 # Embeddable chat iframe
 │   ├── dashboard.html             # Chatbot list
 │   ├── project.html               # Per-project settings + knowledge sources
 │   ├── analytics.html             # Usage charts
-│   ├── billing.html               # Plan + subscription management
+│   ├── billing.html                # Plan + subscription management
 │   ├── account.html               # Profile settings
+│   ├── admin.html                 # Admin panel shell
+│   ├── docs/                      # Docs site (Introduction, SDK pages, integration guides)
 │   ├── css/
-│   │   └── embed.css              # Embed widget styles (dark theme)
+│   │   ├── app.css                # Marketing/app theme (light + dark)
+│   │   ├── embed.css              # Embed widget styles
+│   │   ├── docs.css               # Docs site layout
+│   │   └── admin.css              # Admin panel density/table overrides
 │   ├── js/
-│   │   └── api.js                 # Frontend API helpers + Auth + toast + topnav
+│   │   ├── api.js                 # Frontend API helpers + Auth + topnav
+│   │   ├── toast.js               # Shared toast implementation (app + admin)
+│   │   ├── theme.js               # Light/dark theme toggle
+│   │   ├── i18n.js / i18n/*.js    # Client-side i18n (en/es/fr/ar/hi)
+│   │   ├── embed-loader.js        # `<script data-bot>` host-page loader
+│   │   └── admin/                 # Admin panel tab modules (users, characters, coupons, tiers, audit)
 │   └── assets/
 │       └── characters/            # *.riv character files (not included)
+├── packages/                      # Published npm SDKs — see "SDK packages" below
+│   ├── js/                        # @avatar-platform/js (framework-agnostic core)
+│   ├── react/                     # @avatar-platform/react (<AvatarWidget>, useAvatarPlatform)
+│   ├── vue/                       # @avatar-platform/vue (<AvatarWidget> for Vue 3)
+│   └── react-native/              # @avatar-platform/react-native (WebView-based)
+├── scripts/
+│   └── sync-version.js            # Propagates root package.json's version into packages/* + the SDK banner
 ├── supabase/
-│   └── schema.sql                 # Full Postgres schema (run once in Supabase)
+│   ├── schema.sql                 # Full Postgres schema (run once; idempotent to re-run)
+│   └── migrations/                # Dated, standalone record of each schema change
+├── .github/workflows/
+│   ├── ci.yml                     # Test suite + schema.sql sanity check on push/PR
+│   └── publish-sdk.yml            # Manually-triggered npm publish for packages/*
 ├── .env.example                   # All environment variables documented
 └── package.json
 ```
+
+### SDK packages
+
+`packages/{js,react,react-native,vue}` are the source for the published `@avatar-platform/*` npm packages — thin wrappers around the same embed mechanism as the plain `<script data-bot>` snippet, documented at `/docs/js-sdk`, `/docs/react-sdk`, `/docs/vue-sdk`, and `/docs/react-native-sdk`. `npm run build:sdk` runs `scripts/sync-version.js` (propagates root `package.json`'s version into every package and into `public/lipsync-sdk.js`'s banner comment, so they can't drift independently) and then builds each package with `tsup`. Publishing itself is a manually-triggered GitHub Actions workflow (`.github/workflows/publish-sdk.yml`) — see that file's header comment for one-time npm token setup.
 
 ---
 
@@ -150,9 +208,12 @@ See `.env.example` for the full annotated list. Key variables:
 | `SMTP_PORT` | No | Default: `587` |
 | `SMTP_USER` / `SMTP_PASS` | No | SMTP credentials |
 | `SMTP_FROM` | No | From address for outbound emails |
+| `CONTACT_TO_EMAIL` | No | Where `/api/contact` submissions are delivered. Default: `SMTP_FROM` (or `SMTP_USER`). |
 | `APP_URL` | No | Public URL for password-reset links. Default: `http://localhost:8080` |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | No (recommended on Vercel) | Upstash Redis over REST — shared rate-limit store. See [Rate limiting](#rate-limiting). Without it, limiters are in-memory only. |
 | `REDIS_URL` | No | Generic Redis over TCP — alternative rate-limit store. See [Rate limiting](#rate-limiting). |
+| `PROCESS_MODE` | No | `inline` or `inngest` — how queued file uploads are processed. Default: `inngest` on Vercel, `inline` elsewhere. See [Background file processing](#background-file-processing-inngest--inline). |
+| `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` | No (required if `PROCESS_MODE=inngest`) | Inngest app credentials. See [Background file processing](#background-file-processing-inngest--inline). |
 
 ---
 
@@ -384,6 +445,24 @@ The `pg` driver is configured with `{ rejectUnauthorized: false }` by default to
 
 Uploaded files are stored on the local filesystem at `data/uploads/<projectId>/`. In a multi-instance deployment, point this path at a shared volume or swap `multer.diskStorage` for S3/GCS storage.
 
+### Background file processing (Inngest / inline)
+
+Once a file finishes uploading, `routes/files.js`'s `queueProcessing()` runs the extract → chunk → embed pipeline (`services/process.js`'s `processFile`) in one of two modes, picked by `backend/services/processMode.js`:
+
+| Mode | How it runs | When to use |
+|---|---|---|
+| `inline` (default off Vercel) | `setImmediate(() => processFile(fileRecord))` — right in the process that queued it | The default for a plain `npm start`/`npm run dev` deployment. Zero external setup. **Not safe on Vercel** — a serverless function is frozen shortly after its response is sent, so a still-running inline job can be cut off mid-pipeline, leaving the file stuck in `processing`. |
+| `inngest` (default on Vercel) | Durable background job via [Inngest](https://www.inngest.com) (`backend/inngest/functions.js`), invoked back into this app per step through `POST /api/inngest` | Any deployment where the process doesn't stay alive after the response — Vercel, or multi-instance setups that want retries. |
+
+Set `PROCESS_MODE=inline` or `PROCESS_MODE=inngest` to override the auto-detected default (`VERCEL` env var set → `inngest`, otherwise `inline`).
+
+To actually configure Inngest on Vercel:
+1. Create an app at [inngest.com](https://www.inngest.com) and grab its **Event Key** and **Signing Key**.
+2. Set `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` in your Vercel project's environment variables.
+3. Deploy, then in the Inngest dashboard point its "Sync app" at `https://your-deployment.com/api/inngest` — Inngest calls this URL to discover and invoke `process-file` (the one function in `backend/inngest/functions.js`).
+
+If `PROCESS_MODE` resolves to `inngest` (explicitly or by Vercel auto-detection) and neither `INNGEST_EVENT_KEY` nor `INNGEST_SIGNING_KEY` is set, the server logs a warning at boot: uploads will queue events nothing is listening for and sit in `processing` forever until this is fixed.
+
 ### Rate limiting
 
 All express-rate-limit instances (`authLimiter`, `apiLimiter`, `embedLimiter`, `adminLoginLimiter` in `backend/server.js`, plus the per-visitor AI-cost limiters on `/embed/:publicId/ask`, `/study`, and `/retrieve` in `backend/routes/embed.js`) share one Redis-backed store via `backend/services/rateLimitStore.js` when one is configured. Without it they fall back to per-process MemoryStore and a loud warning is logged at boot — on Vercel that means limits reset on every cold invocation and are effectively disabled, so **configure a store before serving real traffic**:
@@ -404,4 +483,4 @@ Keying:
 - **Vector search** uses pgvector HNSW — fast at millions of chunks, no external vector DB needed.
 - **Usage tracking** uses SQL `ON CONFLICT` upserts — safe under concurrent load.
 - **Rate limiting** is shared through Redis (see "Rate limiting" above); without a Redis store it degrades to in-memory per instance.
-- **Background processing** (`processFileAsync`) uses `setImmediate` — fine for single-instance. For heavier workloads, move to a job queue (BullMQ).
+- **Background processing** uses Inngest by default on Vercel, and an in-process `setImmediate` fallback everywhere else — see "Background file processing (Inngest / inline)" above. `PROCESS_MODE=inngest` on any deployment gets durable retries even off Vercel.

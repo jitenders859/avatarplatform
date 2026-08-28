@@ -28,12 +28,19 @@ async function apiCall(path, opts = {}) {
     headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(opts.body);
   }
-  if (Auth.token) headers['Authorization'] = `Bearer ${Auth.token}`;
+  const hadToken = !!Auth.token;
+  if (hadToken) headers['Authorization'] = `Bearer ${Auth.token}`;
   const res = await fetch(path, { ...opts, headers });
   let body;
   try { body = await res.json(); } catch { body = {}; }
   if (!res.ok) {
-    if (res.status === 401) { Auth.logout(); throw new Error('Session expired'); }
+    // A 401 on a request that never carried a token — most importantly a
+    // failed login/signup attempt — means "invalid credentials", not "your
+    // session expired". Auth.logout()'s location.href='/login' used to
+    // fire either way, navigating away (on the login page itself, this
+    // looked like the page silently resetting) before the real "wrong
+    // password" message from the catch handler could ever be shown.
+    if (res.status === 401 && hadToken) { Auth.logout(); throw new Error('Session expired'); }
     const err = new Error(body.error || `Request failed (${res.status})`);
     if (body.code) err.code = body.code;
     throw err;
@@ -64,6 +71,8 @@ const API = {
   deleteMe:       () => apiCall('/api/auth/me', { method: 'DELETE' }),
   forgotPassword: (email) => apiCall('/api/auth/forgot-password', { method: 'POST', body: { email } }),
   resetPassword:  (token, newPassword) => apiCall('/api/auth/reset-password', { method: 'POST', body: { token, newPassword } }),
+  verifyEmail:        (token) => apiCall('/api/auth/verify-email', { method: 'POST', body: { token } }),
+  resendVerification: () => apiCall('/api/auth/resend-verification', { method: 'POST' }),
 
   // Projects
   characters:    () => apiCall('/api/projects/characters'),
@@ -108,11 +117,18 @@ const API = {
   reindexProject:  (pid) => apiCall(`/api/projects/${pid}/reindex`, { method: 'POST' }),
   duplicateProject:(pid) => apiCall(`/api/projects/${pid}/duplicate`, { method: 'POST' }),
   testWebhook:     (pid) => apiCall(`/api/projects/${pid}/webhook/test`, { method: 'POST' }),
+  webhookDeliveries: (pid) => apiCall(`/api/projects/${pid}/webhook/deliveries`),
+  rotateWebhookSecret: (pid) => apiCall(`/api/projects/${pid}/webhook/rotate-secret`, { method: 'POST' }),
   fileStatus:     (pid, fid) => apiCall(`/api/projects/${pid}/files/${fid}/status`),
 
   // Conversations
   listSessions:  (pid) => apiCall(`/api/projects/${pid}/sessions`),
   getSession:    (pid, sid) => apiCall(`/api/projects/${pid}/sessions/${sid}`),
+
+  // Team members
+  listMembers:   (pid) => apiCall(`/api/projects/${pid}/members`),
+  inviteMember:  (pid, email) => apiCall(`/api/projects/${pid}/members`, { method: 'POST', body: { email } }),
+  removeMember:  (pid, memberId) => apiCall(`/api/projects/${pid}/members/${memberId}`, { method: 'DELETE' }),
 
   // Capture fields
   listCaptureFields:   (pid) => apiCall(`/api/projects/${pid}/capture`),
@@ -124,6 +140,7 @@ const API = {
   // Quiz questions
   listQuizQuestions:  (pid) => apiCall(`/api/projects/${pid}/quiz-questions`),
   createQuizQuestion: (pid, data) => apiCall(`/api/projects/${pid}/quiz-questions`, { method: 'POST', body: data }),
+  updateQuizQuestion: (pid, qid, patch) => apiCall(`/api/projects/${pid}/quiz-questions/${qid}`, { method: 'PATCH', body: patch }),
   deleteQuizQuestion: (pid, qid) => apiCall(`/api/projects/${pid}/quiz-questions/${qid}`, { method: 'DELETE' }),
   suggestDistractors: (pid, question, correctAnswer) => apiCall(`/api/projects/${pid}/quiz-questions/suggest-distractors`, { method: 'POST', body: { question, correctAnswer } }),
   importQuizCsv: (pid, file) => { const fd = new FormData(); fd.append('file', file); return apiCall(`/api/projects/${pid}/quiz-questions/import-csv`, { method: 'POST', body: fd }); },
@@ -150,9 +167,6 @@ const API = {
   listChunks:  (pid, fid, search) => apiCall(`/api/projects/${pid}/files/${fid}/chunks${search ? '?search=' + encodeURIComponent(search) : ''}`),
   deleteChunk: (pid, fid, cid) => apiCall(`/api/projects/${pid}/files/${fid}/chunks/${cid}`, { method: 'DELETE' }),
 
-  // Generic passthrough for ad-hoc calls
-  request: (path, opts = {}) => apiCall(path, opts),
-
   // Analytics
   analytics:        () => apiCall('/api/analytics/overview'),
   projectAnalytics: (id) => apiCall(`/api/analytics/project/${id}`),
@@ -169,17 +183,8 @@ const API = {
 };
 
 // ── Toast ──────────────────────────────────────────────────
-function toast(msg, type = '') {
-  const el = document.createElement('div');
-  el.className = 'toast ' + (type ? 'toast-' + type : '');
-  el.textContent = msg;
-  document.body.appendChild(el);
-  requestAnimationFrame(() => el.classList.add('show'));
-  setTimeout(() => {
-    el.classList.remove('show');
-    setTimeout(() => el.remove(), 300);
-  }, 3000);
-}
+// See public/js/toast.js — must be loaded before this file.
+const toast = showToast;
 
 // ── Top nav (rendered on every authenticated page) ────────
 function renderTopNav(active) {

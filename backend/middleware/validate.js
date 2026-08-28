@@ -47,6 +47,12 @@ const schemas = {
     password: z.string().min(1, 'Password is required'),
   }),
 
+  contactMessage: z.object({
+    name: z.string().min(1, 'Name is required').max(120, 'Name too long').trim(),
+    email,
+    message: z.string().min(1, 'Message is required').max(5000, 'Message too long').trim(),
+  }),
+
   forgotPassword: z.object({
     email,
   }),
@@ -56,11 +62,19 @@ const schemas = {
     newPassword: password,
   }),
 
+  verifyEmail: z.object({
+    token: z.string().min(1, 'Verification token is required'),
+  }),
+
   createProject: z.object({
     name: z.string().min(1, 'Name is required').max(120, 'Name too long').trim(),
     characterId: z.string().optional(),
     systemPrompt,
     voice,
+  }),
+
+  inviteMember: z.object({
+    email: z.string().trim().toLowerCase().email('A valid email is required'),
   }),
 
   // All fields optional — this backs a PATCH where any subset may be sent.
@@ -98,6 +112,13 @@ const schemas = {
     // runs in routes/projects.js before this is persisted.
     webhookUrl: z.string().url('Invalid webhookUrl').max(2048).nullable().optional(),
     capabilityTier: z.enum(CAPABILITY_TIERS, { error: 'Invalid capabilityTier' }).optional(),
+    // Owner-editable overrides for widget copy that's otherwise hardcoded
+    // English — see improvement-prompts.md Prompt F4 item 4. Both keys
+    // optional/independent; an unset key falls back to the widget default.
+    widgetMessages: z.object({
+      inputPlaceholder: z.string().max(100, 'inputPlaceholder too long').optional(),
+      limitReachedMessage: z.string().max(300, 'limitReachedMessage too long').optional(),
+    }).optional(),
   }),
 
   filesInit: z.object({
@@ -324,7 +345,7 @@ const schemas = {
     name: z.string().trim().min(1, 'Name is required').max(80, 'Name too long'),
     limits: z.object({
       projects: z.number().int().positive(),
-      filesPerProject: z.number().int().positive(),
+      maxFiles: z.number().int().positive(),
       storageMb: z.number().int().positive(),
       monthlyMessages: z.number().int().positive(),
       monthlyEmbeddingChars: z.number().int().positive(),

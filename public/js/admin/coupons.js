@@ -39,15 +39,15 @@ async function renderCouponsTable() {
     const expiry = c.expiresAt ? new Date(c.expiresAt).toLocaleDateString() : '—';
     return `
       <tr>
-        <td><code>${escapeHtml(c.code)}</code></td>
-        <td>${escapeHtml(discount)}</td>
+        <td><code class="adm-code">${escapeHtml(c.code)}</code></td>
+        <td style="font-weight:500">${escapeHtml(discount)}</td>
         <td class="text-sm muted">${escapeHtml(plans)}</td>
-        <td>${uses}</td>
+        <td class="text-sm">${uses}</td>
         <td class="text-sm muted">${expiry}</td>
         <td><span class="pill ${c.active ? 'pill-success' : 'pill-danger'}">${c.active ? 'Active' : 'Inactive'}</span></td>
-        <td class="row gap-sm">
-          <button class="btn btn-ghost text-sm" data-toggle-coupon="${c.id}" data-active="${c.active}">${c.active ? 'Deactivate' : 'Activate'}</button>
-          <button class="btn btn-ghost text-sm" data-view-redemptions="${c.id}" data-code="${escapeHtml(c.code)}">Redemptions</button>
+        <td class="adm-table-actions">
+          <button class="btn btn-ghost btn-sm" data-view-redemptions="${c.id}" data-code="${escapeHtml(c.code)}">Redemptions</button>
+          <button class="btn ${c.active ? 'btn-ghost' : 'btn-primary'} btn-sm" data-toggle-coupon="${c.id}" data-active="${c.active}">${c.active ? 'Deactivate' : 'Activate'}</button>
         </td>
       </tr>`;
   }).join('');

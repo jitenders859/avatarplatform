@@ -4,6 +4,20 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title data-i18n="index.pageTitle">AvatarPlatform — AI Talking Agents for any website</title>
+  <link rel="canonical" href="https://avatarplatform.ai/" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="AvatarPlatform" />
+  <meta property="og:title" content="AvatarPlatform — AI Talking Agents for any website" />
+  <meta property="og:description" content="Host AI agents with animated Rive characters. Embed with one script tag. Customize looks, voice, and knowledge. Works async." />
+  <meta property="og:url" content="https://avatarplatform.ai/" />
+  <meta property="og:image" content="https://avatarplatform.ai/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="AvatarPlatform — AI Talking Agents for any website" />
+  <meta name="twitter:description" content="Host AI agents with animated Rive characters. Embed with one script tag. Customize looks, voice, and knowledge. Works async." />
+  <meta name="twitter:image" content="https://avatarplatform.ai/og-image.png" />
   <meta name="description" data-i18n-attr="content:index.pageDescription" content="Host AI agents with animated Rive characters. Embed with one script tag. Customize looks, voice, and knowledge. Works async." />
   <script>
     document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';
@@ -384,6 +398,25 @@
     }
     .footer-x:hover { background: rgba(255,255,255,0.07); text-decoration: none; }
   </style>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "AvatarPlatform",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "description": "Host AI agents with animated Rive characters. Embed with one script tag. Customize looks, voice, and knowledge. Works async.",
+    "url": "https://avatarplatform.ai/",
+    "offers": {
+      "@type": "AggregateOffer",
+      "priceCurrency": "USD",
+      "lowPrice": "0",
+      "highPrice": "199",
+      "offerCount": "4",
+      "url": "https://avatarplatform.ai/pricing"
+    }
+  }
+  </script>
 </head>
 <body>
 
@@ -399,7 +432,6 @@
         <a class="nav-link" href="/docs" data-i18n="common.nav.docs">Docs</a>
         <a class="nav-link" href="/pricing" data-i18n="common.nav.pricing">Pricing</a>
         <a class="nav-link" href="/characters" data-i18n="common.nav.characters">Characters</a>
-        <a class="nav-link" href="/blog" data-i18n="common.nav.blog">Blog</a>
       </div>
       <div id="lang-switch-slot"></div>
       <div id="theme-toggle-slot"></div>
@@ -436,13 +468,12 @@
         <div class="hero-code-body">
           <span class="t-comment">&lt;!-- Paste this before &lt;/body&gt; --&gt;</span><br>
           <span class="t-tag">&lt;script</span><br>
-          &nbsp;&nbsp;<span class="t-attr">src</span>=<span class="t-val">"https://app.yourdomain.com/lipsync-sdk.js"</span><br>
-          &nbsp;&nbsp;<span class="t-attr">data-public-id</span>=<span class="t-val">"YOUR_BOT_ID"</span><br>
-          &nbsp;&nbsp;<span class="t-attr">data-position</span>=<span class="t-val">"bottom-right"</span><br>
-          &nbsp;&nbsp;<span class="t-attr">data-theme</span>=<span class="t-val">"#6366f1"</span><br>
-          &nbsp;&nbsp;<span class="t-attr">data-size</span>=<span class="t-val">"md"</span><br>
+          &nbsp;&nbsp;<span class="t-attr">src</span>=<span class="t-val">"https://app.yourdomain.com/js/embed-loader.js"</span><br>
+          &nbsp;&nbsp;<span class="t-attr">data-bot</span>=<span class="t-val">"YOUR_BOT_ID"</span><br>
+          &nbsp;&nbsp;<span class="t-attr">defer</span><br>
           <span class="t-tag">&gt;&lt;/script&gt;</span><br><br>
-          <span class="t-comment">&lt;!-- That's it. Your agent is live. --&gt;</span>
+          <span class="t-comment">&lt;!-- That's it. Your agent is live. --&gt;</span><br>
+          <span class="t-comment">&lt;!-- Position/theme/size are set in your dashboard's Widget tab. --&gt;</span>
         </div>
       </div>
     </div>
@@ -522,13 +553,11 @@
           <div class="demo-panel active" id="tab-script">
             <pre class="cb"><code><span class="s-cmt">&lt;!-- No bundler needed. Paste before &lt;/body&gt; --&gt;</span>
 <span class="s-tag">&lt;script</span>
-  <span class="s-att">src</span>=<span class="s-val">"https://app.yourdomain.com/lipsync-sdk.js"</span>
-  <span class="s-att">data-public-id</span>=<span class="s-val">"YOUR_BOT_ID"</span>
-  <span class="s-att">data-position</span>=<span class="s-val">"bottom-right"</span>
-  <span class="s-att">data-theme</span>=<span class="s-val">"#6366f1"</span>
-  <span class="s-att">data-size</span>=<span class="s-val">"md"</span>
-  <span class="s-att">data-start-open</span>=<span class="s-val">"false"</span>
-<span class="s-tag">&gt;&lt;/script&gt;</span></code></pre>
+  <span class="s-att">src</span>=<span class="s-val">"https://app.yourdomain.com/js/embed-loader.js"</span>
+  <span class="s-att">data-bot</span>=<span class="s-val">"YOUR_BOT_ID"</span>
+  <span class="s-att">defer</span>
+<span class="s-tag">&gt;&lt;/script&gt;</span>
+<span class="s-cmt">&lt;!-- Position, theme, size, and start-open live in your dashboard's Widget tab --&gt;</span></code></pre>
           </div>
 
           <div class="demo-panel" id="tab-react">
@@ -589,6 +618,15 @@ console.<span class="s-fn">log</span>(result.sources);
       </div>
       <div class="sdk-row">
         <div class="sdk-card">
+          <div class="sdk-icon">🟨</div>
+          <div class="sdk-info">
+            <h3 class="sdk-title" data-i18n="index.sdk.js.title">JavaScript SDK</h3>
+            <p class="sdk-desc" data-i18n="index.sdk.js.body">Framework-agnostic core — mount the widget or call the headless ask API from any web page. No framework required. React and Vue both wrap this package.</p>
+            <code class="sdk-install">npm install @avatar-platform/js</code>
+          </div>
+          <a class="btn btn-ghost" href="/docs/js-sdk" style="flex-shrink:0" data-i18n="index.sdk.viewDocs">View docs →</a>
+        </div>
+        <div class="sdk-card">
           <div class="sdk-icon">⚛️</div>
           <div class="sdk-info">
             <h3 class="sdk-title" data-i18n="index.sdk.react.title">React SDK</h3>
@@ -596,6 +634,15 @@ console.<span class="s-fn">log</span>(result.sources);
             <code class="sdk-install">npm install @avatar-platform/react</code>
           </div>
           <a class="btn btn-ghost" href="/docs/react-sdk" style="flex-shrink:0" data-i18n="index.sdk.viewDocs">View docs →</a>
+        </div>
+        <div class="sdk-card">
+          <div class="sdk-icon">🟩</div>
+          <div class="sdk-info">
+            <h3 class="sdk-title" data-i18n="index.sdk.vue.title">Vue SDK</h3>
+            <p class="sdk-desc" data-i18n="index.sdk.vue.body">A single &lt;AvatarWidget&gt; component for Vue 3 (Composition API). Full TypeScript types. Works with Vite, Nuxt, and the Vue CLI.</p>
+            <code class="sdk-install">npm install @avatar-platform/vue</code>
+          </div>
+          <a class="btn btn-ghost" href="/docs/vue-sdk" style="flex-shrink:0" data-i18n="index.sdk.viewDocs">View docs →</a>
         </div>
         <div class="sdk-card">
           <div class="sdk-icon">📱</div>
@@ -668,12 +715,7 @@ console.<span class="s-fn">log</span>(result.sources);
         <a class="footer-link" href="/characters" data-i18n="common.nav.characters">Characters</a>
         <a class="footer-link" href="/terms" data-i18n="common.footer.terms">Terms</a>
         <a class="footer-link" href="/contact" data-i18n="common.footer.contact">Contact</a>
-        <a class="footer-link" href="#" data-i18n="common.footer.github">GitHub</a>
       </nav>
-      <a class="footer-x" href="#">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.632zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-        <span data-i18n="common.footer.followX">Follow on X</span>
-      </a>
     </div>
   </footer>
 

@@ -1,5 +1,5 @@
 /*!
- * LipsyncAvatar SDK  v2.3.0
+ * LipsyncAvatar SDK  v1.1.0
  * Gemini Live · Rive · Multilingual Lip Sync · Knowledge Base
  * - 23 Rive mouth inputs (100-122), video-matched to Azure visemes
  * - Timed ramp logic: active mouth value moves 1→100 across the spoken viseme

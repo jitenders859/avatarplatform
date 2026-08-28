@@ -591,3 +591,20 @@ a.source-card:hover {
     --avatar-size: 80px;
   }
 }
+
+/* ── Reduced motion ───────────────────────────────────────────
+   Panel open/close, launcher pulse/ring, and other CSS-driven motion
+   collapse to effectively instant rather than removed outright — some of
+   this widget's own logic waits on transitionend/animationend, so a hard
+   `display:none`/`animation:none` would leave those callbacks unfired.
+   The Rive idle-animation intensity itself is turned down separately, in
+   embed.html's prefersReducedMotion() check before constructing
+   LipsyncAvatar (idle breathing/head-tilt/eye-drift is decorative; lip
+   sync stays full-strength since that's the widget's actual function). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

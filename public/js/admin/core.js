@@ -19,11 +19,18 @@ async function adminApiCall(path, opts = {}) {
     headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(opts.body);
   }
-  if (AdminAuth.token) headers['Authorization'] = `Bearer ${AdminAuth.token}`;
+  const hadToken = !!AdminAuth.token;
+  if (hadToken) headers['Authorization'] = `Bearer ${AdminAuth.token}`;
   const res = await fetch(path, { ...opts, headers });
   let body; try { body = await res.json(); } catch { body = {}; }
   if (!res.ok) {
-    if (res.status === 401) { AdminAuth.logout(); throw new Error('Session expired'); }
+    // A 401 on a request that never carried a token (e.g. a failed login
+    // attempt) means "invalid credentials", not "your session expired" —
+    // AdminAuth.logout()'s location.reload() used to fire either way,
+    // wiping the page (and the error toast about to be shown) before a
+    // wrong password could ever be seen. Only treat it as a session
+    // expiry — and only then reload — when a token was actually sent.
+    if (res.status === 401 && hadToken) { AdminAuth.logout(); throw new Error('Session expired'); }
     throw new Error(body.error || `Request failed (${res.status})`);
   }
   return body;
@@ -76,14 +83,8 @@ async function getAdminSupabaseClient() {
   return _adminSupabaseClient;
 }
 
-function adminToast(msg, type = '') {
-  const el = document.createElement('div');
-  el.className = 'toast ' + (type ? 'toast-' + type : '');
-  el.textContent = msg;
-  document.body.appendChild(el);
-  requestAnimationFrame(() => el.classList.add('show'));
-  setTimeout(() => { el.classList.remove('show'); setTimeout(() => el.remove(), 300); }, 3000);
-}
+// See public/js/toast.js — must be loaded before this file.
+const adminToast = showToast;
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -93,6 +94,34 @@ function formatNum(n) {
   if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
   if (n >= 1e3) return (n / 1e3).toFixed(1) + 'k';
   return String(n);
+}
+
+// Initials avatar for table rows (users, admins) — reuses app.css's
+// .user-avatar token pair instead of a second color scheme.
+function initialsAvatar(label) {
+  const initial = (String(label || '?').trim()[0] || '?').toUpperCase();
+  return `<span class="adm-avatar">${escapeHtml(initial)}</span>`;
+}
+
+// Prev/Next pager shared by every paginated tab table (Users, Audit Log, …).
+// Renders nothing when everything fits on one page. `onChange(page)` is
+// called with the next page number to fetch.
+function renderPagination(container, { page, pageSize, total }, onChange) {
+  if (total == null || total <= pageSize) { container.innerHTML = ''; return; }
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
+  container.innerHTML = `
+    <div class="adm-pagination">
+      <span class="adm-pagination-info">${formatNum(from)}–${formatNum(to)} of ${formatNum(total)}</span>
+      <div class="row gap-sm">
+        <button type="button" class="btn btn-ghost btn-sm" id="adm-page-prev" ${page <= 1 ? 'disabled' : ''}>← Prev</button>
+        <span class="adm-pagination-page">Page ${page} of ${totalPages}</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="adm-page-next" ${page >= totalPages ? 'disabled' : ''}>Next →</button>
+      </div>
+    </div>`;
+  container.querySelector('#adm-page-prev')?.addEventListener('click', () => onChange(page - 1));
+  container.querySelector('#adm-page-next')?.addEventListener('click', () => onChange(page + 1));
 }
 
 // ── Modal helper ─────────────────────────────────────────────

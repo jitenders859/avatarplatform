@@ -73,6 +73,58 @@ async function sendPasswordReset(toEmail, resetToken) {
 }
 
 /**
+ * Send an email-verification link. Reuses the reset-token pattern
+ * (random token + expiry column, consumed once) rather than a JWT, so a
+ * verification link can't outlive a password change/account deletion the
+ * way a signed token with no server-side revocation would.
+ * @param {string} toEmail
+ * @param {string} verifyToken
+ */
+async function sendVerificationEmail(toEmail, verifyToken) {
+  const link = `${BASE_URL()}/verify-email?token=${verifyToken}`;
+  await send({
+    to: toEmail,
+    subject: 'Verify your AvatarPlatform email',
+    text: `Click this link to verify your email (expires in 24 hours):\n\n${link}\n\nIf you didn't create an AvatarPlatform account, ignore this email.`,
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+        <h2 style="margin:0 0 16px;font-size:20px">Verify your email</h2>
+        <p style="color:#555;line-height:1.6">Click the button below to confirm your email address. This link expires in <strong>24 hours</strong>.</p>
+        <a href="${link}" style="display:inline-block;margin:24px 0;padding:12px 24px;background:#7c6af5;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Verify email</a>
+        <p style="color:#999;font-size:12px">If you didn't create an AvatarPlatform account, you can safely ignore this email.</p>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+        <p style="color:#bbb;font-size:11px">AvatarPlatform · <a href="${BASE_URL()}" style="color:#bbb">${BASE_URL()}</a></p>
+      </div>`,
+  });
+}
+
+/**
+ * Notify a user they've been added as a read-only team member on a
+ * project. The invitee must already have an AvatarPlatform account (the
+ * project_members row is created up front, not as a pending invite —
+ * see routes/projects.js), so this just points them at the dashboard
+ * rather than a signup/accept flow.
+ * @param {string} toEmail
+ * @param {string} projectName
+ * @param {string} inviterEmail
+ */
+async function sendTeamInviteEmail(toEmail, projectName, inviterEmail) {
+  await send({
+    to: toEmail,
+    subject: `You've been added to "${projectName}" on AvatarPlatform`,
+    text: `${inviterEmail} added you as a team member on "${projectName}". You can now view its conversations and analytics from your dashboard: ${BASE_URL()}/dashboard`,
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+        <h2 style="margin:0 0 16px;font-size:20px">You've been added to a chatbot</h2>
+        <p style="color:#555;line-height:1.6"><strong>${escapeHtml(inviterEmail)}</strong> added you as a team member on <strong>${escapeHtml(projectName)}</strong>. You can view its conversations and analytics from your dashboard.</p>
+        <a href="${BASE_URL()}/dashboard" style="display:inline-block;margin:24px 0;padding:12px 24px;background:#7c6af5;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Go to dashboard →</a>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+        <p style="color:#bbb;font-size:11px">AvatarPlatform · <a href="${BASE_URL()}" style="color:#bbb">${BASE_URL()}</a></p>
+      </div>`,
+  });
+}
+
+/**
  * Send a welcome email after signup.
  * @param {string} toEmail
  * @param {string} name
@@ -95,4 +147,29 @@ async function sendWelcome(toEmail, name) {
   });
 }
 
-module.exports = { sendPasswordReset, sendWelcome };
+/**
+ * Relay a contact-page message to support. The visitor's address goes in
+ * replyTo (not from — most SMTP providers reject or spam-flag mail sent
+ * with an arbitrary From), so replying in the inbox goes straight back to
+ * the visitor.
+ * @param {{ name: string, email: string, message: string }} fields
+ */
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function sendContactMessage({ name, email, message }) {
+  const to = process.env.CONTACT_TO_EMAIL || FROM();
+  await send({
+    to,
+    replyTo: email,
+    subject: `Contact form: ${name}`,
+    text: `From: ${name} <${email}>\n\n${message}`,
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+        <h2 style="margin:0 0 16px;font-size:20px">New contact message</h2>
+        <p style="color:#555"><strong>${escapeHtml(name)}</strong> &lt;${escapeHtml(email)}&gt;</p>
+        <p style="color:#333;line-height:1.6;white-space:pre-wrap">${escapeHtml(message)}</p>
+      </div>`,
+  });
+}
+
+module.exports = { sendPasswordReset, sendWelcome, sendContactMessage, sendVerificationEmail, sendTeamInviteEmail };

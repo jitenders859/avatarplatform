@@ -17,6 +17,7 @@
  */
 require('dotenv').config();
 
+const fs = require('fs');
 const express = require('express');
 // Patches Express to forward rejected promises from async route handlers to
 // the error middleware below. Without this (Express 4 doesn't do it natively),
@@ -32,6 +33,7 @@ const { serve: serveInngest } = require('inngest/express');
 const pinoHttp = require('pino-http');
 const logger = require('./logger');
 const { AppError } = require('./errors');
+const { pool } = require('./db');
 const { getRateLimitStore, embedKeyGenerator } = require('./services/rateLimitStore');
 
 const authRoutes = require('./routes/auth');
@@ -40,6 +42,7 @@ const filesRoutes = require('./routes/files');
 const embedRoutes = require('./routes/embed');
 const { router: billingRoutes, webhookHandler: stripeWebhook } = require('./routes/billing');
 const analyticsRoutes = require('./routes/analytics');
+const contactRoutes = require('./routes/contact');
 const captureFieldsRoutes = require('./routes/captureFields');
 const quizQuestionsRoutes = require('./routes/quizQuestions');
 const flashcardsRoutes = require('./routes/flashcards');
@@ -49,6 +52,12 @@ const adminCharactersRoutes = require('./routes/adminCharacters');
 const adminCouponsRoutes = require('./routes/adminCoupons');
 const inngestClient = require('./inngest/client');
 const { functions: inngestFunctions } = require('./inngest/functions');
+const { checkProcessModeConfigured } = require('./services/processMode');
+
+// Runs on every boot, Vercel included (unlike the app.listen() block below,
+// which is skipped there) — this is precisely the deployment target where
+// an unconfigured Inngest default silently strands file uploads.
+checkProcessModeConfigured(logger);
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -171,6 +180,7 @@ app.use('/api/projects', apiLimiter, videoResourcesRoutes);
 app.use('/api', apiLimiter, filesRoutes); // files routes are project-nested
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/analytics', apiLimiter, analyticsRoutes);
+app.use('/api/contact', apiLimiter, contactRoutes);
 app.use('/api/admin/login', adminLoginLimiter);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/admin/characters', apiLimiter, adminCharactersRoutes);
@@ -185,6 +195,17 @@ app.use('/embed', embedLimiter, embedRoutes);
 // re-fetching on every page load, and the browser cheaply revalidates via
 // ETag/304 once it expires, so fixes propagate within the hour.
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+
+// lipsync-sdk.min.js is gitignored and only exists once `npm run build`
+// (postinstall) has run terser successfully — a fresh clone/deploy where
+// that silently failed would otherwise 404 for every customer widget with
+// no signal anywhere. embed.html falls back to the unminified source on a
+// load error, but that's a browser-side patch for something that should
+// never have shipped broken — this boot check is the operator-facing signal.
+if (!fs.existsSync(path.join(PUBLIC_DIR, 'lipsync-sdk.min.js'))) {
+  logger.warn('public/lipsync-sdk.min.js is missing — did `npm run build` (terser) fail? embed.html will fall back to the unminified lipsync-sdk.js, but this should be fixed before deploying.');
+}
+
 app.use(express.static(PUBLIC_DIR, {
   maxAge: '1h',
   setHeaders: (res, filePath) => {
@@ -192,14 +213,14 @@ app.use(express.static(PUBLIC_DIR, {
   },
 }));
 
-const PAGES = ['login', 'signup', 'dashboard', 'project', 'embed', 'billing', 'analytics', 'pricing', 'characters', 'account', 'forgot-password', 'reset-password', 'terms', 'contact', 'admin'];
+const PAGES = ['login', 'signup', 'dashboard', 'project', 'embed', 'billing', 'analytics', 'pricing', 'characters', 'account', 'forgot-password', 'reset-password', 'verify-email', 'terms', 'contact', 'admin'];
 for (const page of PAGES) {
   app.get(`/${page}`, (_req, res) => res.sendFile(path.join(PUBLIC_DIR, `${page}.html`)));
 }
 
 // ── Docs ──────────────────────────────────────────────────────
 app.get('/docs', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'docs', 'index.html')));
-const DOCS_PAGES = ['react-sdk', 'react-native-sdk', 'elevenlabs-avatar', 'gemini-live', 'openai-realtime', 'natural-lipsync', 'prefetching', 'troubleshooting'];
+const DOCS_PAGES = ['js-sdk', 'react-sdk', 'vue-sdk', 'react-native-sdk', 'elevenlabs-avatar', 'gemini-live', 'openai-realtime', 'natural-lipsync', 'prefetching', 'troubleshooting'];
 for (const p of DOCS_PAGES) {
   app.get(`/docs/${p}`, (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'docs', `${p}.html`)));
 }
@@ -264,7 +285,10 @@ if (!process.env.VERCEL) {
 
   function shutdown(signal) {
     logger.info({ signal }, 'shutdown received');
-    server.close(() => { logger.info('server closed'); process.exit(0); });
+    server.close(() => {
+      logger.info('server closed');
+      pool.end().catch((err) => logger.warn({ err }, 'error closing pg pool')).finally(() => process.exit(0));
+    });
     setTimeout(() => process.exit(1), 10000).unref();
   }
   process.on('SIGTERM', () => shutdown('SIGTERM'));

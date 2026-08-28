@@ -4,6 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title data-i18n="contact.pageTitle">Contact — AvatarPlatform</title>
+  <meta name="description" content="Get in touch with AvatarPlatform — book a setup call, email support, or send us a message." />
+  <link rel="canonical" href="https://avatarplatform.ai/contact" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="AvatarPlatform" />
+  <meta property="og:title" content="Contact — AvatarPlatform" />
+  <meta property="og:description" content="Get in touch with AvatarPlatform — book a setup call, email support, or send us a message." />
+  <meta property="og:url" content="https://avatarplatform.ai/contact" />
+  <meta property="og:image" content="https://avatarplatform.ai/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Contact — AvatarPlatform" />
+  <meta name="twitter:description" content="Get in touch with AvatarPlatform — book a setup call, email support, or send us a message." />
+  <meta name="twitter:image" content="https://avatarplatform.ai/og-image.png" />
   <script>
     document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';
     (function () {
@@ -184,26 +199,26 @@
           </div>
         </div>
 
-        <div class="contact-info-block">
-          <div class="contact-info-icon">𝕏</div>
-          <div>
-            <p class="contact-info-label" data-i18n="contact.twitter">Twitter / X</p>
-            <p class="contact-info-value"><a href="#" target="_blank" rel="noopener">@avatarplatform</a></p>
-          </div>
-        </div>
-
-        <div class="contact-info-block">
-          <div class="contact-info-icon">💬</div>
-          <div>
-            <p class="contact-info-label" data-i18n="contact.discord">Discord</p>
-            <p class="contact-info-value"><a href="#" target="_blank" rel="noopener">discord.gg/avatarplatform</a></p>
-          </div>
-        </div>
-
         <div class="contact-async">
           <p class="contact-async-label" data-i18n="contact.asyncLabel">Prefer async?</p>
           <p data-i18n-html="contact.asyncBody">Browse the <a href="/docs" style="color:var(--accent-2)">documentation</a> for self-serve setup guides, or email us and we'll respond within one business day.</p>
         </div>
+
+        <form id="contact-form" class="col gap-md mt-lg">
+          <div class="field">
+            <label for="contact-name" data-i18n="contact.form.name">Name</label>
+            <input type="text" id="contact-name" class="input" required maxlength="120" />
+          </div>
+          <div class="field">
+            <label for="contact-email" data-i18n="contact.form.email">Email</label>
+            <input type="email" id="contact-email" class="input" required />
+          </div>
+          <div class="field">
+            <label for="contact-message" data-i18n="contact.form.message">Message</label>
+            <textarea id="contact-message" class="textarea" required maxlength="5000" rows="4"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary" id="contact-submit" data-i18n="contact.form.submit">Send message</button>
+        </form>
       </div>
 
       <!-- RIGHT: cal.com booking -->
@@ -236,6 +251,8 @@
   </footer>
 
   <script src="/js/theme.js"></script>
+  <script src="/js/toast.js"></script>
+  <script src="/js/api.js"></script>
   <script src="/js/i18n.js"></script>
   <script src="/js/i18n/en.js"></script>
   <script src="/js/i18n/es.js"></script>
@@ -245,6 +262,26 @@
   <script>
     mountThemeToggle(document.getElementById('theme-toggle-slot'));
     I18N.init(document.getElementById('lang-switch-slot'));
+
+    document.getElementById('contact-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('contact-submit');
+      const payload = {
+        name: document.getElementById('contact-name').value.trim(),
+        email: document.getElementById('contact-email').value.trim(),
+        message: document.getElementById('contact-message').value.trim(),
+      };
+      btn.disabled = true;
+      try {
+        await apiCall('/api/contact', { method: 'POST', body: payload });
+        toast('Message sent — we\'ll get back to you within one business day.', 'success');
+        e.target.reset();
+      } catch (err) {
+        toast(err.message, 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
   </script>
   <script type="text/javascript">
     // Replace YOUR_CAL_USERNAME with your actual cal.com username.

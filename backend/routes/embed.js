@@ -14,7 +14,7 @@ const { searchProject } = require('../services/vector');
 const { resolveFigures } = require('../services/figures');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const { projectCache, invalidateProjectCache } = require('../cache');
+const { projectCache } = require('../cache');
 const { validate, schemas } = require('../middleware/validate');
 const { toolsForTier } = require('../services/tools');
 const { resolveLearnerKey, backfillLearnerKey } = require('../services/learner');
@@ -23,7 +23,16 @@ const logger = require('../logger').child({ module: 'embed' });
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { getRateLimitStore } = require('../services/rateLimitStore');
 const { safeFetch } = require('../services/safeFetch');
+const { queueWebhookDelivery } = require('../services/webhookDelivery');
 const router = express.Router();
+
+// Owners can override the default "usage limit reached" copy per project
+// (project.widgetMessages.limitReachedMessage — see project.html's Widget
+// tab) — see improvement-prompts.md Prompt F4 item 4. Falls back to
+// checkLimit's generic reason when unset.
+function limitMessageFor(project, limitCheck) {
+  return (project.widgetMessages && project.widgetMessages.limitReachedMessage) || limitCheck.reason;
+}
 
 // Per-(visitor, project) cap for the three Gemini-paying endpoints (/ask,
 // /study, and the embedding-heavy /retrieve), IN ADDITION to the generic
@@ -98,8 +107,6 @@ async function pageImagesForHits(hits) {
   }
   return map;
 }
-
-module.exports.invalidateProjectCache = invalidateProjectCache;
 
 // Deliberately NOT status-filtered — an archived character (soft-deleted
 // via the admin panel) must keep resolving for projects already assigned
@@ -200,7 +207,10 @@ router.get('/:publicId/config', async (req, res) => {
       apiKey: messageLimitCheck.ok && PUBLIC_API_KEY ? PUBLIC_API_KEY : null,
       voiceEnabled: messageLimitCheck.ok && !!PUBLIC_API_KEY,
       limitReached: !messageLimitCheck.ok,
-      limitMessage: messageLimitCheck.ok ? null : messageLimitCheck.reason,
+      limitMessage: messageLimitCheck.ok ? null : limitMessageFor(project, messageLimitCheck),
+      widgetMessages: {
+        inputPlaceholder: (project.widgetMessages && project.widgetMessages.inputPlaceholder) || null,
+      },
       model: 'gemini-3.1-flash-live-preview',
     });
   } catch (e) {
@@ -320,7 +330,7 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
 
     const limitCheck = await checkLimit(project.userId, 'message', 1);
-    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason });
+    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason, limitReached: true, limitMessage: limitMessageFor(project, limitCheck) });
 
     const ip = req.ip || 'unknown';
     const { question, sessionId: incomingSessionId } = req.body;
@@ -431,7 +441,7 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
     }
 
     const limitCheck = await checkLimit(project.userId, 'message', 1);
-    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason });
+    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason, limitReached: true, limitMessage: limitMessageFor(project, limitCheck) });
 
     const ip = req.ip || 'unknown';
     const { message, sessionId: incomingSessionId } = req.body;
@@ -737,7 +747,7 @@ router.post('/:publicId/log', validate(schemas.log), async (req, res) => {
       return res.status(402).json({
         error: limitCheck.reason,
         limitReached: true,
-        limitMessage: limitCheck.reason,
+        limitMessage: limitMessageFor(project, limitCheck),
         sessionId: sessionId || null,
       });
     }
@@ -764,48 +774,19 @@ router.post('/:publicId/log', validate(schemas.log), async (req, res) => {
     } catch (_) { /* best effort */ }
 
     if (project.webhookUrl) {
-      setImmediate(async () => {
-        try {
-          const payload = JSON.stringify({
-            event: 'message',
-            publicId: project.publicId,
-            sessionId: sid,
-            role,
-            text: String(text).slice(0, 2000),
-            timestamp: Date.now(),
-          });
-          const sig = 'sha256=' + crypto.createHmac('sha256', project.webhookSecret || '').update(payload).digest('hex');
-          await safeFetch(project.webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Avatar-Signature': sig },
-            body: payload,
-            timeout: 5000,
-          });
-        } catch (e) {
-          logger.warn({ err: e.message }, 'webhook delivery failed');
-        }
+      setImmediate(() => {
+        queueWebhookDelivery(project, 'message', {
+          event: 'message',
+          publicId: project.publicId,
+          sessionId: sid,
+          role,
+          text: String(text).slice(0, 2000),
+          timestamp: Date.now(),
+        }).catch((e) => logger.warn({ err: e.message }, 'webhook delivery failed to queue'));
       });
     }
   }
   res.json({ sessionId: sid });
-});
-
-/**
- * GET /embed/:publicId/capture-fields
- */
-router.get('/:publicId/capture-fields', async (req, res) => {
-  try {
-    const project = await findByPublicId(req.params.publicId);
-    if (!project) return res.status(404).json({ error: 'Chatbot not found' });
-
-    const fields = await db.findAll('captureFields', { projectId: project.id }, { orderBy: 'order', order: 'asc' });
-    res.json({
-      fields: fields.map(f => ({ id: f.id, label: f.label, key: f.key, type: f.type, options: f.options, required: f.required })),
-    });
-  } catch (e) {
-    logger.error({ err: e.message }, 'capture-fields error');
-    res.status(500).json({ error: 'Server error' });
-  }
 });
 
 /**

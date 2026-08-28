@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Dashboard — AvatarPlatform</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <meta name="robots" content="noindex" />
   <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -12,6 +15,15 @@
 </head>
 <body>
   <div class="container mt-md">
+    <div id="verify-banner" class="card mb-md" hidden style="display:flex;align-items:center;gap:12px;background:var(--warn-bg);border-color:var(--warn-border)">
+      <span style="font-size:20px">✉️</span>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:14px">Verify your email</div>
+        <div class="muted text-sm">Check your inbox for a verification link.</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="resend-verify-btn">Resend email</button>
+    </div>
+
     <div class="page-header">
       <div>
         <h1 class="page-title">Your chatbots</h1>
@@ -53,6 +65,7 @@
   </div>
 
   <script src="/js/theme.js"></script>
+  <script src="/js/toast.js"></script>
   <script src="/js/api.js"></script>
   <script>
   Auth.requireLogin();
@@ -66,9 +79,10 @@
 
   async function load() {
     try {
-      const [{ projects }, { characters: chars }, sub] = await Promise.all([
-        API.listProjects(), API.characters(), API.subscription().catch(() => null),
+      const [{ projects }, { characters: chars }, sub, meResult] = await Promise.all([
+        API.listProjects(), API.characters(), API.subscription().catch(() => null), API.me().catch(() => null),
       ]);
+      document.getElementById('verify-banner').hidden = !meResult || !!meResult.user.emailVerifiedAt;
       characters = chars;
       const select = document.getElementById('new-character');
       select.innerHTML = chars.map(c =>
@@ -95,12 +109,7 @@
 
       if (projects.length === 0) { emptyEl.hidden = false; grid.hidden = true; return; }
 
-      // Fetch lead counts in parallel
-      const leadCounts = await Promise.all(
-        projects.map(p => API.listLeads(p.id, { limit: 1 }).then(r => r.total).catch(() => 0))
-      );
-
-      grid.innerHTML = projects.map((p, i) => `
+      grid.innerHTML = projects.map((p) => `
         <div class="card" style="position:relative;transition:border-color .15s" onmouseover="this.style.borderColor='var(--border-strong)'" onmouseout="this.style.borderColor='var(--border)'">
           <a href="/project?id=${p.id}" style="text-decoration:none;color:inherit;display:block">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
@@ -112,7 +121,7 @@
             </div>
           </a>
           <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px">
-            ${leadCounts[i] > 0 ? `<a href="/project?id=${p.id}#leads" class="pill pill-success" style="text-decoration:none;font-size:11px">📋 ${leadCounts[i]} lead${leadCounts[i] === 1 ? '' : 's'}</a>` : ''}
+            ${p.leadCount > 0 ? `<a href="/project?id=${p.id}#leads" class="pill pill-success" style="text-decoration:none;font-size:11px">📋 ${p.leadCount} lead${p.leadCount === 1 ? '' : 's'}</a>` : ''}
             <span style="flex:1"></span>
             <button class="btn btn-sm btn-ghost" onclick="duplicate('${p.id}', event)">⎘ Duplicate</button>
           </div>
@@ -144,12 +153,25 @@
 
   // Create modal
   const modal = document.getElementById('create-modal');
-  function openModal() { modal.hidden = false; document.getElementById('new-name').focus(); }
-  function closeModal() { modal.hidden = true; document.getElementById('create-form').reset(); document.getElementById('create-error').style.display='none'; document.getElementById('create-submit').disabled = false; }
+  let modalOpenerEl = null;
+  function openModal(e) {
+    modalOpenerEl = e ? e.currentTarget : null;
+    modal.hidden = false;
+    document.getElementById('new-name').focus();
+  }
+  function closeModal() {
+    modal.hidden = true;
+    document.getElementById('create-form').reset();
+    document.getElementById('create-error').style.display='none';
+    document.getElementById('create-submit').disabled = false;
+    if (modalOpenerEl) modalOpenerEl.focus();
+    modalOpenerEl = null;
+  }
   document.getElementById('create-btn').addEventListener('click', openModal);
   document.getElementById('empty-create').addEventListener('click', openModal);
   document.getElementById('create-cancel').addEventListener('click', closeModal);
   modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
 
   document.getElementById('create-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -169,8 +191,23 @@
       btn.disabled = false;
       if (/limit/i.test(e2.message)) {
         err.innerHTML += ' <a href="/billing">Upgrade</a>';
+      } else if (e2.code === 'EMAIL_NOT_VERIFIED') {
+        document.getElementById('verify-banner').hidden = false;
+        document.getElementById('verify-banner').scrollIntoView({ behavior: 'smooth' });
       }
     }
+  });
+
+  document.getElementById('resend-verify-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await API.resendVerification();
+      toast('Verification email sent — check your inbox.', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    btn.disabled = false;
   });
 
   load();

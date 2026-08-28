@@ -278,7 +278,8 @@ router.get('/audit-log', adminAuthRequired, async (req, res) => {
       ORDER BY l.created_at DESC LIMIT $1 OFFSET $2`,
     [pageSize, (page - 1) * pageSize]
   );
-  res.json({ entries, page, pageSize });
+  const [{ count }] = await db.query(`SELECT COUNT(*)::int AS count FROM admin_audit_log`);
+  res.json({ entries, page, pageSize, total: count });
 });
 
 module.exports = router;

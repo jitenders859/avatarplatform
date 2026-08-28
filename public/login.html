@@ -4,6 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title data-i18n="login.pageTitle">Log in — AvatarPlatform</title>
+  <meta name="description" content="Log in to your AvatarPlatform account to manage your AI talking-agent chatbots." />
+  <link rel="canonical" href="https://avatarplatform.ai/login" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="AvatarPlatform" />
+  <meta property="og:title" content="Log in — AvatarPlatform" />
+  <meta property="og:description" content="Log in to your AvatarPlatform account to manage your AI talking-agent chatbots." />
+  <meta property="og:url" content="https://avatarplatform.ai/login" />
+  <meta property="og:image" content="https://avatarplatform.ai/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Log in — AvatarPlatform" />
+  <meta name="twitter:description" content="Log in to your AvatarPlatform account to manage your AI talking-agent chatbots." />
+  <meta name="twitter:image" content="https://avatarplatform.ai/og-image.png" />
   <script>
     document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';
     (function () {
@@ -22,10 +37,11 @@
 </head>
 <body>
   <div id="lang-switch-slot" style="position:fixed;top:16px;inset-inline-end:16px;z-index:20"></div>
+  <div id="theme-toggle-slot" style="position:fixed;top:16px;inset-inline-start:16px;z-index:20"></div>
   <div style="min-height:100vh;display:grid;place-items:center;padding:24px">
     <div class="card" style="width:100%;max-width:400px">
       <a class="brand" href="/" style="margin-bottom:24px;justify-content:center">
-        <span class="brand-mark">A</span>
+        <span class="brand-mark">AP</span>
         <span>AvatarPlatform</span>
       </a>
       <h1 style="font-size:22px;margin:0 0 4px;text-align:center" data-i18n="login.title">Welcome back</h1>
@@ -53,14 +69,17 @@
     </div>
   </div>
 
+  <script src="/js/theme.js"></script>
   <script src="/js/i18n.js"></script>
   <script src="/js/i18n/en.js"></script>
   <script src="/js/i18n/es.js"></script>
   <script src="/js/i18n/fr.js"></script>
   <script src="/js/i18n/ar.js"></script>
   <script src="/js/i18n/hi.js"></script>
+  <script src="/js/toast.js"></script>
   <script src="/js/api.js"></script>
   <script>
+  mountThemeToggle(document.getElementById('theme-toggle-slot'));
   I18N.init(document.getElementById('lang-switch-slot'));
 
   if (Auth.loggedIn()) location.href = '/dashboard';
