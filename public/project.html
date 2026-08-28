@@ -342,6 +342,22 @@
         </div>
       </div>
 
+      <div class="card mb-md">
+        <h2 class="card-title mb-md">Widget text</h2>
+        <p class="muted text-sm mb-md">Override the default English copy shown in the widget. Leave a field blank to use the default.</p>
+        <div class="grid grid-2">
+          <div class="field">
+            <label>Input placeholder</label>
+            <input class="input" id="f-msg-placeholder" maxlength="100" placeholder="Type a message…" />
+          </div>
+          <div class="field">
+            <label>Usage-limit-reached message</label>
+            <input class="input" id="f-msg-limit" maxlength="300" placeholder="This assistant has reached its usage limit for this month. Please check back later." />
+            <span class="help">Shown when the monthly message quota runs out.</span>
+          </div>
+        </div>
+      </div>
+
       <div class="row" style="justify-content:flex-end">
         <button class="btn btn-primary" id="save-widget">Save all changes</button>
       </div>
@@ -876,6 +892,10 @@
       document.getElementById('f-avatar-offset-x').value = p.avatarOffsetX ?? 0;
       document.getElementById('f-avatar-offset-y').value = p.avatarOffsetY ?? 0;
 
+      const widgetMessages = p.widgetMessages || {};
+      document.getElementById('f-msg-placeholder').value = widgetMessages.inputPlaceholder || '';
+      document.getElementById('f-msg-limit').value = widgetMessages.limitReachedMessage || '';
+
       // Settings tab: webhook
       document.getElementById('f-webhook-url').value = p.webhookUrl || '';
       if (p.webhookSecret) {
@@ -1036,6 +1056,10 @@
         avatarCompactOnMobile:document.getElementById('f-avatar-compact').value === 'true',
         avatarOffsetX:        parseInt(document.getElementById('f-avatar-offset-x').value, 10) || 0,
         avatarOffsetY:        parseInt(document.getElementById('f-avatar-offset-y').value, 10) || 0,
+        widgetMessages: {
+          inputPlaceholder: document.getElementById('f-msg-placeholder').value.trim() || undefined,
+          limitReachedMessage: document.getElementById('f-msg-limit').value.trim() || undefined,
+        },
       };
       const { project: p } = await API.updateProject(projectId, patch);
       project = p;

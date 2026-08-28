@@ -25,6 +25,14 @@ const { getRateLimitStore } = require('../services/rateLimitStore');
 const { safeFetch } = require('../services/safeFetch');
 const router = express.Router();
 
+// Owners can override the default "usage limit reached" copy per project
+// (project.widgetMessages.limitReachedMessage — see project.html's Widget
+// tab) — see improvement-prompts.md Prompt F4 item 4. Falls back to
+// checkLimit's generic reason when unset.
+function limitMessageFor(project, limitCheck) {
+  return (project.widgetMessages && project.widgetMessages.limitReachedMessage) || limitCheck.reason;
+}
+
 // Per-(visitor, project) cap for the three Gemini-paying endpoints (/ask,
 // /study, and the embedding-heavy /retrieve), IN ADDITION to the generic
 // 30/min /embed limiter and the owner's monthly message quota. Without the
@@ -198,7 +206,10 @@ router.get('/:publicId/config', async (req, res) => {
       apiKey: messageLimitCheck.ok && PUBLIC_API_KEY ? PUBLIC_API_KEY : null,
       voiceEnabled: messageLimitCheck.ok && !!PUBLIC_API_KEY,
       limitReached: !messageLimitCheck.ok,
-      limitMessage: messageLimitCheck.ok ? null : messageLimitCheck.reason,
+      limitMessage: messageLimitCheck.ok ? null : limitMessageFor(project, messageLimitCheck),
+      widgetMessages: {
+        inputPlaceholder: (project.widgetMessages && project.widgetMessages.inputPlaceholder) || null,
+      },
       model: 'gemini-3.1-flash-live-preview',
     });
   } catch (e) {
@@ -318,7 +329,7 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
 
     const limitCheck = await checkLimit(project.userId, 'message', 1);
-    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason });
+    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason, limitReached: true, limitMessage: limitMessageFor(project, limitCheck) });
 
     const ip = req.ip || 'unknown';
     const { question, sessionId: incomingSessionId } = req.body;
@@ -429,7 +440,7 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
     }
 
     const limitCheck = await checkLimit(project.userId, 'message', 1);
-    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason });
+    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason, limitReached: true, limitMessage: limitMessageFor(project, limitCheck) });
 
     const ip = req.ip || 'unknown';
     const { message, sessionId: incomingSessionId } = req.body;
@@ -735,7 +746,7 @@ router.post('/:publicId/log', validate(schemas.log), async (req, res) => {
       return res.status(402).json({
         error: limitCheck.reason,
         limitReached: true,
-        limitMessage: limitCheck.reason,
+        limitMessage: limitMessageFor(project, limitCheck),
         sessionId: sessionId || null,
       });
     }

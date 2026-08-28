@@ -112,6 +112,13 @@ const schemas = {
     // runs in routes/projects.js before this is persisted.
     webhookUrl: z.string().url('Invalid webhookUrl').max(2048).nullable().optional(),
     capabilityTier: z.enum(CAPABILITY_TIERS, { error: 'Invalid capabilityTier' }).optional(),
+    // Owner-editable overrides for widget copy that's otherwise hardcoded
+    // English — see improvement-prompts.md Prompt F4 item 4. Both keys
+    // optional/independent; an unset key falls back to the widget default.
+    widgetMessages: z.object({
+      inputPlaceholder: z.string().max(100, 'inputPlaceholder too long').optional(),
+      limitReachedMessage: z.string().max(300, 'limitReachedMessage too long').optional(),
+    }).optional(),
   }),
 
   filesInit: z.object({

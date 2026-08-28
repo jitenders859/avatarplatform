@@ -188,6 +188,10 @@
     document.getElementById('bot-name').textContent = config.project.name;
     document.title = config.project.name;
 
+    if (config.widgetMessages && config.widgetMessages.inputPlaceholder) {
+      textInput.placeholder = config.widgetMessages.inputPlaceholder;
+    }
+
     if (config.project.themeColor) {
       document.documentElement.style.setProperty('--accent', config.project.themeColor);
     }
@@ -912,7 +916,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       });
       const data = await res.json();
       if (!res.ok) {
-        addMessage('bot', data.error || 'Study tools are unavailable right now.');
+        addMessage('bot', data.limitMessage || data.error || 'Study tools are unavailable right now.');
         return;
       }
       if (data.sessionId) sessionId = data.sessionId;
