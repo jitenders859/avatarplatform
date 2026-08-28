@@ -59,48 +59,106 @@ Browser (embed.html)                   Browser (dashboard)
 
 ```
 avatar-platform/
+├── api/
+│   └── index.js                   # Vercel serverless entry point (wraps backend/server.js)
 ├── backend/
 │   ├── server.js                  # Express entry point
 │   ├── db.js                      # Postgres layer (pg.Pool, camelCase↔snake_case)
 │   ├── plans.js                   # Plan definitions + limits
+│   ├── errors.js                  # AppError class (safe, user-facing error messages)
+│   ├── logger.js                  # pino logger
 │   ├── middleware/
-│   │   └── auth.js                # JWT authRequired middleware + signToken
+│   │   ├── auth.js                # JWT authRequired/adminAuthRequired + signToken
+│   │   └── validate.js            # Zod request-body validation
+│   ├── inngest/
+│   │   ├── client.js              # Inngest client
+│   │   └── functions.js           # Background jobs (file processing)
+│   ├── scripts/
+│   │   ├── create-admin.js        # One-off: create an admin_users row
+│   │   └── migrate-legacy-characters.js
 │   ├── routes/
 │   │   ├── auth.js                # Signup, login, reset password, /me
 │   │   ├── projects.js            # Project CRUD, sessions, leads
 │   │   ├── files.js               # File upload, URL ingest, chunks viewer
 │   │   ├── embed.js               # Public embed: config, retrieve, log, lead
 │   │   ├── captureFields.js       # Lead capture field management
+│   │   ├── quizQuestions.js       # Owner-authored quiz question bank
+│   │   ├── flashcards.js          # Owner-authored flashcard bank
+│   │   ├── videoResources.js      # Owner-curated video recommendations
 │   │   ├── analytics.js           # SQL-aggregate analytics
-│   │   └── billing.js             # Stripe checkout, portal, webhook
+│   │   ├── billing.js             # Stripe checkout, portal, webhook
+│   │   ├── contact.js             # Public contact-form submission
+│   │   ├── admin.js               # Admin: users, tiers, audit log
+│   │   ├── adminCharacters.js     # Admin: character library upload/versions
+│   │   └── adminCoupons.js        # Admin: coupon CRUD + redemptions
 │   └── services/
 │       ├── chunk.js               # Semantic paragraph-aware chunking
-│       ├── embed.js               # Gemini embedding API (single + batch)
+│       ├── embed.js               # Gemini embedding API (single + batch, concurrency-limited)
 │       ├── extract.js             # Text extraction (PDF, DOCX, TXT, images…)
-│       ├── process.js             # Background: extract → chunk → embed → persist
+│       ├── process.js             # extract → chunk → embed → persist pipeline
+│       ├── processMode.js         # inline vs. Inngest background-processing mode
 │       ├── stripe.js              # Stripe client factory
 │       ├── url.js                 # URL fetcher + HTML cleaner
+│       ├── safeFetch.js           # SSRF-safe fetch (webhooks, URL ingestion)
+│       ├── rateLimitStore.js      # Shared Redis-backed express-rate-limit store
 │       ├── usage.js               # Plan-limit checks + usage tracking
-│       └── vector.js              # pgvector cosine search
+│       ├── vector.js              # pgvector cosine search
+│       ├── tiers.js               # Chatbot capability tiers (basic/medium/advanced)
+│       ├── tools.js               # Gemini function-calling tool definitions
+│       ├── storage.js             # Supabase Storage signed URLs
+│       ├── email.js               # SMTP transactional email (password reset, contact)
+│       ├── csvImport.js           # Quiz/flashcard CSV import parsing
+│       ├── coupons.js             # Coupon validation + Stripe integration
+│       ├── auditLog.js            # Admin action audit trail
+│       ├── accountDelete.js       # Full account + data deletion
+│       ├── learner.js             # Anonymous learner-key resolution (quiz/flashcard progress)
+│       ├── figures.js             # Figure/page-image resolution for RAG answers
+│       └── pageImages.js          # PDF page-image rendering (@napi-rs/canvas)
 ├── public/
 │   ├── lipsync-sdk.js             # Client SDK: Gemini Live + Rive lip-sync
+│   ├── embed-loader.js            # (in js/) host-page widget loader — see below
 │   ├── embed.html                 # Embeddable chat iframe
 │   ├── dashboard.html             # Chatbot list
 │   ├── project.html               # Per-project settings + knowledge sources
 │   ├── analytics.html             # Usage charts
-│   ├── billing.html               # Plan + subscription management
+│   ├── billing.html                # Plan + subscription management
 │   ├── account.html               # Profile settings
+│   ├── admin.html                 # Admin panel shell
+│   ├── docs/                      # Docs site (Introduction, SDK pages, integration guides)
 │   ├── css/
-│   │   └── embed.css              # Embed widget styles (dark theme)
+│   │   ├── app.css                # Marketing/app theme (light + dark)
+│   │   ├── embed.css              # Embed widget styles
+│   │   ├── docs.css               # Docs site layout
+│   │   └── admin.css              # Admin panel density/table overrides
 │   ├── js/
-│   │   └── api.js                 # Frontend API helpers + Auth + toast + topnav
+│   │   ├── api.js                 # Frontend API helpers + Auth + topnav
+│   │   ├── toast.js               # Shared toast implementation (app + admin)
+│   │   ├── theme.js               # Light/dark theme toggle
+│   │   ├── i18n.js / i18n/*.js    # Client-side i18n (en/es/fr/ar/hi)
+│   │   ├── embed-loader.js        # `<script data-bot>` host-page loader
+│   │   └── admin/                 # Admin panel tab modules (users, characters, coupons, tiers, audit)
 │   └── assets/
 │       └── characters/            # *.riv character files (not included)
+├── packages/                      # Published npm SDKs — see "SDK packages" below
+│   ├── js/                        # @avatar-platform/js (framework-agnostic core)
+│   ├── react/                     # @avatar-platform/react (<AvatarWidget>, useAvatarPlatform)
+│   ├── vue/                       # @avatar-platform/vue (<AvatarWidget> for Vue 3)
+│   └── react-native/              # @avatar-platform/react-native (WebView-based)
+├── scripts/
+│   └── sync-version.js            # Propagates root package.json's version into packages/* + the SDK banner
 ├── supabase/
-│   └── schema.sql                 # Full Postgres schema (run once in Supabase)
+│   ├── schema.sql                 # Full Postgres schema (run once; idempotent to re-run)
+│   └── migrations/                # Dated, standalone record of each schema change
+├── .github/workflows/
+│   ├── ci.yml                     # Test suite + schema.sql sanity check on push/PR
+│   └── publish-sdk.yml            # Manually-triggered npm publish for packages/*
 ├── .env.example                   # All environment variables documented
 └── package.json
 ```
+
+### SDK packages
+
+`packages/{js,react,react-native,vue}` are the source for the published `@avatar-platform/*` npm packages — thin wrappers around the same embed mechanism as the plain `<script data-bot>` snippet, documented at `/docs/js-sdk`, `/docs/react-sdk`, `/docs/vue-sdk`, and `/docs/react-native-sdk`. `npm run build:sdk` runs `scripts/sync-version.js` (propagates root `package.json`'s version into every package and into `public/lipsync-sdk.js`'s banner comment, so they can't drift independently) and then builds each package with `tsup`. Publishing itself is a manually-triggered GitHub Actions workflow (`.github/workflows/publish-sdk.yml`) — see that file's header comment for one-time npm token setup.
 
 ---
 
