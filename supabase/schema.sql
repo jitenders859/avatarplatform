@@ -168,6 +168,21 @@ CREATE TABLE IF NOT EXISTS messages (
   created_at BIGINT NOT NULL
 );
 
+-- ═══════════════════════════════════════════════════════════════════
+-- Human handoff — see
+-- supabase/migrations/2026-08-28_add_handoff.sql and
+-- docs/superpowers/specs/2026-08-28-human-handoff-design.md.
+-- ═══════════════════════════════════════════════════════════════════
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS handoff_status       TEXT NOT NULL DEFAULT 'none';
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS claimed_by           UUID REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS claimed_at           BIGINT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS handoff_requested_at BIGINT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS updated_at           BIGINT;
+CREATE INDEX IF NOT EXISTS idx_sessions_handoff_pending
+  ON sessions(project_id, handoff_status)
+  WHERE handoff_status IN ('requested', 'active');
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS sender_id UUID REFERENCES users(id) ON DELETE SET NULL;
+
 -- ── subscriptions ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS subscriptions (
   id                     TEXT    PRIMARY KEY,  -- Stripe subscription ID
