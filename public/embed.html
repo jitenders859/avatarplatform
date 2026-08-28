@@ -588,17 +588,17 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     el.style.cssText = 'align-self:stretch;max-width:100%;text-align:left;background:var(--bot-bg);border-radius:12px;padding:12px';
     el.innerHTML = `
       <p style="margin:0 0 8px;font-size:13px">No one's available right now — leave your info and we'll follow up.</p>
-      <input type="text" placeholder="Your name" class="input" id="handoff-capture-name" style="width:100%;margin-bottom:6px;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:13px" />
-      <input type="email" placeholder="Your email" class="input" id="handoff-capture-email" style="width:100%;margin-bottom:8px;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:13px" />
-      <button type="button" id="handoff-capture-submit" style="width:100%;padding:8px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer">Send</button>
+      <input type="text" placeholder="Your name" class="input" style="width:100%;margin-bottom:6px;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:13px" />
+      <input type="email" placeholder="Your email" class="input" style="width:100%;margin-bottom:8px;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:13px" />
+      <button type="button" style="width:100%;padding:8px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer">Send</button>
     `;
     messagesEl.appendChild(el);
     requestAnimationFrame(() => el.classList.add('visible'));
     scrollToBottom();
 
-    document.getElementById('handoff-capture-submit').addEventListener('click', async () => {
-      const name = document.getElementById('handoff-capture-name').value.trim();
-      const email = document.getElementById('handoff-capture-email').value.trim();
+    el.querySelector('button').addEventListener('click', async () => {
+      const name = el.querySelector('input[type="text"]').value.trim();
+      const email = el.querySelector('input[type="email"]').value.trim();
       if (!email) return;
       try {
         await fetch(`/embed/${publicId}/lead`, {
