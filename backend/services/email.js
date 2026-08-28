@@ -73,6 +73,32 @@ async function sendPasswordReset(toEmail, resetToken) {
 }
 
 /**
+ * Send an email-verification link. Reuses the reset-token pattern
+ * (random token + expiry column, consumed once) rather than a JWT, so a
+ * verification link can't outlive a password change/account deletion the
+ * way a signed token with no server-side revocation would.
+ * @param {string} toEmail
+ * @param {string} verifyToken
+ */
+async function sendVerificationEmail(toEmail, verifyToken) {
+  const link = `${BASE_URL()}/verify-email?token=${verifyToken}`;
+  await send({
+    to: toEmail,
+    subject: 'Verify your AvatarPlatform email',
+    text: `Click this link to verify your email (expires in 24 hours):\n\n${link}\n\nIf you didn't create an AvatarPlatform account, ignore this email.`,
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+        <h2 style="margin:0 0 16px;font-size:20px">Verify your email</h2>
+        <p style="color:#555;line-height:1.6">Click the button below to confirm your email address. This link expires in <strong>24 hours</strong>.</p>
+        <a href="${link}" style="display:inline-block;margin:24px 0;padding:12px 24px;background:#7c6af5;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Verify email</a>
+        <p style="color:#999;font-size:12px">If you didn't create an AvatarPlatform account, you can safely ignore this email.</p>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+        <p style="color:#bbb;font-size:11px">AvatarPlatform · <a href="${BASE_URL()}" style="color:#bbb">${BASE_URL()}</a></p>
+      </div>`,
+  });
+}
+
+/**
  * Send a welcome email after signup.
  * @param {string} toEmail
  * @param {string} name
@@ -120,4 +146,4 @@ async function sendContactMessage({ name, email, message }) {
   });
 }
 
-module.exports = { sendPasswordReset, sendWelcome, sendContactMessage };
+module.exports = { sendPasswordReset, sendWelcome, sendContactMessage, sendVerificationEmail };

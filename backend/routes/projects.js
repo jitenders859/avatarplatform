@@ -58,7 +58,21 @@ router.get('/', authRequired, async (req, res) => {
   res.json({ projects });
 });
 
+// Email-verification soft gate — time-based rather than an outright block
+// on unverified accounts, so a new signup can still create their first
+// chatbot immediately (blocking that would cost more signups than an
+// unverified email costs in abuse risk). After the grace window, an
+// unverified account can't create MORE projects until they verify.
+const VERIFY_GRACE_MS = 72 * 3600000;
+
 router.post('/', authRequired, validate(schemas.createProject), async (req, res) => {
+  if (!req.user.emailVerifiedAt && Date.now() - req.user.createdAt > VERIFY_GRACE_MS) {
+    return res.status(403).json({
+      error: 'Please verify your email to create more chatbots.',
+      code: 'EMAIL_NOT_VERIFIED',
+    });
+  }
+
   const { name, characterId, systemPrompt, voice } = req.body;
 
   const { checkLimit } = require('../services/usage');

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Verify your email — AvatarPlatform</title>
+  <meta name="description" content="Verify your AvatarPlatform account email address." />
+  <link rel="canonical" href="https://avatarplatform.ai/verify-email" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <meta name="robots" content="noindex" />
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css" />
+</head>
+<body>
+  <div id="theme-toggle-slot" style="position:fixed;top:16px;inset-inline-start:16px;z-index:20"></div>
+  <div style="min-height:100vh;display:grid;place-items:center;padding:24px">
+    <div class="card" style="width:100%;max-width:400px;text-align:center">
+      <a class="brand" href="/" style="margin-bottom:24px;justify-content:center">
+        <span class="brand-mark">AP</span>
+        <span>AvatarPlatform</span>
+      </a>
+
+      <div id="state-loading">
+        <div style="font-size:36px;margin-bottom:16px">✉️</div>
+        <p style="margin:0" class="muted">Verifying your email…</p>
+      </div>
+
+      <div id="state-success" style="display:none">
+        <div style="font-size:36px;margin-bottom:16px">✅</div>
+        <p style="margin:0 0 8px;font-weight:600">Email verified</p>
+        <p class="muted text-sm" style="margin:0 0 24px">You're all set.</p>
+        <a href="/dashboard" class="btn btn-primary" style="width:100%;justify-content:center">Go to dashboard</a>
+      </div>
+
+      <div id="state-error" style="display:none">
+        <div style="font-size:36px;margin-bottom:16px">⚠️</div>
+        <p style="margin:0 0 8px;font-weight:600">Link invalid or expired</p>
+        <p id="error-detail" class="muted text-sm" style="margin:0 0 24px">Verification links expire after 24 hours.</p>
+        <a href="/dashboard" class="btn btn-primary" style="width:100%;justify-content:center">Go to dashboard</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/theme.js"></script>
+  <script src="/js/toast.js"></script>
+  <script src="/js/api.js"></script>
+  <script>
+  mountThemeToggle(document.getElementById('theme-toggle-slot'));
+
+  const token = new URLSearchParams(location.search).get('token');
+
+  async function run() {
+    if (!token) {
+      document.getElementById('state-loading').style.display = 'none';
+      document.getElementById('error-detail').textContent = 'No verification token was provided.';
+      document.getElementById('state-error').style.display = 'block';
+      return;
+    }
+    try {
+      await API.verifyEmail(token);
+      // Keep the cached user object in sync so the dashboard banner
+      // disappears immediately instead of waiting on the next /me call.
+      if (Auth.loggedIn() && Auth.user) {
+        Auth.user = { ...Auth.user, emailVerifiedAt: Date.now() };
+      }
+      document.getElementById('state-loading').style.display = 'none';
+      document.getElementById('state-success').style.display = 'block';
+    } catch (e) {
+      document.getElementById('state-loading').style.display = 'none';
+      document.getElementById('error-detail').textContent = e.message;
+      document.getElementById('state-error').style.display = 'block';
+    }
+  }
+  run();
+  </script>
+</body>
+</html>

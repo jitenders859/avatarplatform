@@ -213,7 +213,7 @@ app.use(express.static(PUBLIC_DIR, {
   },
 }));
 
-const PAGES = ['login', 'signup', 'dashboard', 'project', 'embed', 'billing', 'analytics', 'pricing', 'characters', 'account', 'forgot-password', 'reset-password', 'terms', 'contact', 'admin'];
+const PAGES = ['login', 'signup', 'dashboard', 'project', 'embed', 'billing', 'analytics', 'pricing', 'characters', 'account', 'forgot-password', 'reset-password', 'verify-email', 'terms', 'contact', 'admin'];
 for (const page of PAGES) {
   app.get(`/${page}`, (_req, res) => res.sendFile(path.join(PUBLIC_DIR, `${page}.html`)));
 }

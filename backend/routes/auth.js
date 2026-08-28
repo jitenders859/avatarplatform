@@ -5,7 +5,7 @@ const uuid = crypto.randomUUID;
 const db = require('../db');
 const { signToken, authRequired } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
-const { sendPasswordReset, sendWelcome } = require('../services/email');
+const { sendPasswordReset, sendWelcome, sendVerificationEmail } = require('../services/email');
 const { deleteUserAccount } = require('../services/accountDelete');
 
 const router = express.Router();
@@ -18,16 +18,50 @@ router.post('/signup', validate(schemas.signup), async (req, res) => {
   if (existing) return res.status(409).json({ error: 'Email already registered' });
 
   const hash = await bcrypt.hash(password, 10);
+  const verifyToken = crypto.randomBytes(32).toString('hex');
   const user = await db.insert('users', {
     id: uuid(),
     email: normalized,
     name: (name || normalized.split('@')[0]).trim(),
     passwordHash: hash,
+    verifyToken,
+    verifyTokenExpiry: Date.now() + 24 * 3600000,
     createdAt: Date.now(),
   });
   const token = signToken(user.id);
   setImmediate(() => sendWelcome(user.email, user.name));
+  setImmediate(() => sendVerificationEmail(user.email, verifyToken));
   res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+});
+
+// Consumed by GET /verify-email?token=... (public/verify-email.html).
+router.post('/verify-email', validate(schemas.verifyEmail), async (req, res) => {
+  const { token } = req.body;
+  const user = await db.queryOne(
+    'SELECT * FROM users WHERE verify_token = $1 AND verify_token_expiry > $2 LIMIT 1',
+    [token, Date.now()]
+  );
+  if (!user) return res.status(400).json({ error: 'Verification link is invalid or has expired' });
+  await db.update('users', user.id, {
+    emailVerifiedAt: Date.now(),
+    verifyToken: null,
+    verifyTokenExpiry: null,
+  });
+  res.json({ ok: true });
+});
+
+// authRequired (not the signup flow) so a stranger can't spam verification
+// emails to arbitrary addresses — only an account's own owner can trigger
+// a resend, same trust boundary as /me.
+router.post('/resend-verification', authRequired, async (req, res) => {
+  if (req.user.emailVerifiedAt) return res.json({ ok: true, alreadyVerified: true });
+  const verifyToken = crypto.randomBytes(32).toString('hex');
+  await db.update('users', req.user.id, {
+    verifyToken,
+    verifyTokenExpiry: Date.now() + 24 * 3600000,
+  });
+  await sendVerificationEmail(req.user.email, verifyToken);
+  res.json({ ok: true });
 });
 
 router.post('/login', validate(schemas.login), async (req, res) => {
@@ -42,8 +76,8 @@ router.post('/login', validate(schemas.login), async (req, res) => {
 });
 
 router.get('/me', authRequired, (req, res) => {
-  const { id, email, name, createdAt } = req.user;
-  res.json({ user: { id, email, name, createdAt } });
+  const { id, email, name, createdAt, emailVerifiedAt } = req.user;
+  res.json({ user: { id, email, name, createdAt, emailVerifiedAt } });
 });
 
 router.patch('/me', authRequired, async (req, res) => {

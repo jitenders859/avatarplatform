@@ -27,12 +27,26 @@ stubFile('../db', {
     return row;
   },
   query: async () => [],
-  queryOne: async () => null,
-  update: async () => null,
+  // Only implements the one raw-SQL shape auth.js's verify-email route
+  // actually issues — good enough for a stub, not a real SQL engine.
+  queryOne: async (sql, params) => {
+    if (/FROM users WHERE verify_token/.test(sql)) {
+      const [token, now] = params;
+      return [...users.values()].find(u => u.verifyToken === token && u.verifyTokenExpiry > now) || null;
+    }
+    return null;
+  },
+  update: async (table, id, patch) => {
+    if (table !== 'users') return null;
+    const user = [...users.values()].find(u => u.id === id);
+    if (!user) return null;
+    Object.assign(user, patch);
+    return user;
+  },
   remove: async () => 0,
   pool: { end: async () => {} },
 });
-stubFile('../services/email', { sendWelcome: async () => {}, sendPasswordReset: async () => {} });
+stubFile('../services/email', { sendWelcome: async () => {}, sendPasswordReset: async () => {}, sendVerificationEmail: async () => {} });
 stubFile('../services/accountDelete', { deleteUserAccount: async () => {} });
 
 function request(port, method, path, body, token) {
@@ -101,4 +115,42 @@ test('signup -> login -> me round-trips a real JWT through the full auth flow', 
 
   const meBadToken = await request(port, 'GET', '/api/auth/me', null, 'not-a-real-jwt');
   assert.equal(meBadToken.status, 401);
+});
+
+test('email verification: signup issues a token, wrong/expired tokens are rejected, the right one verifies, resend is a no-op once verified', async (t) => {
+  delete require.cache[require.resolve('./auth')];
+  const authRouter = require('./auth');
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/api/auth', authRouter);
+  app.use((err, req, res, _next) => res.status(500).json({ error: err.message }));
+
+  const server = app.listen(0);
+  t.after(() => server.close());
+  const port = server.address().port;
+
+  const signup = await request(port, 'POST', '/api/auth/signup', {
+    email: 'verify-me@example.com', password: 'correct-horse-battery', name: 'Verify Me',
+  });
+  const user = users.get('verify-me@example.com');
+  assert.ok(user.verifyToken, 'signup should stamp a verify token');
+  assert.equal(user.emailVerifiedAt, undefined);
+
+  const wrongToken = await request(port, 'POST', '/api/auth/verify-email', { token: 'not-the-real-token' });
+  assert.equal(wrongToken.status, 400);
+  assert.equal(user.emailVerifiedAt, undefined, 'a wrong token must not verify the account');
+
+  const expired = await request(port, 'POST', '/api/auth/verify-email', { token: 'expired-token' });
+  // (no user actually has this token — this just exercises the "no match" path once more)
+  assert.equal(expired.status, 400);
+
+  const correct = await request(port, 'POST', '/api/auth/verify-email', { token: user.verifyToken });
+  assert.equal(correct.status, 200);
+  assert.ok(user.emailVerifiedAt, 'the correct token should set emailVerifiedAt');
+  assert.equal(user.verifyToken, null, 'the token should be consumed (single-use)');
+
+  const resend = await request(port, 'POST', '/api/auth/resend-verification', null, signup.json.token);
+  assert.equal(resend.status, 200);
+  assert.equal(resend.json.alreadyVerified, true, 'resend on an already-verified account should be a no-op');
 });

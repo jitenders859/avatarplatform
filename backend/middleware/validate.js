@@ -62,6 +62,10 @@ const schemas = {
     newPassword: password,
   }),
 
+  verifyEmail: z.object({
+    token: z.string().min(1, 'Verification token is required'),
+  }),
+
   createProject: z.object({
     name: z.string().min(1, 'Name is required').max(120, 'Name too long').trim(),
     characterId: z.string().optional(),

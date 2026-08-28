@@ -15,6 +15,15 @@
 </head>
 <body>
   <div class="container mt-md">
+    <div id="verify-banner" class="card mb-md" hidden style="display:flex;align-items:center;gap:12px;background:var(--warn-bg);border-color:var(--warn-border)">
+      <span style="font-size:20px">✉️</span>
+      <div style="flex:1">
+        <div style="font-weight:600;font-size:14px">Verify your email</div>
+        <div class="muted text-sm">Check your inbox for a verification link.</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="resend-verify-btn">Resend email</button>
+    </div>
+
     <div class="page-header">
       <div>
         <h1 class="page-title">Your chatbots</h1>
@@ -70,9 +79,10 @@
 
   async function load() {
     try {
-      const [{ projects }, { characters: chars }, sub] = await Promise.all([
-        API.listProjects(), API.characters(), API.subscription().catch(() => null),
+      const [{ projects }, { characters: chars }, sub, meResult] = await Promise.all([
+        API.listProjects(), API.characters(), API.subscription().catch(() => null), API.me().catch(() => null),
       ]);
+      document.getElementById('verify-banner').hidden = !meResult || !!meResult.user.emailVerifiedAt;
       characters = chars;
       const select = document.getElementById('new-character');
       select.innerHTML = chars.map(c =>
@@ -181,8 +191,23 @@
       btn.disabled = false;
       if (/limit/i.test(e2.message)) {
         err.innerHTML += ' <a href="/billing">Upgrade</a>';
+      } else if (e2.code === 'EMAIL_NOT_VERIFIED') {
+        document.getElementById('verify-banner').hidden = false;
+        document.getElementById('verify-banner').scrollIntoView({ behavior: 'smooth' });
       }
     }
+  });
+
+  document.getElementById('resend-verify-btn').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      await API.resendVerification();
+      toast('Verification email sent — check your inbox.', 'success');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    btn.disabled = false;
   });
 
   load();

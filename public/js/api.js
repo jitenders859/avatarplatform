@@ -71,6 +71,8 @@ const API = {
   deleteMe:       () => apiCall('/api/auth/me', { method: 'DELETE' }),
   forgotPassword: (email) => apiCall('/api/auth/forgot-password', { method: 'POST', body: { email } }),
   resetPassword:  (token, newPassword) => apiCall('/api/auth/reset-password', { method: 'POST', body: { token, newPassword } }),
+  verifyEmail:        (token) => apiCall('/api/auth/verify-email', { method: 'POST', body: { token } }),
+  resendVerification: () => apiCall('/api/auth/resend-verification', { method: 'POST' }),
 
   // Projects
   characters:    () => apiCall('/api/projects/characters'),
