@@ -39,7 +39,7 @@ function attach(server) {
       return;
     }
     const visitorMatch = url.pathname.match(/^\/ws\/embed\/([a-zA-Z0-9_-]+)$/);
-    const dashboardMatch = url.pathname.match(/^\/ws\/dashboard\/([a-zA-Z0-9_-]+)$/);
+    const dashboardMatch = url.pathname.match(/^\/ws\/dashboard\/([0-9a-fA-F-]{36})$/);
 
     if (visitorMatch) {
       handleVisitorUpgrade(wss, req, socket, head, visitorMatch[1], url.searchParams.get('sessionId')).catch(e => {

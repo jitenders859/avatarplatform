@@ -11,7 +11,7 @@ const stubFile = (rel, exports) => {
   require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports, children: [], paths: [] };
 };
 
-const PROJECT = { id: 'proj-1', userId: 'owner-1', publicId: 'pub-1', name: 'Test Bot' };
+const PROJECT = { id: '11111111-1111-1111-1111-111111111111', userId: 'owner-1', publicId: 'pub-1', name: 'Test Bot' };
 const OWNER = { id: 'owner-1', email: 'owner@example.com', name: 'Owner', suspended: false };
 
 function makeDb() {
