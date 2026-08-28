@@ -278,6 +278,47 @@ test('widgetMessages overrides the default limit-reached copy and exposes an inp
   });
 });
 
+// ── Case E: an active handoff pauses /ask instead of calling Gemini ─────
+test('/ask short-circuits without calling Gemini when the session has an active handoff', async () => {
+  process.env.GEMINI_API_KEY = SERVER_KEY;
+  delete process.env.PUBLIC_GEMINI_API_KEY;
+  delete require.cache[require.resolve('./embed')];
+
+  let geminiConstructed = false;
+  stubFile('@google/generative-ai', {
+    GoogleGenerativeAI: class { constructor() { geminiConstructed = true; } },
+  });
+  stubFile('../db', {
+    findOne: async (table, filter) => {
+      if (table === 'projects') return { ...PROJECT };
+      if (table === 'sessions' && filter.id === 'handed-off-session') return { id: 'handed-off-session', handoffStatus: 'active' };
+      return null;
+    },
+    findAll: async () => [],
+    insert: async (table, row) => row,
+    insertMany: async () => [],
+    update: async () => null,
+    remove: async () => 0,
+    query: async () => [],
+    queryOne: async () => null,
+    pool: { end: async () => {} },
+  });
+
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/embed', require('./embed'));
+
+  const res = await require('supertest')(app)
+    .post('/embed/test-public-id/ask')
+    .send({ question: 'are you there?', sessionId: 'handed-off-session' });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.answer, "You're currently connected with a team member — please continue the conversation here.");
+  assert.equal(res.body.sessionId, 'handed-off-session');
+  assert.equal(geminiConstructed, false, 'Gemini must not be called once a session is handed off');
+});
+
 test.after(() => {
   delete process.env.PUBLIC_GEMINI_API_KEY;
 });
