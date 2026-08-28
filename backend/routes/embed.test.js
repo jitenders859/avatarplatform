@@ -120,6 +120,7 @@ test('server-key-only config never leaks GEMINI_API_KEY', async (t) => {
     assert.equal(res.body.voiceEnabled, false);
     assert.equal(res.body.limitReached, false);
     assert.notEqual(res.body.limitMessage, undefined);
+    assert.equal(res.body.handoffEnabled, false, 'free-plan project must not expose handoff');
   });
 
   await t.test('log below the quota records the turn and bumps usage', async () => {
