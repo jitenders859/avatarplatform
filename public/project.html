@@ -1488,7 +1488,7 @@
       let msg;
       try { msg = JSON.parse(ev.data); } catch { return; }
       if (msg.type === 'queue_update') { liveChatQueue = msg; renderLiveChatQueue(); }
-      if (msg.type === 'chat' && liveChatOpenSessionId) appendLiveChatMessage('visitor', msg.text);
+      if (msg.type === 'chat' && msg.sessionId === liveChatOpenSessionId) appendLiveChatMessage('visitor', msg.text);
     });
     liveChatWs.addEventListener('close', () => {
       const tabVisible = !document.getElementById('panel-livechat').hidden;
