@@ -46,7 +46,14 @@ function makeDb() {
       }
       return null;
     },
-    query: async (sql) => {
+    query: async (sql, params = []) => {
+      if (/^\s*UPDATE sessions SET/i.test(sql)) {
+        const [claimedBy, claimedAt, updatedAt, sessionId, projectId] = params;
+        const existing = sessions.get(sessionId);
+        if (!existing || existing.projectId !== projectId || existing.handoffStatus !== 'requested') return [];
+        sessions.set(sessionId, { ...existing, handoffStatus: 'active', claimedBy, claimedAt, updatedAt });
+        return [{ id: sessionId }];
+      }
       if (/FROM sessions s/.test(sql)) {
         return [...sessions.values()]
           .filter(s => s.projectId === PROJECT.id && ['requested', 'active'].includes(s.handoffStatus))
@@ -147,6 +154,52 @@ test('full flow: request -> queue_update to dashboard -> claim -> chat both ways
     assert.equal(db._sessions.get(sessionId).handoffStatus, 'resolved');
 
     dashWs.close(); visitorWs.close();
+  } finally {
+    server.close();
+  }
+});
+
+test('claim is race-safe: two dashboard sockets claiming the same session, only one wins', async () => {
+  const db = makeDb();
+  const { server, port } = await startServer(db);
+  try {
+    const token = jwt.sign({ uid: OWNER.id }, process.env.JWT_SECRET);
+    const dashWsA = new WebSocket(`ws://localhost:${port}/ws/dashboard/${PROJECT.id}?token=${token}`);
+    await waitForMessage(dashWsA); // initial snapshot
+    const dashWsB = new WebSocket(`ws://localhost:${port}/ws/dashboard/${PROJECT.id}?token=${token}`);
+    await waitForMessage(dashWsB); // initial snapshot
+
+    const visitorWs = new WebSocket(`ws://localhost:${port}/ws/embed/${PROJECT.publicId}`);
+    const connected = await waitForMessage(visitorWs);
+    const sessionId = connected.sessionId;
+
+    const aUpdate = waitForMessage(dashWsA);
+    const bUpdate = waitForMessage(dashWsB);
+    visitorWs.send(JSON.stringify({ type: 'request_handoff' }));
+    await waitForMessage(visitorWs); // 'waiting'
+    await aUpdate; await bUpdate; // both dashboards see the pending request
+
+    // Both sockets race to claim the same session. Only one 'claimed'
+    // message should ever reach the visitor — the loser's claim is a
+    // silent no-op, gated by the conditional UPDATE ... WHERE
+    // handoff_status = 'requested' rather than a separate read-then-write.
+    let claimedCount = 0;
+    visitorWs.on('message', (data) => {
+      const parsed = JSON.parse(data.toString());
+      if (parsed.type === 'claimed') claimedCount++;
+    });
+    dashWsA.send(JSON.stringify({ type: 'claim', sessionId }));
+    dashWsB.send(JSON.stringify({ type: 'claim', sessionId }));
+
+    // Give both handlers time to run (there's no second success message to
+    // await on the loser's side, so wait on the wall clock briefly instead).
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    assert.equal(claimedCount, 1);
+    assert.equal(db._sessions.get(sessionId).handoffStatus, 'active');
+    assert.ok(db._sessions.get(sessionId).claimedBy === 'owner-1'); // only OWNER is connected in this test
+
+    dashWsA.close(); dashWsB.close(); visitorWs.close();
   } finally {
     server.close();
   }

@@ -28,7 +28,11 @@ async function findProjectByPublicId(publicId) {
 const visitorSockets = new Map();
 
 function attach(server) {
-  const wss = new WebSocketServer({ noServer: true });
+  // maxPayload guards /ws/embed/:publicId, which is intentionally
+  // unauthenticated (embedded on public pages) — without a cap, an
+  // anonymous visitor could send arbitrarily large frames repeatedly.
+  // 8KB comfortably covers a 2000-char chat message plus JSON overhead.
+  const wss = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 });
 
   server.on('upgrade', (req, socket, head) => {
     let url;
@@ -152,9 +156,18 @@ async function handleVisitorMessage(project, sessionId, ws, raw) {
       handoffStatus: 'requested', handoffRequestedAt: Date.now(), claimedBy: null, claimedAt: null,
     });
     const available = presence.hasAvailability(project.id);
-    ws.send(JSON.stringify({ type: available ? 'waiting' : 'no_one_available' }));
+    // Notify the team / schedule the fallback email unconditionally first —
+    // these are the actual "team gets notified" protocol steps. The
+    // visitor's own send is best-effort: a socket can report OPEN via
+    // readyState but still throw synchronously mid-write, and that
+    // shouldn't be able to skip notifying the team.
     presence.broadcastToProject(project.id, await queueSnapshotPayload(project.id));
     if (isFreshRequest) scheduleHandoffEmail(sessionId, project);
+    try {
+      ws.send(JSON.stringify({ type: available ? 'waiting' : 'no_one_available' }));
+    } catch (e) {
+      logger.error({ err: e.message, sessionId }, 'failed to notify visitor of handoff request result');
+    }
     return;
   }
 
@@ -175,10 +188,21 @@ async function handleDashboardMessage(projectId, entry, raw) {
   try { msg = JSON.parse(raw.toString()); } catch { return; }
 
   if (msg.type === 'claim') {
-    const session = await db.findOne('sessions', { id: msg.sessionId, projectId });
-    if (!session || session.handoffStatus !== 'requested') return;
-    await db.update('sessions', session.id, { handoffStatus: 'active', claimedBy: entry.userId, claimedAt: Date.now() });
-    cancelHandoffEmail(session.id);
+    // Race-safe claim: two dashboard sockets can both pass a prior
+    // "handoffStatus === 'requested'" read before either writes, both
+    // "winning" the claim. Guard against that with a single conditional
+    // UPDATE that only succeeds if the row is still 'requested' — the DB
+    // serializes concurrent writes to the same row, so only one of two
+    // racing claims can match this WHERE and return a row.
+    const now = Date.now();
+    const claimed = await db.query(
+      `UPDATE sessions SET handoff_status = 'active', claimed_by = $1, claimed_at = $2, updated_at = $3
+         WHERE id = $4 AND project_id = $5 AND handoff_status = 'requested'
+       RETURNING id`,
+      [entry.userId, now, now, msg.sessionId, projectId]
+    );
+    if (!claimed.length) return; // someone else already claimed it (or it's gone/not pending)
+    cancelHandoffEmail(msg.sessionId);
     // Broadcast the refreshed queue to the dashboard side (including the
     // claimer's own socket) BEFORE notifying the visitor. The visitor and
     // dashboard sockets are independent connections with no cross-socket
@@ -188,9 +212,13 @@ async function handleDashboardMessage(projectId, entry, raw) {
     // does immediately after receiving 'claimed' (e.g. a UI that then
     // listens for the next dashboard message for an unrelated reason).
     presence.broadcastToProject(projectId, await queueSnapshotPayload(projectId));
-    const visitorWs = visitorSockets.get(session.id);
+    const visitorWs = visitorSockets.get(msg.sessionId);
     if (visitorWs && visitorWs.readyState === visitorWs.OPEN) {
-      visitorWs.send(JSON.stringify({ type: 'claimed', byName: entry.userName }));
+      try {
+        visitorWs.send(JSON.stringify({ type: 'claimed', byName: entry.userName }));
+      } catch (e) {
+        logger.error({ err: e.message, sessionId: msg.sessionId }, 'failed to notify visitor of claim');
+      }
     }
     return;
   }
@@ -199,11 +227,18 @@ async function handleDashboardMessage(projectId, entry, raw) {
     const session = await db.findOne('sessions', { id: msg.sessionId, projectId });
     if (!session || session.claimedBy !== entry.userId) return;
     await db.update('sessions', session.id, { handoffStatus: 'resolved' });
+    // Broadcast first — every connected dashboard client's queue view
+    // depends on this, and it must not be skipped by a throw from a
+    // single visitor's own (possibly stale) socket send below.
+    presence.broadcastToProject(projectId, await queueSnapshotPayload(projectId));
     const visitorWs = visitorSockets.get(session.id);
     if (visitorWs && visitorWs.readyState === visitorWs.OPEN) {
-      visitorWs.send(JSON.stringify({ type: 'resolved' }));
+      try {
+        visitorWs.send(JSON.stringify({ type: 'resolved' }));
+      } catch (e) {
+        logger.error({ err: e.message, sessionId: session.id }, 'failed to notify visitor of resolve');
+      }
     }
-    presence.broadcastToProject(projectId, await queueSnapshotPayload(projectId));
     return;
   }
 
