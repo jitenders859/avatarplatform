@@ -343,6 +343,13 @@
       <div class="grid grid-4 mb-md" id="pa-totals"></div>
       <div class="card mb-md">
         <div class="card-header">
+          <h3 class="card-title">Conversion funnel</h3>
+          <span class="muted text-sm" id="pa-funnel-note"></span>
+        </div>
+        <div id="pa-funnel" class="col gap-sm"></div>
+      </div>
+      <div class="card mb-md">
+        <div class="card-header">
           <h3 class="card-title">Messages — last 30 days</h3>
           <span class="muted text-sm" id="pa-chart-total"></span>
         </div>
@@ -1279,14 +1286,19 @@
   async function loadProjectAnalytics() {
     document.getElementById('pa-totals').innerHTML = '<div class="muted text-sm" style="grid-column:1/-1;padding:8px 0">Loading…</div>';
     try {
-      const { totals, daily, topQuestions } = await API.projectAnalytics(projectId);
+      const { totals, funnel, avgSessionDurationSec, daily, topQuestions } = await API.projectAnalytics(projectId);
 
+      const durationLabel = avgSessionDurationSec >= 60
+        ? `${Math.floor(avgSessionDurationSec / 60)}m ${avgSessionDurationSec % 60}s`
+        : `${avgSessionDurationSec}s`;
       document.getElementById('pa-totals').innerHTML = [
         { label: 'Sessions', value: totals.sessions },
         { label: 'Messages', value: totals.messages },
         { label: 'Sources',  value: totals.files },
-        { label: 'Avg turns / session', value: totals.avgSessionLength },
+        { label: 'Avg session duration', value: durationLabel },
       ].map(i => `<div class="card"><div class="muted text-sm">${i.label}</div><div style="font-size:28px;font-weight:700;letter-spacing:-0.02em;margin-top:4px">${i.value}</div></div>`).join('');
+
+      renderFunnel(funnel);
 
       const max = Math.max(1, ...daily.map(d => d.messages));
       document.getElementById('pa-chart-total').textContent = `${daily.reduce((s, d) => s + d.messages, 0)} messages`;
@@ -1343,6 +1355,39 @@
           <div class="muted text-sm">${t.quizAccuracy === null ? '—' : t.quizAccuracy + '% correct'} (${t.quizTotal})</div>
         </div>`).join('');
     } catch (e) { /* progress tracking is optional — don't block the rest of the tab on it */ }
+  }
+
+  function renderFunnel(funnel) {
+    const el = document.getElementById('pa-funnel');
+    const note = document.getElementById('pa-funnel-note');
+    if (!funnel || !funnel.sessions) {
+      note.textContent = '';
+      el.innerHTML = '<p class="muted text-sm">No sessions yet.</p>';
+      return;
+    }
+    const stages = [
+      { label: 'Sessions started',   value: funnel.sessions },
+      { label: 'Engaged (sent a message)', value: funnel.engagedSessions },
+      { label: 'Leads captured',     value: funnel.leadsCaptured },
+      { label: 'Leads completed',    value: funnel.leadsCompleted },
+    ];
+    note.textContent = `${funnel.sessions} session${funnel.sessions === 1 ? '' : 's'} total`;
+    const max = stages[0].value || 1;
+    el.innerHTML = stages.map((s, i) => {
+      const pct = Math.round((s.value / max) * 100);
+      const prev = i > 0 ? stages[i - 1].value : null;
+      const ofPrev = prev ? ` <span class="muted">(${prev === 0 ? 0 : Math.round((s.value / prev) * 100)}% of previous)</span>` : '';
+      return `
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <span class="text-sm">${s.label}</span>
+            <span class="text-sm" style="font-weight:600">${s.value}${ofPrev}</span>
+          </div>
+          <div style="height:8px;border-radius:4px;background:var(--bg-3)">
+            <div style="height:100%;width:${pct}%;min-width:${s.value > 0 ? '2px' : '0'};border-radius:4px;background:linear-gradient(90deg,var(--accent-2),var(--accent));transition:width .2s"></div>
+          </div>
+        </div>`;
+    }).join('');
   }
 
   function escape(s) {
