@@ -50,6 +50,7 @@ const videoResourcesRoutes = require('./routes/videoResources');
 const adminRoutes = require('./routes/admin');
 const adminCharactersRoutes = require('./routes/adminCharacters');
 const adminCouponsRoutes = require('./routes/adminCoupons');
+const { attach: attachHandoffWs } = require('./ws/handoff');
 const inngestClient = require('./inngest/client');
 const { functions: inngestFunctions } = require('./inngest/functions');
 const { checkProcessModeConfigured } = require('./services/processMode');
@@ -283,8 +284,11 @@ if (!process.env.VERCEL) {
     }
   });
 
+  const handoffWss = attachHandoffWs(server);
+
   function shutdown(signal) {
     logger.info({ signal }, 'shutdown received');
+    for (const client of handoffWss.clients) client.close(1001, 'Server restarting');
     server.close(() => {
       logger.info('server closed');
       pool.end().catch((err) => logger.warn({ err }, 'error closing pg pool')).finally(() => process.exit(0));
