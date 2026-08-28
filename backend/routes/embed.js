@@ -144,6 +144,7 @@ router.get('/:publicId/config', async (req, res) => {
     // for Free-plan owners as a UX hint, but this is the enforcement point.
     const planId = await userPlanId(project.userId);
     const messageLimitCheck = await checkLimit(project.userId, 'message', 1);
+    const handoffEnabled = planId === 'business';
 
     res.json({
       project: {
@@ -206,6 +207,7 @@ router.get('/:publicId/config', async (req, res) => {
       // the server-side /ask path.
       apiKey: messageLimitCheck.ok && PUBLIC_API_KEY ? PUBLIC_API_KEY : null,
       voiceEnabled: messageLimitCheck.ok && !!PUBLIC_API_KEY,
+      handoffEnabled,
       limitReached: !messageLimitCheck.ok,
       limitMessage: messageLimitCheck.ok ? null : limitMessageFor(project, messageLimitCheck),
       widgetMessages: {
