@@ -22,6 +22,7 @@ const { synthesizeSpeech, TtsError } = require('../services/tts');
 const { isWithinBusinessHours } = require('../services/hours');
 const { resolveLearnerKey, backfillLearnerKey } = require('../services/learner');
 const { checkLimit, userPlanId } = require('../services/usage');
+const { HANDOFF_INSTRUCTION, extractHandoffTag } = require('../services/handoffTag');
 const logger = require('../logger').child({ module: 'embed' });
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { getRateLimitStore } = require('../services/rateLimitStore');
@@ -410,10 +411,28 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
     if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason, limitReached: true, limitMessage: limitMessageFor(project, limitCheck) });
 
     const { question, sessionId: incomingSessionId, pageContext } = req.body;
+
+    // If this session already has a pending/active human handoff, the AI
+    // is fully out of the loop — the visitor's widget should be talking
+    // to the WebSocket handoff channel instead of this REST endpoint, but
+    // handle a stray call defensively rather than silently double-answering.
+    if (incomingSessionId) {
+      const existingSession = await db.findOne('sessions', { id: incomingSessionId, projectId: project.id });
+      if (existingSession && ['requested', 'active'].includes(existingSession.handoffStatus)) {
+        return res.json({
+          answer: "You're currently connected with a team member — please continue the conversation here.",
+          sources: [], sessionId: incomingSessionId,
+        });
+      }
+    }
+
+    const planId = await userPlanId(project.userId);
+    const handoffEnabled = planId === 'business';
+
     let result;
     try {
       // Shared with the WhatsApp channel — see services/answerQuestion.js.
-      result = await answerQuestion(project, question, incomingSessionId, { ip: req.ip || 'unknown', pageContext });
+      result = await answerQuestion(project, question, incomingSessionId, { ip: req.ip || 'unknown', pageContext, handoffEnabled });
     } catch (e) {
       logger.error({ err: e.message }, 'ask failed');
       return res.status(502).json({ error: 'AI service unavailable' });
@@ -505,6 +524,16 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
     const ip = req.ip || 'unknown';
     const { message, sessionId: incomingSessionId } = req.body;
 
+    if (incomingSessionId) {
+      const existingSession = await db.findOne('sessions', { id: incomingSessionId, projectId: project.id });
+      if (existingSession && ['requested', 'active'].includes(existingSession.handoffStatus)) {
+        return res.json({
+          answer: "You're currently connected with a team member — please continue the conversation here.",
+          toolCalls: [], sources: [], figures: [], sessionId: incomingSessionId,
+        });
+      }
+    }
+
     // 1. Embed the message + retrieve knowledge-base context (same pattern as /ask)
     let queryEmbedding;
     try {
@@ -540,12 +569,16 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
 
     const figures = await resolveFigures({ projectId: project.id, queryEmbedding, hits, pageImageCache, publicId: project.publicId, fileCache });
 
+    // handoffEnabled is plan-based, independent of capabilityTier (which is
+    // already enforced above just to reach this route).
+    const planId = await userPlanId(project.userId);
+    const handoffEnabled = planId === 'business';
     const basePrompt = project.systemPrompt ||
       'You are a helpful AI study assistant. Answer using the provided knowledge base context.';
     const contextText = contextParts.length
       ? `Knowledge base context:\n\n${contextParts.join('\n\n---\n\n')}`
       : 'No relevant context found in the knowledge base.';
-    const systemInstruction = `${basePrompt}\n\n${contextText}`;
+    const systemInstruction = `${basePrompt}\n\n${contextText}` + (handoffEnabled ? HANDOFF_INSTRUCTION : '');
 
     // 2. Function-calling loop — study-tier tools plus this project's
     // owner-defined AI actions (see services/tools.js#projectActionTools).
@@ -556,6 +589,7 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
     const dispatch = { ...tierTools.dispatch, ...actionTools.dispatch, ...bookingTools.dispatch };
     const toolCalls = [];
     let answer = '';
+    let offerHandoff = false;
     try {
       const [geminiApiKey, studyModel] = await Promise.all([
         settings.getSetting('GEMINI_API_KEY'),
@@ -592,7 +626,9 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
         iterations++;
       }
 
-      answer = result.response.text();
+      const extracted = extractHandoffTag(result.response.text());
+      answer = extracted.clean;
+      offerHandoff = extracted.requested;
     } catch (e) {
       logger.error({ err: e.message }, 'study Gemini call failed');
       return res.status(502).json({ error: 'AI service unavailable' });
@@ -623,7 +659,7 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
       // Non-fatal — still return the answer
     }
 
-    res.json({ answer, toolCalls, sources, figures, sessionId: sid });
+    res.json({ answer, toolCalls, sources, figures, sessionId: sid, offerHandoff });
   } catch (e) {
     logger.error({ err: e.message }, 'study error');
     res.status(500).json({ error: 'Server error' });
