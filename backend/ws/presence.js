@@ -34,7 +34,16 @@ function broadcastToProject(projectId, message) {
   if (!set) return;
   const payload = JSON.stringify(message);
   for (const entry of set) {
-    if (entry.ws.readyState === entry.ws.OPEN) entry.ws.send(payload);
+    if (entry.ws.readyState === entry.ws.OPEN) {
+      try {
+        entry.ws.send(payload);
+      } catch {
+        // A socket can report OPEN via readyState but still throw
+        // synchronously mid-write. Skip it and keep delivering to the
+        // rest of the set — its own close event (handled elsewhere)
+        // will clean it out of the registry.
+      }
+    }
   }
 }
 
@@ -48,8 +57,13 @@ function sendToUser(projectId, userId, message) {
   let delivered = false;
   for (const entry of set) {
     if (entry.userId === userId && entry.ws.readyState === entry.ws.OPEN) {
-      entry.ws.send(payload);
-      delivered = true;
+      try {
+        entry.ws.send(payload);
+        delivered = true;
+      } catch {
+        // Same rationale as broadcastToProject: a throwing send()
+        // shouldn't stop delivery to this user's other connections.
+      }
     }
   }
   return delivered;
