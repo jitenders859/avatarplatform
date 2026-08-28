@@ -42,9 +42,20 @@ router.get('/characters', optionalAuth, async (req, res) => {
   res.json({ characters: await listAvailableCharacters(req.user?.id) });
 });
 
+// leadCount folded in here (one grouped query) rather than the dashboard
+// firing one GET /:id/leads?limit=1 per project just to read its total —
+// see improvement-prompts.md Prompt P1-1 item 4.
 router.get('/', authRequired, async (req, res) => {
-  const projects = await db.findAll('projects', { userId: req.user.id }, { orderBy: 'createdAt', order: 'desc' });
-  res.json({ projects: projects.map(strip) });
+  const projects = await db.query(
+    `SELECT p.*, COUNT(l.id)::int AS lead_count
+       FROM projects p
+       LEFT JOIN leads l ON l.project_id = p.id
+      WHERE p.user_id = $1
+      GROUP BY p.id
+      ORDER BY p.created_at DESC`,
+    [req.user.id]
+  );
+  res.json({ projects });
 });
 
 router.post('/', authRequired, validate(schemas.createProject), async (req, res) => {

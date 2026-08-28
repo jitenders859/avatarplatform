@@ -53,42 +53,61 @@ async function embedOne(text, taskType = 'RETRIEVAL_DOCUMENT') {
   return values;
 }
 
-/** Embed an array of strings. Uses batchEmbedContents in slices of 100. */
+async function embedBatch(slice, taskType) {
+  const url = `${BASE}/models/${MODEL}:batchEmbedContents?key=${PLATFORM_KEY}`;
+  const body = {
+    requests: slice.map(t => ({
+      model: `models/${MODEL}`,
+      content: { parts: [{ text: String(t || '').slice(0, 8000) }] },
+      taskType,
+      outputDimensionality: OUTPUT_DIM,
+    })),
+  };
+  let attempt = 0;
+  while (true) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) {
+      const json = await res.json();
+      return (json.embeddings || []).map(e => e.values);
+    }
+    if ((res.status === 429 || res.status >= 500) && attempt < 4) {
+      await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt++)));
+      continue;
+    }
+    const txt = await res.text();
+    throw new Error(`Batch embedding API ${res.status} (model=${MODEL}): ${txt.slice(0, 300)}`);
+  }
+}
+
+/**
+ * Embed an array of strings. Uses batchEmbedContents in slices of 100,
+ * up to CONCURRENCY slices in flight at once — a large file can be
+ * thousands of chunks (tens of batches), and running them one at a time
+ * left most of that time idle waiting on network round-trips rather than
+ * the API's own rate limit (each batch still retries/backs off on 429
+ * independently, so a stricter server-side limit degrades to fewer
+ * effectively-concurrent batches rather than failing outright).
+ */
 async function embedMany(texts, taskType = 'RETRIEVAL_DOCUMENT') {
-  const out = [];
   const BATCH = 100;
-  for (let i = 0; i < texts.length; i += BATCH) {
-    const slice = texts.slice(i, i + BATCH);
-    const url = `${BASE}/models/${MODEL}:batchEmbedContents?key=${PLATFORM_KEY}`;
-    const body = {
-      requests: slice.map(t => ({
-        model: `models/${MODEL}`,
-        content: { parts: [{ text: String(t || '').slice(0, 8000) }] },
-        taskType,
-        outputDimensionality: OUTPUT_DIM,
-      })),
-    };
-    let attempt = 0;
-    while (true) {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (res.ok) {
-        const json = await res.json();
-        for (const e of json.embeddings || []) out.push(e.values);
-        break;
-      }
-      if ((res.status === 429 || res.status >= 500) && attempt < 4) {
-        await new Promise(r => setTimeout(r, 500 * Math.pow(2, attempt++)));
-        continue;
-      }
-      const txt = await res.text();
-      throw new Error(`Batch embedding API ${res.status} (model=${MODEL}): ${txt.slice(0, 300)}`);
+  const CONCURRENCY = 5;
+  const slices = [];
+  for (let i = 0; i < texts.length; i += BATCH) slices.push(texts.slice(i, i + BATCH));
+
+  const results = new Array(slices.length);
+  let next = 0;
+  async function worker() {
+    while (next < slices.length) {
+      const i = next++;
+      results[i] = await embedBatch(slices[i], taskType);
     }
   }
-  return out;
+  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, slices.length) }, worker));
+  return results.flat();
 }
 
 module.exports = { embedOne, embedMany, MODEL, OUTPUT_DIM };

@@ -9,7 +9,14 @@
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/embed.css" />
   <script src="https://unpkg.com/@rive-app/canvas@2.21.0/rive.js"></script>
-  <script src="/lipsync-sdk.min.js"></script>
+  <!-- lipsync-sdk.min.js is gitignored — a fresh clone/deploy only has it
+       once `npm run build` (postinstall) has actually run terser. If that
+       ever fails silently, falling back to the unminified source here
+       keeps every customer's widget from going dark, at the cost of a
+       slightly bigger download. onerror fires synchronously as the parser
+       reaches this node, so document.write here still inserts before the
+       rest of the page parses — the classic script-fallback pattern. -->
+  <script src="/lipsync-sdk.min.js" onerror="document.write('<scr' + 'ipt src=\'/lipsync-sdk.js\'></scr' + 'ipt>')"></script>
 </head>
 <body>
   <!--

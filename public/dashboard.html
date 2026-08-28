@@ -95,12 +95,7 @@
 
       if (projects.length === 0) { emptyEl.hidden = false; grid.hidden = true; return; }
 
-      // Fetch lead counts in parallel
-      const leadCounts = await Promise.all(
-        projects.map(p => API.listLeads(p.id, { limit: 1 }).then(r => r.total).catch(() => 0))
-      );
-
-      grid.innerHTML = projects.map((p, i) => `
+      grid.innerHTML = projects.map((p) => `
         <div class="card" style="position:relative;transition:border-color .15s" onmouseover="this.style.borderColor='var(--border-strong)'" onmouseout="this.style.borderColor='var(--border)'">
           <a href="/project?id=${p.id}" style="text-decoration:none;color:inherit;display:block">
             <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
@@ -112,7 +107,7 @@
             </div>
           </a>
           <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px">
-            ${leadCounts[i] > 0 ? `<a href="/project?id=${p.id}#leads" class="pill pill-success" style="text-decoration:none;font-size:11px">📋 ${leadCounts[i]} lead${leadCounts[i] === 1 ? '' : 's'}</a>` : ''}
+            ${p.leadCount > 0 ? `<a href="/project?id=${p.id}#leads" class="pill pill-success" style="text-decoration:none;font-size:11px">📋 ${p.leadCount} lead${p.leadCount === 1 ? '' : 's'}</a>` : ''}
             <span style="flex:1"></span>
             <button class="btn btn-sm btn-ghost" onclick="duplicate('${p.id}', event)">⎘ Duplicate</button>
           </div>

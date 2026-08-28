@@ -17,6 +17,7 @@
  */
 require('dotenv').config();
 
+const fs = require('fs');
 const express = require('express');
 // Patches Express to forward rejected promises from async route handlers to
 // the error middleware below. Without this (Express 4 doesn't do it natively),
@@ -194,6 +195,17 @@ app.use('/embed', embedLimiter, embedRoutes);
 // re-fetching on every page load, and the browser cheaply revalidates via
 // ETag/304 once it expires, so fixes propagate within the hour.
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
+
+// lipsync-sdk.min.js is gitignored and only exists once `npm run build`
+// (postinstall) has run terser successfully — a fresh clone/deploy where
+// that silently failed would otherwise 404 for every customer widget with
+// no signal anywhere. embed.html falls back to the unminified source on a
+// load error, but that's a browser-side patch for something that should
+// never have shipped broken — this boot check is the operator-facing signal.
+if (!fs.existsSync(path.join(PUBLIC_DIR, 'lipsync-sdk.min.js'))) {
+  logger.warn('public/lipsync-sdk.min.js is missing — did `npm run build` (terser) fail? embed.html will fall back to the unminified lipsync-sdk.js, but this should be fixed before deploying.');
+}
+
 app.use(express.static(PUBLIC_DIR, {
   maxAge: '1h',
   setHeaders: (res, filePath) => {
