@@ -789,24 +789,6 @@ router.post('/:publicId/log', validate(schemas.log), async (req, res) => {
 });
 
 /**
- * GET /embed/:publicId/capture-fields
- */
-router.get('/:publicId/capture-fields', async (req, res) => {
-  try {
-    const project = await findByPublicId(req.params.publicId);
-    if (!project) return res.status(404).json({ error: 'Chatbot not found' });
-
-    const fields = await db.findAll('captureFields', { projectId: project.id }, { orderBy: 'order', order: 'asc' });
-    res.json({
-      fields: fields.map(f => ({ id: f.id, label: f.label, key: f.key, type: f.type, options: f.options, required: f.required })),
-    });
-  } catch (e) {
-    logger.error({ err: e.message }, 'capture-fields error');
-    res.status(500).json({ error: 'Server error' });
-  }
-});
-
-/**
  * POST /embed/:publicId/lead
  */
 router.post('/:publicId/lead', validate(schemas.embedLead), async (req, res) => {

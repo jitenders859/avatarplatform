@@ -124,6 +124,7 @@ const API = {
   // Quiz questions
   listQuizQuestions:  (pid) => apiCall(`/api/projects/${pid}/quiz-questions`),
   createQuizQuestion: (pid, data) => apiCall(`/api/projects/${pid}/quiz-questions`, { method: 'POST', body: data }),
+  updateQuizQuestion: (pid, qid, patch) => apiCall(`/api/projects/${pid}/quiz-questions/${qid}`, { method: 'PATCH', body: patch }),
   deleteQuizQuestion: (pid, qid) => apiCall(`/api/projects/${pid}/quiz-questions/${qid}`, { method: 'DELETE' }),
   suggestDistractors: (pid, question, correctAnswer) => apiCall(`/api/projects/${pid}/quiz-questions/suggest-distractors`, { method: 'POST', body: { question, correctAnswer } }),
   importQuizCsv: (pid, file) => { const fd = new FormData(); fd.append('file', file); return apiCall(`/api/projects/${pid}/quiz-questions/import-csv`, { method: 'POST', body: fd }); },

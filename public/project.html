@@ -998,6 +998,7 @@
           </div>
           <span class="status-badge">${statusBadge(f.status, f.chunkCount, f.error, f.stage, f.pct)}</span>
           ${f.status === 'ready' ? `<button class="btn btn-sm btn-ghost" onclick="viewChunks('${f.id}',${JSON.stringify(escape(name))})">Chunks</button>` : ''}
+          ${f.kind !== 'url' ? `<button class="btn btn-sm btn-ghost" onclick="downloadOriginal('${f.id}',${JSON.stringify(escape(name))})" title="Download original">⬇</button>` : ''}
           <button class="btn btn-sm btn-ghost" onclick="reproc('${f.id}')">↻</button>
           <button class="btn btn-sm btn-danger" onclick="del('${f.id}')">×</button>
         </div>`;
@@ -1006,6 +1007,28 @@
 
   window.reproc = async (id) => { stopPoller(id); await API.reprocessFile(projectId, id); loadFiles(); };
   window.del    = async (id) => { if (!confirm('Delete this source?')) return; stopPoller(id); await API.deleteFile(projectId, id); loadFiles(); };
+
+  // The /blob endpoint requires our own Bearer auth (authRequired) and
+  // then 302s to a signed Supabase Storage URL, so a plain <a href> can't
+  // be used directly — this app's auth is a header-carried JWT, not a
+  // cookie, and a bare navigation wouldn't send it. fetch() carries the
+  // header, follows the redirect itself, and hands back the real file
+  // bytes to save via the same Blob+object-URL pattern used for CSV
+  // exports elsewhere on this page.
+  window.downloadOriginal = async (id, name) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/files/${id}/blob`, {
+        headers: { Authorization: `Bearer ${Auth.token}` },
+      });
+      if (!res.ok) throw new Error(res.status === 410 ? 'Original file is no longer available' : 'Download failed');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name || 'download';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { toast(e.message, 'error'); }
+  };
 
   // ── Chunks viewer ──────────────────────────────────────────────
   let chunksFileId = null;
@@ -1027,34 +1050,38 @@
     allChunks = [];
   };
 
+  let chunksSearchTimer = null;
   document.getElementById('chunks-search').addEventListener('input', () => {
-    renderChunks(allChunks);
+    clearTimeout(chunksSearchTimer);
+    chunksSearchTimer = setTimeout(reloadChunks, 300);
   });
 
+  // Server-side search (?search= on GET .../chunks) rather than loading
+  // every chunk into the page and filtering in-memory — large knowledge
+  // bases can have thousands of chunks per file.
   async function reloadChunks() {
     if (!chunksFileId) return;
+    const search = document.getElementById('chunks-search').value.trim();
     try {
-      const data = await API.listChunks(projectId, chunksFileId);
+      const data = await API.listChunks(projectId, chunksFileId, search);
       allChunks = data.chunks || [];
       renderChunks(allChunks);
     } catch (e) { toast(e.message, 'error'); }
   }
 
   function renderChunks(chunks) {
-    const search = document.getElementById('chunks-search').value.toLowerCase().trim();
-    const filtered = search ? chunks.filter(c => c.text.toLowerCase().includes(search)) : chunks;
     const listEl = document.getElementById('chunks-list');
     const emptyEl = document.getElementById('chunks-empty');
-    document.getElementById('chunks-count').textContent = `${filtered.length} of ${chunks.length} chunks`;
+    document.getElementById('chunks-count').textContent = `${chunks.length} chunk${chunks.length === 1 ? '' : 's'}`;
 
-    if (filtered.length === 0) {
+    if (chunks.length === 0) {
       listEl.innerHTML = '';
       emptyEl.style.display = 'block';
       return;
     }
     emptyEl.style.display = 'none';
 
-    listEl.innerHTML = filtered.map(c => {
+    listEl.innerHTML = chunks.map(c => {
       const headingBadge = c.heading ? `<span class="pill pill-info" style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(c.heading)}</span>` : '';
       const pageBadge = c.pageHint ? `<span class="pill" style="font-size:10px">p.${c.pageHint}</span>` : '';
       const embBadge = c.hasEmbedding
@@ -1492,7 +1519,10 @@
             </div>
             ${q.topicTag ? `<div class="muted text-sm mt-sm">Topic: <code style="font-size:11px">${escape(q.topicTag)}</code></div>` : ''}
           </div>
-          <button class="btn btn-sm btn-danger" onclick="deleteQuizQuestion('${q.id}')">×</button>
+          <div class="row gap-sm" style="flex-shrink:0">
+            <button class="btn btn-sm btn-ghost" onclick="editQuizQuestion('${q.id}')">Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteQuizQuestion('${q.id}')">×</button>
+          </div>
         </div>
       </div>`).join('');
   }
@@ -1506,13 +1536,35 @@
     } catch (e) { toast(e.message, 'error'); }
   };
 
+  let editingQuizId = null;
+
   window.openQuizForm = () => {
+    editingQuizId = null;
     document.getElementById('qz-question').value = '';
     document.getElementById('qz-topic').value = '';
     const optionsEl = document.getElementById('qz-options');
     optionsEl.innerHTML = '';
     for (let i = 0; i < 4; i++) addQuizOptionRow();
     document.getElementById('quiz-form-error').style.display = 'none';
+    document.getElementById('qz-save-btn').textContent = 'Save question';
+    const formCard = document.getElementById('quiz-form-card');
+    formCard.hidden = false;
+    formCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('qz-question').focus();
+  };
+
+  window.editQuizQuestion = (qid) => {
+    const q = quizQuestions.find(x => x.id === qid);
+    if (!q) return;
+    editingQuizId = qid;
+    document.getElementById('qz-question').value = q.question;
+    document.getElementById('qz-topic').value = q.topicTag || '';
+    const optionsEl = document.getElementById('qz-options');
+    optionsEl.innerHTML = '';
+    q.options.forEach(o => addQuizOptionRow(o));
+    [...optionsEl.querySelectorAll('input[type="radio"]')][q.correctIndex].checked = true;
+    document.getElementById('quiz-form-error').style.display = 'none';
+    document.getElementById('qz-save-btn').textContent = 'Save changes';
     const formCard = document.getElementById('quiz-form-card');
     formCard.hidden = false;
     formCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1521,6 +1573,7 @@
 
   window.closeQuizForm = () => {
     document.getElementById('quiz-form-card').hidden = true;
+    editingQuizId = null;
   };
 
   function addQuizOptionRow(value) {
@@ -1573,10 +1626,15 @@
     const btn = document.getElementById('qz-save-btn');
     btn.disabled = true;
     try {
-      await API.createQuizQuestion(projectId, { question, options, correctIndex, topicTag: topicTag || undefined });
+      if (editingQuizId) {
+        await API.updateQuizQuestion(projectId, editingQuizId, { question, options, correctIndex, topicTag: topicTag || null });
+        toast('Question updated', 'success');
+      } else {
+        await API.createQuizQuestion(projectId, { question, options, correctIndex, topicTag: topicTag || undefined });
+        toast('Question added', 'success');
+      }
       closeQuizForm();
       await loadQuizQuestions();
-      toast('Question added', 'success');
     } catch (e) {
       errEl.textContent = e.message;
       errEl.style.display = 'block';
