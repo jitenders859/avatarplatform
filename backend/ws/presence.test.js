@@ -72,3 +72,33 @@ test('sendToUser returns false when that user has no connected socket', () => {
   const delivered = presence.sendToUser('proj-1', 'nobody', { type: 'chat', text: 'hi' });
   assert.equal(delivered, false);
 });
+
+test('broadcastToProject keeps delivering to other sockets when one throws synchronously', () => {
+  presence._reset();
+  const sent = [];
+  const throwingSocket = { readyState: 1, OPEN: 1, send: () => { throw new Error('write failed'); } };
+  const okSocket = { readyState: 1, OPEN: 1, send: (msg) => sent.push(msg) };
+  presence.addDashboardSocket('proj-1', { ws: throwingSocket, userId: 'u1', userName: 'Sarah' });
+  presence.addDashboardSocket('proj-1', { ws: okSocket, userId: 'u2', userName: 'Tom' });
+  assert.doesNotThrow(() => presence.broadcastToProject('proj-1', { type: 'queue_update' }));
+  assert.equal(sent.length, 1);
+});
+
+test('removeDashboardSocket on a never-registered project/entry is a safe no-op', () => {
+  presence._reset();
+  const entry = { ws: { readyState: 1, OPEN: 1, send: () => {} }, userId: 'u1', userName: 'Sarah' };
+  assert.doesNotThrow(() => presence.removeDashboardSocket('proj-never-seen', entry));
+  assert.equal(presence.hasAvailability('proj-never-seen'), false);
+});
+
+test('sendToUser delivers to every entry matching userId, not just the first (multi-tab)', () => {
+  presence._reset();
+  const sent = [];
+  const makeSocket = (id) => ({ readyState: 1, OPEN: 1, send: (msg) => sent.push({ id, msg }) });
+  presence.addDashboardSocket('proj-1', { ws: makeSocket('tab-a'), userId: 'u1', userName: 'Sarah' });
+  presence.addDashboardSocket('proj-1', { ws: makeSocket('tab-b'), userId: 'u1', userName: 'Sarah' });
+  const delivered = presence.sendToUser('proj-1', 'u1', { type: 'chat', text: 'hi' });
+  assert.equal(delivered, true);
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent.map(s => s.id).sort(), ['tab-a', 'tab-b']);
+});
