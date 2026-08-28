@@ -90,8 +90,9 @@
             <div class="row" style="gap:8px">
               <input class="input" id="f-webhook-secret" readonly style="font-family:monospace;font-size:12px;flex:1" />
               <button class="btn btn-ghost btn-sm" id="copy-secret-btn">Copy</button>
+              <button class="btn btn-ghost btn-sm" id="rotate-secret-btn">Rotate</button>
             </div>
-            <span class="help">Verify requests with HMAC-SHA256 using this secret and the <code>X-Avatar-Signature</code> header.</span>
+            <span class="help">Verify requests with HMAC-SHA256 using this secret and the <code>X-Avatar-Signature</code> header. Rotating immediately invalidates the old one.</span>
           </div>
           <div class="row" style="gap:8px">
             <button class="btn btn-primary" id="save-settings">Save changes</button>
@@ -99,6 +100,14 @@
           </div>
           <div id="webhook-test-result" class="muted text-sm" style="display:none"></div>
         </div>
+      </div>
+
+      <div class="card mt-md" id="webhook-deliveries-card" hidden>
+        <div class="card-header">
+          <h3 class="card-title">Recent webhook deliveries</h3>
+          <button class="btn btn-ghost btn-sm" id="refresh-deliveries-btn">Refresh</button>
+        </div>
+        <div id="webhook-deliveries-list" class="col gap-sm"></div>
       </div>
 
       <div class="card mt-md" id="team-card" hidden>
@@ -903,6 +912,8 @@
         document.getElementById('f-webhook-secret-row').hidden = false;
         document.getElementById('test-webhook-btn').hidden = !p.webhookUrl;
       }
+      document.getElementById('webhook-deliveries-card').hidden = !p.webhookUrl;
+      if (p.webhookUrl && isOwner !== false) loadWebhookDeliveries();
 
       // Embed snippets
       const origin = location.origin;
@@ -1029,6 +1040,38 @@
     } catch (e) { toast(e.message, 'error'); }
     finally { btn.disabled = false; btn.textContent = 'Send test event'; }
   });
+
+  document.getElementById('rotate-secret-btn').addEventListener('click', async () => {
+    if (!confirm('Rotate the webhook secret? The old secret stops working immediately — update it on your receiving endpoint right after.')) return;
+    try {
+      const { webhookSecret } = await API.rotateWebhookSecret(projectId);
+      document.getElementById('f-webhook-secret').value = webhookSecret;
+      project.webhookSecret = webhookSecret;
+      toast('Webhook secret rotated', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
+  const DELIVERY_STATUS_LABEL = { success: '✓ Delivered', failed: '✗ Failed', pending: '⏳ Retrying' };
+  async function loadWebhookDeliveries() {
+    try {
+      const { deliveries } = await API.webhookDeliveries(projectId);
+      const list = document.getElementById('webhook-deliveries-list');
+      if (deliveries.length === 0) {
+        list.innerHTML = '<p class="muted text-sm">No deliveries yet — they\'ll show up here after the first visitor message.</p>';
+        return;
+      }
+      list.innerHTML = deliveries.map(d => `
+        <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <span class="pill ${d.status === 'success' ? 'pill-success' : d.status === 'failed' ? 'pill-danger' : 'pill-info'}" style="flex-shrink:0">${DELIVERY_STATUS_LABEL[d.status] || d.status}</span>
+          <div style="flex:1;min-width:0">
+            <div class="text-sm">${escape(d.eventType)} · attempt ${d.attempt}${d.responseStatus ? ` · HTTP ${d.responseStatus}` : ''}</div>
+            ${d.error ? `<div class="muted text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(d.error)}</div>` : ''}
+          </div>
+          <div class="muted text-sm" style="white-space:nowrap;flex-shrink:0">${new Date(d.createdAt).toLocaleString()}</div>
+        </div>`).join('');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+  document.getElementById('refresh-deliveries-btn').addEventListener('click', loadWebhookDeliveries);
 
   // ── Save widget ──
   document.getElementById('save-widget').addEventListener('click', async () => {

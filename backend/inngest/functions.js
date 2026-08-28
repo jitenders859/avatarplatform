@@ -10,6 +10,7 @@
 const inngest = require('./client');
 const db = require('../db');
 const { processFile } = require('../services/process');
+const { attemptDelivery } = require('../services/webhookDelivery');
 const logger = require('../logger').child({ module: 'inngest' });
 
 // The whole extract→chunk→embed→save pipeline runs as one step rather than
@@ -34,4 +35,16 @@ const processFileJob = inngest.createFunction(
   }
 );
 
-module.exports = { functions: [processFileJob] };
+// step.sleep is a durable delay — unlike setTimeout, it survives a
+// serverless freeze between invocations, which is the whole reason this
+// path exists (see services/webhookDelivery.js's PROCESS_MODE branch).
+const webhookRetryJob = inngest.createFunction(
+  { id: 'webhook-retry', triggers: { event: 'webhook/retry' } },
+  async ({ event, step }) => {
+    const { deliveryId, delayMs } = event.data;
+    if (delayMs > 0) await step.sleep('backoff', delayMs);
+    await step.run('attempt', () => attemptDelivery(deliveryId));
+  }
+);
+
+module.exports = { functions: [processFileJob, webhookRetryJob] };

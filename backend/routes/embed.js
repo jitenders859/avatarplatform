@@ -23,6 +23,7 @@ const logger = require('../logger').child({ module: 'embed' });
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { getRateLimitStore } = require('../services/rateLimitStore');
 const { safeFetch } = require('../services/safeFetch');
+const { queueWebhookDelivery } = require('../services/webhookDelivery');
 const router = express.Router();
 
 // Owners can override the default "usage limit reached" copy per project
@@ -773,26 +774,15 @@ router.post('/:publicId/log', validate(schemas.log), async (req, res) => {
     } catch (_) { /* best effort */ }
 
     if (project.webhookUrl) {
-      setImmediate(async () => {
-        try {
-          const payload = JSON.stringify({
-            event: 'message',
-            publicId: project.publicId,
-            sessionId: sid,
-            role,
-            text: String(text).slice(0, 2000),
-            timestamp: Date.now(),
-          });
-          const sig = 'sha256=' + crypto.createHmac('sha256', project.webhookSecret || '').update(payload).digest('hex');
-          await safeFetch(project.webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Avatar-Signature': sig },
-            body: payload,
-            timeout: 5000,
-          });
-        } catch (e) {
-          logger.warn({ err: e.message }, 'webhook delivery failed');
-        }
+      setImmediate(() => {
+        queueWebhookDelivery(project, 'message', {
+          event: 'message',
+          publicId: project.publicId,
+          sessionId: sid,
+          role,
+          text: String(text).slice(0, 2000),
+          timestamp: Date.now(),
+        }).catch((e) => logger.warn({ err: e.message }, 'webhook delivery failed to queue'));
       });
     }
   }

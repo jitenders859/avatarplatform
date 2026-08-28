@@ -370,6 +370,39 @@ router.post('/:id/webhook/test', authRequired, async (req, res) => {
   }
 });
 
+// Recent attempts logged by services/webhookDelivery.js — see
+// improvement-prompts.md Prompt F4 item 6. Most-recent-first, capped so a
+// chatty webhook (one row per user message) can't return an unbounded page.
+router.get('/:id/webhook/deliveries', authRequired, async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const deliveries = await db.query(
+    `SELECT id, event_type, status, attempt, response_status, error, created_at, delivered_at
+       FROM webhook_deliveries
+      WHERE project_id = $1
+      ORDER BY created_at DESC
+      LIMIT 50`,
+    [project.id]
+  );
+  res.json({ deliveries });
+});
+
+// Rotating invalidates the old secret immediately — any in-flight
+// signature verification on the receiving end using the old value will
+// fail until the owner updates it there too. Deliberately synchronous
+// (not soft-expired) since there's no way to signal "old secret still
+// valid for N minutes" to a receiver that doesn't know this API.
+router.post('/:id/webhook/rotate-secret', authRequired, async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const webhookSecret = crypto.randomBytes(32).toString('hex');
+  const updated = await db.update('projects', project.id, { webhookSecret });
+  invalidateProjectCache(project.publicId);
+  res.json({ webhookSecret: updated.webhookSecret });
+});
+
 router.post('/:id/duplicate', authRequired, async (req, res) => {
   const source = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
   if (!source) return res.status(404).json({ error: 'Project not found' });

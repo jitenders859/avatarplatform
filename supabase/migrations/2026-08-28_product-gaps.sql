@@ -55,6 +55,9 @@ CREATE INDEX IF NOT EXISTS idx_project_members_user    ON project_members(user_i
 -- routes/embed.js's /log handler) is now logged here instead of being
 -- fire-and-forget with only a server-side log line on failure. Retried
 -- with backoff via Inngest (backend/inngest/functions.js).
+-- updated_at exists purely because db.js's update() unconditionally stamps
+-- it on every UPDATE regardless of table — every table ever passed to
+-- db.update() needs this column or the query 500s.
 CREATE TABLE IF NOT EXISTS webhook_deliveries (
   id                UUID    PRIMARY KEY,
   project_id        UUID    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -65,6 +68,8 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
   response_status   INTEGER,
   error             TEXT,
   created_at        BIGINT  NOT NULL,
-  delivered_at      BIGINT
+  delivered_at      BIGINT,
+  updated_at        BIGINT
 );
+ALTER TABLE webhook_deliveries ADD COLUMN IF NOT EXISTS updated_at BIGINT;
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_project ON webhook_deliveries(project_id, created_at DESC);
