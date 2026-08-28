@@ -68,6 +68,7 @@ const adminHealthRoutes = require('./routes/adminHealth');
 const adminSessionsRoutes = require('./routes/adminSessions');
 const adminFeatureFlagsRoutes = require('./routes/adminFeatureFlags');
 const adminEmailTemplatesRoutes = require('./routes/adminEmailTemplates');
+const { attach: attachHandoffWs } = require('./ws/handoff');
 const inngestClient = require('./inngest/client');
 const { functions: inngestFunctions } = require('./inngest/functions');
 const { checkProcessModeConfigured } = require('./services/processMode');
@@ -344,8 +345,11 @@ if (!process.env.VERCEL) {
     }
   });
 
+  const handoffWss = attachHandoffWs(server);
+
   function shutdown(signal) {
     logger.info({ signal }, 'shutdown received');
+    for (const client of handoffWss.clients) client.close(1001, 'Server restarting');
     server.close(() => {
       logger.info('server closed');
       pool.end().catch((err) => logger.warn({ err }, 'error closing pg pool')).finally(() => process.exit(0));
