@@ -56,6 +56,9 @@
             <span id="capture-pill" style="display:none;margin-left:8px;font-size:10px;background:rgba(var(--text-rgb),.15);border-radius:10px;padding:2px 7px;letter-spacing:.02em"></span>
           </div>
         </div>
+        <button class="icon-btn" id="handoff-btn" title="Talk to a human" aria-label="Talk to a human" hidden type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        </button>
         <button class="icon-btn" id="fullscreen-btn" title="Full screen" aria-label="Full screen" hidden>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/></svg>
         </button>
@@ -148,6 +151,9 @@
   let fullscreenActive = false;
   let avatarCanvas = null;   // single Rive canvas element shuttled between slots
   let textOnly = false;      // true when no voice key (server answers via /ask)
+  let handoffWs = null;
+  let handoffState = 'none'; // 'none' | 'connecting' | 'waiting' | 'active'
+  let handoffReconnectAttempts = 0;
 
   const AVATAR_SIZES = { small: 80, medium: 120, large: 160, xlarge: 200 };
 
@@ -171,6 +177,7 @@
   const progressBtn       = document.getElementById('progress-btn');
   const textInput         = document.getElementById('text-input');
   const minimizeBtn       = document.getElementById('minimize-btn');
+  const handoffBtn         = document.getElementById('handoff-btn');
   const fullscreenBtn     = document.getElementById('fullscreen-btn');
   const bootOverlay       = document.getElementById('boot-overlay');
   const branding          = document.getElementById('branding');
@@ -222,6 +229,10 @@
         fullscreenBtn.hidden = false;
         updateFullscreenIcon();
       }
+    }
+
+    if (config.handoffEnabled) {
+      handoffBtn.hidden = false;
     }
 
     // Avatar placement settings
@@ -306,7 +317,8 @@
     const baseSystemPrompt = (config.project.systemPrompt || '')
       + buildKnowledgeBaseToolInstructions()
       + buildCaptureInstructions(captureFields)
-      + buildQuickReplyInstructions(config.project.showQuickReplies);
+      + buildQuickReplyInstructions(config.project.showQuickReplies)
+      + buildHandoffInstructions(config.handoffEnabled);
     const systemPromptWithGreeting = welcomeMessage
       ? `${baseSystemPrompt}
 
@@ -435,6 +447,16 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         })));
       }
       notifyParent({ type: 'response', sessionId, answer: data.answer || '', sources: data.sources || [] });
+      if (data.offerHandoff && config.handoffEnabled) {
+        const el = document.createElement('div');
+        el.className = 'msg system';
+        el.style.cssText = 'align-self:stretch;max-width:100%;background:var(--bot-bg);border-radius:12px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;gap:8px';
+        el.innerHTML = `<span style="font-size:13px">Want me to connect you with a human?</span><button type="button" style="padding:6px 12px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:12px;font-weight:600;cursor:pointer">Yes, please</button>`;
+        el.querySelector('button').addEventListener('click', () => { el.remove(); requestHandoff(); });
+        messagesEl.appendChild(el);
+        requestAnimationFrame(() => el.classList.add('visible'));
+        scrollToBottom();
+      }
       // No logTurn here: /ask already persists both turns + bumped the
       // message counter server-side; hitting /log too would double-count.
       // The ap:message/ap:response host events above are independent of
@@ -445,6 +467,124 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       sendBtn.disabled = false;
       statusText.textContent = 'Text mode';
     }
+  }
+
+  // ── Human handoff ────────────────────────────────────────────
+  function wsUrl(path) {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${proto}://${location.host}${path}`;
+  }
+
+  function requestHandoff() {
+    if (handoffState !== 'none') return;
+    if (avatar && !textOnly) {
+      avatar.disconnect();
+      document.getElementById('avatar-row').style.display = 'none';
+    }
+    handoffState = 'connecting';
+    addMessage('bot', 'Connecting you with a team member…', { welcome: false });
+    const url = sessionId
+      ? wsUrl(`/ws/embed/${publicId}?sessionId=${encodeURIComponent(sessionId)}`)
+      : wsUrl(`/ws/embed/${publicId}`);
+    openHandoffSocket(url);
+  }
+
+  function openHandoffSocket(url) {
+    handoffWs = new WebSocket(url);
+
+    handoffWs.addEventListener('open', () => {
+      handoffReconnectAttempts = 0;
+      if (handoffState === 'connecting') {
+        handoffWs.send(JSON.stringify({ type: 'request_handoff' }));
+      }
+    });
+
+    handoffWs.addEventListener('message', (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      handleHandoffMessage(msg);
+    });
+
+    handoffWs.addEventListener('close', () => {
+      if (handoffState === 'active' || handoffState === 'waiting') {
+        if (handoffReconnectAttempts < 5) {
+          const delay = Math.min(1000 * Math.pow(2, handoffReconnectAttempts++), 15000);
+          setTimeout(() => openHandoffSocket(wsUrl(`/ws/embed/${publicId}?sessionId=${encodeURIComponent(sessionId)}`)), delay);
+        } else {
+          addMessage('system', 'Connection lost — please refresh to reconnect.');
+        }
+      }
+    });
+  }
+
+  function handleHandoffMessage(msg) {
+    if (msg.type === 'connected') {
+      sessionId = msg.sessionId;
+      return;
+    }
+    if (msg.type === 'waiting') {
+      handoffState = 'waiting';
+      statusText.textContent = 'Waiting for a team member…';
+      return;
+    }
+    if (msg.type === 'no_one_available') {
+      handoffState = 'none';
+      showHandoffCaptureForm();
+      return;
+    }
+    if (msg.type === 'claimed') {
+      handoffState = 'active';
+      statusText.textContent = `Chatting with ${msg.byName}`;
+      addMessage('system', `You're now chatting with ${msg.byName}.`);
+      return;
+    }
+    if (msg.type === 'chat' && msg.from === 'human') {
+      const el = addMessage('human', msg.text);
+      el.dataset.byName = msg.byName || '';
+      return;
+    }
+    if (msg.type === 'resolved') {
+      handoffState = 'none';
+      statusText.textContent = textOnly ? 'Text mode' : 'Online';
+      addMessage('system', "You're back with the AI assistant.");
+    }
+  }
+
+  function sendHandoffChat(text) {
+    if (!handoffWs || handoffWs.readyState !== WebSocket.OPEN) return;
+    handoffWs.send(JSON.stringify({ type: 'chat', text }));
+    addMessage('user', text);
+  }
+
+  function showHandoffCaptureForm() {
+    const el = document.createElement('div');
+    el.className = 'msg system';
+    el.style.cssText = 'align-self:stretch;max-width:100%;text-align:left;background:var(--bot-bg);border-radius:12px;padding:12px';
+    el.innerHTML = `
+      <p style="margin:0 0 8px;font-size:13px">No one's available right now — leave your info and we'll follow up.</p>
+      <input type="text" placeholder="Your name" class="input" id="handoff-capture-name" style="width:100%;margin-bottom:6px;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:13px" />
+      <input type="email" placeholder="Your email" class="input" id="handoff-capture-email" style="width:100%;margin-bottom:8px;padding:8px;border-radius:8px;border:1px solid var(--border);font-size:13px" />
+      <button type="button" id="handoff-capture-submit" style="width:100%;padding:8px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-size:13px;font-weight:600;cursor:pointer">Send</button>
+    `;
+    messagesEl.appendChild(el);
+    requestAnimationFrame(() => el.classList.add('visible'));
+    scrollToBottom();
+
+    document.getElementById('handoff-capture-submit').addEventListener('click', async () => {
+      const name = document.getElementById('handoff-capture-name').value.trim();
+      const email = document.getElementById('handoff-capture-email').value.trim();
+      if (!email) return;
+      try {
+        await fetch(`/embed/${publicId}/lead`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId, data: { name, email }, complete: true }),
+        });
+        el.innerHTML = '<p style="margin:0;font-size:13px">Thanks — we\'ll be in touch.</p>';
+      } catch {
+        el.querySelector('p').textContent = 'Something went wrong — please try again.';
+      }
+    });
   }
 
   function waitForCanvas(cb, attempts = 60) {
@@ -539,6 +679,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   function sendMessage(text) {
     text = (text || '').trim();
     if (!text) return;
+    if (handoffState === 'active') { sendHandoffChat(text); textInput.value = ''; textInput.style.height = 'auto'; return; }
     if (textOnly) return sendTextOnly(text);
 
     addMessage('user', text);
@@ -684,9 +825,18 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   // ── 4. Streaming bot replies ────────────────────────────────
   let botBuffer = '';
   let botFlushTimer = null;
+  const HANDOFF_TAG_RE = /\[\[REQUEST_HUMAN\]\]/g;
+  function extractHandoffTag(text) {
+    let requested = false;
+    const clean = text.replace(HANDOFF_TAG_RE, () => { requested = true; return ''; });
+    return { clean, requested };
+  }
+
   function handleBotChunk(text) {
     const { clean: cleanCapture, tags } = extractCaptureTags(text);
-    const { clean, options } = extractOptionsTag(cleanCapture);
+    const { clean: cleanOptions, options } = extractOptionsTag(cleanCapture);
+    const { clean, requested: handoffRequested } = extractHandoffTag(cleanOptions);
+    if (handoffRequested && config.handoffEnabled) requestHandoff();
     if (tags.length) {
       for (const { key, value } of tags) sessionCapture[key] = value;
       scheduleSaveLead();
@@ -1228,6 +1378,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
   launcher.addEventListener('click', openPanel);
   minimizeBtn.addEventListener('click', () => closePanel());
+  handoffBtn.addEventListener('click', () => requestHandoff());
   fullscreenBtn.addEventListener('click', () => {
     fullscreenActive = !fullscreenActive;
     root.dataset.fullscreen = fullscreenActive ? '1' : '0';
@@ -1396,6 +1547,13 @@ Always tag a value as soon as you receive it. If the visitor provides multiple v
 
 QUICK REPLY INSTRUCTIONS: When you offer the user a small, closed set of choices to pick from (a menu of next steps, an either/or decision, a short list of topics) — and only then — append a line in this exact format after your response: [[OPTIONS:Choice one|Choice two|Choice three]]
 Use 2 to 5 short options. Do not mention the tag to the user — it will be stripped before display and shown as tappable buttons. Do not use this for open-ended questions or when collecting free-text information.`;
+  }
+
+  function buildHandoffInstructions(enabled) {
+    if (!enabled) return '';
+    return `
+
+HUMAN HANDOFF: If you cannot help the visitor after a genuine effort, or they explicitly ask for a person/human/representative, say so naturally and append the exact tag [[REQUEST_HUMAN]] on its own line. Do not mention the tag to the user — it will be stripped before display.`;
   }
 
   const OPTIONS_TAG_RE = /\[\[OPTIONS:([^\]]+)\]\]/g;

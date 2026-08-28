@@ -276,6 +276,23 @@ body.mode-inline .launcher { display: none; }
   border-bottom-left-radius: 4px;
 }
 .msg.interim { opacity: .65; font-style: italic; }
+.msg.human {
+  align-self: flex-start;
+  background: var(--bot-bg);
+  color: var(--text);
+  border-bottom-left-radius: 4px;
+  border-left: 3px solid var(--accent);
+}
+.msg.system {
+  align-self: center;
+  background: transparent;
+  color: var(--text-dim);
+  opacity: .8;
+  font-size: 12px;
+  text-align: center;
+  padding: 4px 10px;
+  max-width: 100%;
+}
 
 .msg.image-msg { padding: 6px; background: transparent; }
 .image-thumb {
