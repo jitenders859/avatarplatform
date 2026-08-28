@@ -72,6 +72,8 @@ const TABLE_MAP = {
   flashcardReviews: 'flashcard_reviews',
   videoResources: 'video_resources',
   pageImages: 'page_images',
+  projectMembers: 'project_members',
+  webhookDeliveries: 'webhook_deliveries',
 };
 const tbl = name => TABLE_MAP[name] || name;
 

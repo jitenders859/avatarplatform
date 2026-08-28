@@ -100,6 +100,24 @@
           <div id="webhook-test-result" class="muted text-sm" style="display:none"></div>
         </div>
       </div>
+
+      <div class="card mt-md" id="team-card" hidden>
+        <div class="card-header">
+          <h3 class="card-title">Team members</h3>
+          <span class="muted text-sm">Business plan</span>
+        </div>
+        <p class="muted text-sm mb-md">Give teammates read-only access to this chatbot's conversations and analytics.</p>
+        <div id="team-upgrade-note" style="display:none">
+          <p class="text-sm">Team members are a Business-plan feature. <a href="/billing">Upgrade to Business →</a></p>
+        </div>
+        <div id="team-body">
+          <form id="invite-form" class="row" style="gap:8px;margin-bottom:16px">
+            <input class="input" id="invite-email" type="email" placeholder="teammate@example.com" style="flex:1" required />
+            <button type="submit" class="btn btn-primary btn-sm">Invite</button>
+          </form>
+          <div id="team-list" class="col gap-sm"></div>
+        </div>
+      </div>
     </section>
 
     <!-- ── Knowledge tab ──────────────────────────────────── -->
@@ -779,10 +797,22 @@
 
   async function load() {
     try {
-      const [{ project: p }, { characters: chars }, sub] = await Promise.all([
+      const [{ project: p, isOwner }, { characters: chars }, sub] = await Promise.all([
         API.getProject(projectId), API.characters(), API.subscription().catch(() => null),
       ]);
       project = p; characters = chars;
+
+      // Team members get a read-only view scoped to Conversations +
+      // Analytics — everything else (settings, delete, embed snippets,
+      // webhook secrets, capture/quiz/etc. config) stays owner-only.
+      if (isOwner === false) {
+        document.getElementById('delete-btn').hidden = true;
+        const allowedTabs = new Set(['analytics', 'conversations']);
+        allTabs.forEach(t => { if (!allowedTabs.has(t.dataset.tab)) t.hidden = true; });
+        activateTab(document.querySelector('.tab[data-tab="analytics"]'));
+      } else {
+        document.getElementById('team-card').hidden = false;
+      }
 
       document.getElementById('title').textContent = p.name;
       document.getElementById('public-id').textContent = `Public ID: ${p.publicId}`;
@@ -863,10 +893,67 @@
         `<iframe src="${link}" allow="microphone" style="width:100%;height:600px;border:0"></iframe>`;
       document.getElementById('snippet-link').textContent = link;
       [...document.querySelectorAll('.code')].forEach(addCopyButton);
+
+      if (isOwner !== false) loadTeam(sub);
     } catch (e) {
       toast(e.message, 'error');
     }
   }
+
+  async function loadTeam(sub) {
+    const isBusiness = !!sub && sub.plan.id === 'business';
+    document.getElementById('team-upgrade-note').style.display = isBusiness ? 'none' : 'block';
+    document.getElementById('team-body').style.display = isBusiness ? '' : 'none';
+    if (!isBusiness) return;
+    try {
+      const { members } = await API.listMembers(projectId);
+      renderTeam(members);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function renderTeam(members) {
+    const list = document.getElementById('team-list');
+    if (members.length === 0) {
+      list.innerHTML = '<p class="muted text-sm">No team members yet — invite a teammate above.</p>';
+      return;
+    }
+    list.innerHTML = members.map(m => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="min-width:0">
+          <div style="font-size:13px">${escape(m.name || m.email)}</div>
+          <div class="muted text-sm">${escape(m.email)}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" data-member-id="${m.id}">Remove</button>
+      </div>`).join('');
+    list.querySelectorAll('button[data-member-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remove this team member? They will lose access to this chatbot.')) return;
+        try {
+          await API.removeMember(projectId, btn.dataset.memberId);
+          toast('Team member removed', 'success');
+          const { members: fresh } = await API.listMembers(projectId);
+          renderTeam(fresh);
+        } catch (e) { toast(e.message, 'error'); }
+      });
+    });
+  }
+
+  document.getElementById('invite-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('invite-email');
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    try {
+      await API.inviteMember(projectId, input.value.trim());
+      input.value = '';
+      toast('Team member added', 'success');
+      const { members } = await API.listMembers(projectId);
+      renderTeam(members);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    btn.disabled = false;
+  });
 
   function addCopyButton(el) {
     const btn = document.createElement('button');

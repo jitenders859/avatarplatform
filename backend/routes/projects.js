@@ -6,6 +6,8 @@ const { authRequired, optionalAuth } = require('../middleware/auth');
 const { invalidateProjectCache } = require('../cache');
 const { safeFetch, assertSafeUrl } = require('../services/safeFetch');
 const { validate, schemas } = require('../middleware/validate');
+const { userPlanId } = require('../services/usage');
+const { sendTeamInviteEmail } = require('../services/email');
 const storage = require('../services/storage');
 
 const router = express.Router();
@@ -123,10 +125,87 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
   res.json({ project });
 });
 
+// Team members (project_members) get read-only access to a project's
+// Conversations + Analytics data — see improvement-prompts.md Prompt F4
+// item 3. Deliberately scoped narrow (read-only, two tabs) rather than
+// full co-editing, so this is the only place that needs to know about
+// membership: everything else (settings, knowledge, leads, billing-ish
+// actions) stays owner-only via the existing `userId: req.user.id` filter.
+async function findProjectForRead(id, userId) {
+  const owned = await db.findOne('projects', { id, userId });
+  if (owned) return { project: owned, isOwner: true };
+  const project = await db.findOne('projects', { id });
+  if (!project) return null;
+  const member = await db.findOne('projectMembers', { projectId: id, userId });
+  if (!member) return null;
+  return { project, isOwner: false };
+}
+
 router.get('/:id', authRequired, async (req, res) => {
+  const result = await findProjectForRead(req.params.id, req.user.id);
+  if (!result) return res.status(404).json({ error: 'Project not found' });
+  if (result.isOwner) return res.json({ project: result.project, isOwner: true });
+  // Members never see the webhook secret — they can't manage the webhook,
+  // so there's no reason for it to leave the server for their session.
+  const { webhookSecret: _ws, ...readOnlyProject } = result.project;
+  res.json({ project: readOnlyProject, isOwner: false });
+});
+
+router.get('/:id/members', authRequired, async (req, res) => {
   const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  res.json({ project });
+  const members = await db.query(
+    `SELECT pm.id, pm.user_id, pm.created_at, u.email, u.name
+       FROM project_members pm JOIN users u ON u.id = pm.user_id
+      WHERE pm.project_id = $1
+      ORDER BY pm.created_at ASC`,
+    [project.id]
+  );
+  res.json({ members });
+});
+
+// Team members are a Business-plan feature (see plans.js) — the invite
+// itself is gated here rather than hiding the whole endpoint, so an
+// existing member list still loads (and can be pruned) if an owner
+// downgrades off Business.
+router.post('/:id/members', authRequired, validate(schemas.inviteMember), async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const planId = await userPlanId(req.user.id);
+  if (planId !== 'business') {
+    return res.status(403).json({ error: 'Team members require the Business plan.', code: 'BUSINESS_PLAN_REQUIRED' });
+  }
+
+  const { email } = req.body;
+  const invitee = await db.findOne('users', { email });
+  if (!invitee) {
+    return res.status(404).json({ error: "No AvatarPlatform account found for that email — ask them to sign up first, then invite them." });
+  }
+  if (invitee.id === req.user.id) {
+    return res.status(400).json({ error: "You can't invite yourself." });
+  }
+
+  const existing = await db.findOne('projectMembers', { projectId: project.id, userId: invitee.id });
+  if (existing) return res.status(409).json({ error: 'Already a member of this chatbot.' });
+
+  const member = await db.insert('projectMembers', {
+    id: uuid(),
+    projectId: project.id,
+    userId: invitee.id,
+    invitedBy: req.user.id,
+    createdAt: Date.now(),
+  });
+  setImmediate(() => sendTeamInviteEmail(invitee.email, project.name, req.user.email).catch(() => {}));
+  res.json({ member: { ...member, email: invitee.email, name: invitee.name } });
+});
+
+router.delete('/:id/members/:memberId', authRequired, async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const removed = await db.remove('projectMembers', { id: req.params.memberId, projectId: project.id });
+  if (!removed) return res.status(404).json({ error: 'Member not found' });
+  res.json({ ok: true });
 });
 
 router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, res) => {
@@ -169,8 +248,9 @@ router.delete('/:id', authRequired, async (req, res) => {
 });
 
 router.get('/:id/sessions', authRequired, async (req, res) => {
-  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
-  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const result = await findProjectForRead(req.params.id, req.user.id);
+  if (!result) return res.status(404).json({ error: 'Project not found' });
+  const { project } = result;
 
   // Use SQL to avoid N+1 message-count queries
   const sessions = await db.query(
@@ -192,8 +272,9 @@ router.get('/:id/sessions', authRequired, async (req, res) => {
 });
 
 router.get('/:id/sessions/:sessionId', authRequired, async (req, res) => {
-  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
-  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const result = await findProjectForRead(req.params.id, req.user.id);
+  if (!result) return res.status(404).json({ error: 'Project not found' });
+  const { project } = result;
 
   const session = await db.findOne('sessions', { id: req.params.sessionId, projectId: project.id });
   if (!session) return res.status(404).json({ error: 'Session not found' });

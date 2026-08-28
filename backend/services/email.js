@@ -99,6 +99,32 @@ async function sendVerificationEmail(toEmail, verifyToken) {
 }
 
 /**
+ * Notify a user they've been added as a read-only team member on a
+ * project. The invitee must already have an AvatarPlatform account (the
+ * project_members row is created up front, not as a pending invite —
+ * see routes/projects.js), so this just points them at the dashboard
+ * rather than a signup/accept flow.
+ * @param {string} toEmail
+ * @param {string} projectName
+ * @param {string} inviterEmail
+ */
+async function sendTeamInviteEmail(toEmail, projectName, inviterEmail) {
+  await send({
+    to: toEmail,
+    subject: `You've been added to "${projectName}" on AvatarPlatform`,
+    text: `${inviterEmail} added you as a team member on "${projectName}". You can now view its conversations and analytics from your dashboard: ${BASE_URL()}/dashboard`,
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+        <h2 style="margin:0 0 16px;font-size:20px">You've been added to a chatbot</h2>
+        <p style="color:#555;line-height:1.6"><strong>${escapeHtml(inviterEmail)}</strong> added you as a team member on <strong>${escapeHtml(projectName)}</strong>. You can view its conversations and analytics from your dashboard.</p>
+        <a href="${BASE_URL()}/dashboard" style="display:inline-block;margin:24px 0;padding:12px 24px;background:#7c6af5;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Go to dashboard →</a>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+        <p style="color:#bbb;font-size:11px">AvatarPlatform · <a href="${BASE_URL()}" style="color:#bbb">${BASE_URL()}</a></p>
+      </div>`,
+  });
+}
+
+/**
  * Send a welcome email after signup.
  * @param {string} toEmail
  * @param {string} name
@@ -146,4 +172,4 @@ async function sendContactMessage({ name, email, message }) {
   });
 }
 
-module.exports = { sendPasswordReset, sendWelcome, sendContactMessage, sendVerificationEmail };
+module.exports = { sendPasswordReset, sendWelcome, sendContactMessage, sendVerificationEmail, sendTeamInviteEmail };

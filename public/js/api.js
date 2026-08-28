@@ -123,6 +123,11 @@ const API = {
   listSessions:  (pid) => apiCall(`/api/projects/${pid}/sessions`),
   getSession:    (pid, sid) => apiCall(`/api/projects/${pid}/sessions/${sid}`),
 
+  // Team members
+  listMembers:   (pid) => apiCall(`/api/projects/${pid}/members`),
+  inviteMember:  (pid, email) => apiCall(`/api/projects/${pid}/members`, { method: 'POST', body: { email } }),
+  removeMember:  (pid, memberId) => apiCall(`/api/projects/${pid}/members/${memberId}`, { method: 'DELETE' }),
+
   // Capture fields
   listCaptureFields:   (pid) => apiCall(`/api/projects/${pid}/capture`),
   createCaptureField:  (pid, data) => apiCall(`/api/projects/${pid}/capture`, { method: 'POST', body: data }),

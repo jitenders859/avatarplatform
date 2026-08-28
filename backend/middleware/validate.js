@@ -73,6 +73,10 @@ const schemas = {
     voice,
   }),
 
+  inviteMember: z.object({
+    email: z.string().trim().toLowerCase().email('A valid email is required'),
+  }),
+
   // All fields optional — this backs a PATCH where any subset may be sent.
   // Cross-field checks that need DB state (characterId existence,
   // capabilityTier's plan_tiers lookup for a custom tier, webhookUrl's SSRF

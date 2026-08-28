@@ -8,6 +8,18 @@ const { authRequired } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Team members (project_members) get read-only access to a project's
+// analytics — see improvement-prompts.md Prompt F4 item 3 and the same
+// helper in routes/projects.js.
+async function findProjectForRead(id, userId) {
+  const owned = await db.findOne('projects', { id, userId });
+  if (owned) return owned;
+  const project = await db.findOne('projects', { id });
+  if (!project) return null;
+  const member = await db.findOne('projectMembers', { projectId: id, userId });
+  return member ? project : null;
+}
+
 function buildDailyBuckets(msgRows, sessRows) {
   const now = Date.now();
   const DAY = 24 * 60 * 60 * 1000;
@@ -122,7 +134,7 @@ router.get('/overview', authRequired, async (req, res) => {
 });
 
 router.get('/project/:id', authRequired, async (req, res) => {
-  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  const project = await findProjectForRead(req.params.id, req.user.id);
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -214,7 +226,7 @@ router.get('/project/:id', authRequired, async (req, res) => {
  * includes anonymous (session-only) activity too.
  */
 router.get('/project/:id/progress', authRequired, async (req, res) => {
-  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  const project = await findProjectForRead(req.params.id, req.user.id);
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   const [learnerRows, anonCounts, topicRows] = await Promise.all([
