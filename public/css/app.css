@@ -478,3 +478,18 @@ h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
 [dir="rtl"] .lang-switch-item { text-align: right; }
 .lang-switch-item:hover { background: var(--bg-3); }
 .lang-switch-item.active { background: var(--accent-soft); color: var(--accent-strong); font-weight: 600; }
+
+/* ── Reduced motion ───────────────────────────────────────────
+   Collapsed to effectively instant rather than removed outright — modal
+   open/close and similar rely on the same transition properties, just
+   sped up past the point of being noticeable. See css/embed.css for the
+   widget's own copy of this (it's a separate stylesheet, loaded by a
+   separate document — the iframe — so there's no single place to share it
+   from without a build step neither stylesheet otherwise needs). */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

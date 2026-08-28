@@ -28,12 +28,19 @@ async function apiCall(path, opts = {}) {
     headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(opts.body);
   }
-  if (Auth.token) headers['Authorization'] = `Bearer ${Auth.token}`;
+  const hadToken = !!Auth.token;
+  if (hadToken) headers['Authorization'] = `Bearer ${Auth.token}`;
   const res = await fetch(path, { ...opts, headers });
   let body;
   try { body = await res.json(); } catch { body = {}; }
   if (!res.ok) {
-    if (res.status === 401) { Auth.logout(); throw new Error('Session expired'); }
+    // A 401 on a request that never carried a token — most importantly a
+    // failed login/signup attempt — means "invalid credentials", not "your
+    // session expired". Auth.logout()'s location.href='/login' used to
+    // fire either way, navigating away (on the login page itself, this
+    // looked like the page silently resetting) before the real "wrong
+    // password" message from the catch handler could ever be shown.
+    if (res.status === 401 && hadToken) { Auth.logout(); throw new Error('Session expired'); }
     const err = new Error(body.error || `Request failed (${res.status})`);
     if (body.code) err.code = body.code;
     throw err;
@@ -167,17 +174,8 @@ const API = {
 };
 
 // ── Toast ──────────────────────────────────────────────────
-function toast(msg, type = '') {
-  const el = document.createElement('div');
-  el.className = 'toast ' + (type ? 'toast-' + type : '');
-  el.textContent = msg;
-  document.body.appendChild(el);
-  requestAnimationFrame(() => el.classList.add('show'));
-  setTimeout(() => {
-    el.classList.remove('show');
-    setTimeout(() => el.remove(), 300);
-  }, 3000);
-}
+// See public/js/toast.js — must be loaded before this file.
+const toast = showToast;
 
 // ── Top nav (rendered on every authenticated page) ────────
 function renderTopNav(active) {

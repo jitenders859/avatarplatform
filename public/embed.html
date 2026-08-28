@@ -38,7 +38,7 @@
 
   <div class="widget-root" id="root" data-position="bottom-right" data-state="loading" hidden>
     <!-- Launcher (visible when minimized) -->
-    <button class="launcher" id="launcher" aria-label="Open chat" type="button">
+    <button class="launcher" id="launcher" aria-label="Open chat" aria-expanded="false" type="button">
       <div class="launcher-avatar-slot" id="launcher-avatar-slot"></div>
       <span class="launcher-fallback" id="launcher-fallback">💬</span>
       <span class="launcher-pulse" aria-hidden="true"></span>
@@ -254,7 +254,12 @@
       dir = detectDirection(config.project.welcomeMessage || '') || 'ltr';
     }
     document.documentElement.dir = dir;
-    document.documentElement.lang = dir === 'rtl' ? 'ar' : 'en';
+    // detectDirection only answers rtl-or-not (RTL_REGEX below spans several
+    // scripts); claiming lang="ar" for all of them mislabels Hebrew, Syriac,
+    // Thaana, and NKo text. detectScriptLang narrows to the two scripts we
+    // can actually tell apart, and gives up (empty lang) rather than guess
+    // for the rest — an absent/empty lang is honest, a wrong one isn't.
+    document.documentElement.lang = dir === 'rtl' ? (detectScriptLang(config.project.welcomeMessage || '') || '') : 'en';
   }
 
   function updateFullscreenIcon() {
@@ -269,6 +274,23 @@
   function detectDirection(text) {
     if (!text) return null;
     return RTL_REGEX.test(text) ? 'rtl' : 'ltr';
+  }
+
+  // Narrower than RTL_REGEX — only the two scripts common enough here to
+  // label with confidence. Syriac/Thaana/NKo text is still detected as
+  // RTL by RTL_REGEX (direction is still correct), it just doesn't get a
+  // specific lang claim.
+  const HEBREW_REGEX = /[֐-׿]/;
+  const ARABIC_REGEX = /[؀-ۿﭐ-﷿ﹰ-﻿]/;
+  function detectScriptLang(text) {
+    if (!text) return null;
+    if (HEBREW_REGEX.test(text)) return 'he';
+    if (ARABIC_REGEX.test(text)) return 'ar';
+    return null;
+  }
+
+  function prefersReducedMotion() {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
   // ── 2. SDK init ─────────────────────────────────────────────
@@ -299,6 +321,10 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       showTextInput: false,   showBands: false,
       width: 300, height: 300,
       enableBehavior: true,
+      // Idle breathing/head-tilt/eye-drift is decorative, ambient motion —
+      // lip-sync itself stays at full strength since that's the widget's
+      // actual function, not something prefers-reduced-motion is about.
+      ...(prefersReducedMotion() ? { behaviorConfig: { idleIntensity: 0 } } : {}),
       characterTriggers: config.character?.triggers || [],
       tools: [searchKnowledgeBaseTool()],
 
@@ -587,13 +613,18 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     return el;
   }
 
+  let lightboxOpenerEl = null;
   function openLightbox(src) {
+    lightboxOpenerEl = document.activeElement;
     lightboxImg.src = src;
     imageLightbox.hidden = false;
+    lightboxClose.focus();
   }
 
   function closeLightbox() {
     imageLightbox.hidden = true;
+    if (lightboxOpenerEl && document.contains(lightboxOpenerEl)) lightboxOpenerEl.focus();
+    lightboxOpenerEl = null;
   }
 
   lightboxClose.addEventListener('click', closeLightbox);
@@ -601,7 +632,11 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     if (e.target === imageLightbox) closeLightbox();
   });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !imageLightbox.hidden) closeLightbox();
+    if (imageLightbox.hidden) return;
+    if (e.key === 'Escape') { closeLightbox(); return; }
+    // Focus trap: lightbox-close is the only focusable control in the
+    // dialog today, so trapping just means Tab/Shift+Tab never leave it.
+    if (e.key === 'Tab') { e.preventDefault(); lightboxClose.focus(); }
   });
 
   let imageUploadInFlight = false;
@@ -1118,8 +1153,19 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     });
   }
 
+  // Only body content is replaced — the <head>'s embed.css stays loaded,
+  // so --accent/--bg/etc. (including the project's themeColor, applied to
+  // --accent earlier in boot when config loaded successfully) still style
+  // this the same as the rest of the widget instead of a bare unstyled div.
   function showFatal(msg) {
-    document.body.innerHTML = `<div style="padding:24px;font-family:sans-serif;color:#444">⚠️ ${msg}</div>`;
+    document.body.innerHTML = `
+      <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--bg);font-family:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif">
+        <div role="alert" style="max-width:320px;text-align:center;background:var(--bg-2);border:1px solid var(--border);border-radius:16px;padding:28px 24px">
+          <div style="font-size:32px;margin-bottom:12px" aria-hidden="true">⚠️</div>
+          <p style="color:var(--text);font-size:14px;line-height:1.5;margin:0 0 20px">${msg}</p>
+          <button type="button" onclick="location.reload()" style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:10px 20px;font:inherit;font-weight:600;font-size:13px;cursor:pointer">Try again</button>
+        </div>
+      </div>`;
   }
 
   // ── 6. Open/close + avatar canvas shuttling ──────────────────
@@ -1128,6 +1174,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     root.dataset.state = 'open';
     unreadCount = 0;
     launcherBadge.hidden = true;
+    launcher.setAttribute('aria-expanded', 'true');
 
     // Move canvas from launcher to avatar stage
     if (avatarCanvas && !avatarCanvasSlot.contains(avatarCanvas)) {
@@ -1138,12 +1185,17 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       });
     }
 
+    // Move focus into the panel — textInput is present in every mode
+    // (voice and text-only both render the composer).
+    textInput.focus();
+
     notifyParent({ type: 'open', fullscreen: fullscreenActive });
   }
 
   function closePanel(skipAnim) {
     panelOpen = false;
     root.dataset.state = skipAnim ? 'closed-instant' : 'closed';
+    launcher.setAttribute('aria-expanded', 'false');
 
     // Move canvas to launcher slot so it keeps animating there
     if (avatarCanvas && config && config.project.showAvatarInLauncher !== false) {
@@ -1156,6 +1208,10 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       }
       launcherFallback.style.display = 'none';
     }
+
+    // Restore focus to the control that opened the panel, so keyboard
+    // users aren't dropped back at the top of the host page.
+    launcher.focus();
 
     notifyParent({ type: 'close' });
   }

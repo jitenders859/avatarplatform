@@ -56,6 +56,7 @@
   </div>
 
   <script src="/js/theme.js"></script>
+  <script src="/js/toast.js"></script>
   <script src="/js/api.js"></script>
   <script>
   Auth.requireLogin();
@@ -142,12 +143,25 @@
 
   // Create modal
   const modal = document.getElementById('create-modal');
-  function openModal() { modal.hidden = false; document.getElementById('new-name').focus(); }
-  function closeModal() { modal.hidden = true; document.getElementById('create-form').reset(); document.getElementById('create-error').style.display='none'; document.getElementById('create-submit').disabled = false; }
+  let modalOpenerEl = null;
+  function openModal(e) {
+    modalOpenerEl = e ? e.currentTarget : null;
+    modal.hidden = false;
+    document.getElementById('new-name').focus();
+  }
+  function closeModal() {
+    modal.hidden = true;
+    document.getElementById('create-form').reset();
+    document.getElementById('create-error').style.display='none';
+    document.getElementById('create-submit').disabled = false;
+    if (modalOpenerEl) modalOpenerEl.focus();
+    modalOpenerEl = null;
+  }
   document.getElementById('create-btn').addEventListener('click', openModal);
   document.getElementById('empty-create').addEventListener('click', openModal);
   document.getElementById('create-cancel').addEventListener('click', closeModal);
   modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !modal.hidden) closeModal(); });
 
   document.getElementById('create-form').addEventListener('submit', async (e) => {
     e.preventDefault();
