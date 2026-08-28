@@ -172,4 +172,30 @@ async function sendContactMessage({ name, email, message }) {
   });
 }
 
-module.exports = { sendPasswordReset, sendWelcome, sendContactMessage, sendVerificationEmail, sendTeamInviteEmail };
+/**
+ * Notify a project's owner and team members that a visitor has requested
+ * a human handoff and no one has claimed it within the grace window (see
+ * ws/notify.js, which schedules and rate-limits this call). A no-op if
+ * there's no one to notify.
+ * @param {{ project: { name: string }, previewText: string, recipients: string[] }} fields
+ */
+async function sendHandoffRequestEmail({ project, previewText, recipients }) {
+  if (!recipients || recipients.length === 0) return;
+  const preview = previewText ? previewText : '(no message yet)';
+  await send({
+    to: recipients,
+    subject: `Someone wants to talk to a human on ${project.name}`,
+    text: `A visitor is waiting on "${project.name}" and no one has the dashboard open.\n\nTheir message: ${preview}\n\nOpen live chat: ${BASE_URL()}/dashboard`,
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+        <h2 style="margin:0 0 16px;font-size:20px">A visitor is waiting</h2>
+        <p style="color:#555;line-height:1.6">A visitor on <strong>${escapeHtml(project.name)}</strong> has asked to talk to a human, and no one has the dashboard open right now.</p>
+        <p style="color:#333;line-height:1.6;white-space:pre-wrap">"${escapeHtml(preview)}"</p>
+        <a href="${BASE_URL()}/dashboard" style="display:inline-block;margin:24px 0;padding:12px 24px;background:#7c6af5;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Open Live Chat</a>
+        <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
+        <p style="color:#bbb;font-size:11px">AvatarPlatform · <a href="${BASE_URL()}" style="color:#bbb">${BASE_URL()}</a></p>
+      </div>`,
+  });
+}
+
+module.exports = { sendPasswordReset, sendWelcome, sendContactMessage, sendVerificationEmail, sendTeamInviteEmail, sendHandoffRequestEmail };
