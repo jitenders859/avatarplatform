@@ -32,6 +32,7 @@ const { serve: serveInngest } = require('inngest/express');
 const pinoHttp = require('pino-http');
 const logger = require('./logger');
 const { AppError } = require('./errors');
+const { pool } = require('./db');
 const { getRateLimitStore, embedKeyGenerator } = require('./services/rateLimitStore');
 
 const authRoutes = require('./routes/auth');
@@ -40,6 +41,7 @@ const filesRoutes = require('./routes/files');
 const embedRoutes = require('./routes/embed');
 const { router: billingRoutes, webhookHandler: stripeWebhook } = require('./routes/billing');
 const analyticsRoutes = require('./routes/analytics');
+const contactRoutes = require('./routes/contact');
 const captureFieldsRoutes = require('./routes/captureFields');
 const quizQuestionsRoutes = require('./routes/quizQuestions');
 const flashcardsRoutes = require('./routes/flashcards');
@@ -49,6 +51,12 @@ const adminCharactersRoutes = require('./routes/adminCharacters');
 const adminCouponsRoutes = require('./routes/adminCoupons');
 const inngestClient = require('./inngest/client');
 const { functions: inngestFunctions } = require('./inngest/functions');
+const { checkProcessModeConfigured } = require('./services/processMode');
+
+// Runs on every boot, Vercel included (unlike the app.listen() block below,
+// which is skipped there) — this is precisely the deployment target where
+// an unconfigured Inngest default silently strands file uploads.
+checkProcessModeConfigured(logger);
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -171,6 +179,7 @@ app.use('/api/projects', apiLimiter, videoResourcesRoutes);
 app.use('/api', apiLimiter, filesRoutes); // files routes are project-nested
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/analytics', apiLimiter, analyticsRoutes);
+app.use('/api/contact', apiLimiter, contactRoutes);
 app.use('/api/admin/login', adminLoginLimiter);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/admin/characters', apiLimiter, adminCharactersRoutes);
@@ -264,7 +273,10 @@ if (!process.env.VERCEL) {
 
   function shutdown(signal) {
     logger.info({ signal }, 'shutdown received');
-    server.close(() => { logger.info('server closed'); process.exit(0); });
+    server.close(() => {
+      logger.info('server closed');
+      pool.end().catch((err) => logger.warn({ err }, 'error closing pg pool')).finally(() => process.exit(0));
+    });
     setTimeout(() => process.exit(1), 10000).unref();
   }
   process.on('SIGTERM', () => shutdown('SIGTERM'));

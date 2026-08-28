@@ -14,7 +14,7 @@ const { searchProject } = require('../services/vector');
 const { resolveFigures } = require('../services/figures');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const { projectCache, invalidateProjectCache } = require('../cache');
+const { projectCache } = require('../cache');
 const { validate, schemas } = require('../middleware/validate');
 const { toolsForTier } = require('../services/tools');
 const { resolveLearnerKey, backfillLearnerKey } = require('../services/learner');
@@ -98,8 +98,6 @@ async function pageImagesForHits(hits) {
   }
   return map;
 }
-
-module.exports.invalidateProjectCache = invalidateProjectCache;
 
 // Deliberately NOT status-filtered — an archived character (soft-deleted
 // via the admin panel) must keep resolving for projects already assigned

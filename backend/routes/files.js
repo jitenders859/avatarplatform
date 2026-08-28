@@ -8,10 +8,25 @@ const { authRequired } = require('../middleware/auth');
 const { classify } = require('../services/extract');
 const { checkLimit } = require('../services/usage');
 const { validate, schemas } = require('../middleware/validate');
+const { processFile } = require('../services/process');
+const { resolveProcessMode } = require('../services/processMode');
 
 const router = express.Router();
 
+// PROCESS_MODE=inngest|inline picks how a queued file actually gets
+// processed — see backend/services/processMode.js for the default logic
+// and backend/inngest/functions.js for why Inngest exists at all (Vercel
+// freezes a function shortly after the response, so inline setImmediate
+// processing silently never finishes there).
 function queueProcessing(fileId) {
+  if (resolveProcessMode() === 'inline') {
+    setImmediate(async () => {
+      const fileRecord = await db.findOne('files', { id: fileId });
+      if (!fileRecord) return;
+      await processFile(fileRecord);
+    });
+    return Promise.resolve();
+  }
   return inngest.send({ name: 'file/process', data: { fileId } });
 }
 

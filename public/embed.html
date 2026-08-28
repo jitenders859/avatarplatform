@@ -389,6 +389,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       }
 
       if (data.sessionId) sessionId = data.sessionId;
+      notifyParent({ type: 'message', sessionId, role: 'user', text });
 
       const answerEl = addMessage('bot', data.answer || '…');
       if (config.project.showSourceCards !== false && data.sources && data.sources.length) {
@@ -396,8 +397,11 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
           fileId: null, fileName: s.title, kind: s.url ? 'url' : null, url: s.url || null, previewUrl: null,
         })));
       }
+      notifyParent({ type: 'response', sessionId, answer: data.answer || '', sources: data.sources || [] });
       // No logTurn here: /ask already persists both turns + bumped the
       // message counter server-side; hitting /log too would double-count.
+      // The ap:message/ap:response host events above are independent of
+      // that persistence, so they still fire on this path.
     } catch (e) {
       addMessage('bot', 'Something went wrong — please try again in a moment.');
     } finally {
@@ -1215,12 +1219,21 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       });
       if (res.ok) { const j = await res.json(); if (j.sessionId) sessionId = j.sessionId; }
     } catch (_) {}
+    // Relay to the host page's ap:message/ap:response listeners (see
+    // embed-loader.js's postMessage handler and public/docs/prefetching.html)
+    // — additive to the /log call above, not a replacement for it.
+    if (role === 'user') {
+      notifyParent({ type: 'message', sessionId, role, text });
+    } else {
+      notifyParent({ type: 'response', sessionId, answer: text });
+    }
   }
 
   // ── Commands from embed-loader.js ──────────────────────────────
   window.addEventListener('message', (e) => {
     if (!e.data || e.data.source !== 'avatar-platform-host') return;
     if (e.data.type === 'open' && !panelOpen) openPanel();
+    if (e.data.type === 'close' && panelOpen) closePanel();
     if (e.data.type === 'drag-end') {
       const headerEl = document.getElementById('header');
       if (headerEl) headerEl.style.cursor = '';

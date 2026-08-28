@@ -119,13 +119,11 @@ JWT_SECRET=a-long-random-string</code></pre>
         <p>Once you've created a project in the dashboard, copy your Bot ID from the <strong>Embed</strong> tab and drop this script tag anywhere on your site:</p>
         <pre><code class="language-html">&lt;!-- Paste before &lt;/body&gt; --&gt;
 &lt;script
-  src="https://your-deployment.com/lipsync-sdk.js"
-  data-public-id="YOUR_BOT_ID"
-  data-position="bottom-right"
-  data-theme="#6366f1"
-  data-size="md"
+  src="https://your-deployment.com/js/embed-loader.js"
+  data-bot="YOUR_BOT_ID"
+  defer
 &gt;&lt;/script&gt;</code></pre>
-        <p>That's all. No bundler, no build step, no authentication required. The widget loads, fetches its configuration, and the agent is live.</p>
+        <p>That's all. No bundler, no build step, no authentication required. The widget loads, fetches its configuration, and the agent is live. Position, theme, size, and start-open behavior are configured per-project in the dashboard's Widget tab, not as script-tag attributes.</p>
 
         <h2>Architecture overview</h2>
         <pre><code class="language-text">Browser (visitor)

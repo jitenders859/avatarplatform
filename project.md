@@ -150,9 +150,12 @@ See `.env.example` for the full annotated list. Key variables:
 | `SMTP_PORT` | No | Default: `587` |
 | `SMTP_USER` / `SMTP_PASS` | No | SMTP credentials |
 | `SMTP_FROM` | No | From address for outbound emails |
+| `CONTACT_TO_EMAIL` | No | Where `/api/contact` submissions are delivered. Default: `SMTP_FROM` (or `SMTP_USER`). |
 | `APP_URL` | No | Public URL for password-reset links. Default: `http://localhost:8080` |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | No (recommended on Vercel) | Upstash Redis over REST — shared rate-limit store. See [Rate limiting](#rate-limiting). Without it, limiters are in-memory only. |
 | `REDIS_URL` | No | Generic Redis over TCP — alternative rate-limit store. See [Rate limiting](#rate-limiting). |
+| `PROCESS_MODE` | No | `inline` or `inngest` — how queued file uploads are processed. Default: `inngest` on Vercel, `inline` elsewhere. See [Background file processing](#background-file-processing-inngest--inline). |
+| `INNGEST_EVENT_KEY` / `INNGEST_SIGNING_KEY` | No (required if `PROCESS_MODE=inngest`) | Inngest app credentials. See [Background file processing](#background-file-processing-inngest--inline). |
 
 ---
 
@@ -384,6 +387,24 @@ The `pg` driver is configured with `{ rejectUnauthorized: false }` by default to
 
 Uploaded files are stored on the local filesystem at `data/uploads/<projectId>/`. In a multi-instance deployment, point this path at a shared volume or swap `multer.diskStorage` for S3/GCS storage.
 
+### Background file processing (Inngest / inline)
+
+Once a file finishes uploading, `routes/files.js`'s `queueProcessing()` runs the extract → chunk → embed pipeline (`services/process.js`'s `processFile`) in one of two modes, picked by `backend/services/processMode.js`:
+
+| Mode | How it runs | When to use |
+|---|---|---|
+| `inline` (default off Vercel) | `setImmediate(() => processFile(fileRecord))` — right in the process that queued it | The default for a plain `npm start`/`npm run dev` deployment. Zero external setup. **Not safe on Vercel** — a serverless function is frozen shortly after its response is sent, so a still-running inline job can be cut off mid-pipeline, leaving the file stuck in `processing`. |
+| `inngest` (default on Vercel) | Durable background job via [Inngest](https://www.inngest.com) (`backend/inngest/functions.js`), invoked back into this app per step through `POST /api/inngest` | Any deployment where the process doesn't stay alive after the response — Vercel, or multi-instance setups that want retries. |
+
+Set `PROCESS_MODE=inline` or `PROCESS_MODE=inngest` to override the auto-detected default (`VERCEL` env var set → `inngest`, otherwise `inline`).
+
+To actually configure Inngest on Vercel:
+1. Create an app at [inngest.com](https://www.inngest.com) and grab its **Event Key** and **Signing Key**.
+2. Set `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` in your Vercel project's environment variables.
+3. Deploy, then in the Inngest dashboard point its "Sync app" at `https://your-deployment.com/api/inngest` — Inngest calls this URL to discover and invoke `process-file` (the one function in `backend/inngest/functions.js`).
+
+If `PROCESS_MODE` resolves to `inngest` (explicitly or by Vercel auto-detection) and neither `INNGEST_EVENT_KEY` nor `INNGEST_SIGNING_KEY` is set, the server logs a warning at boot: uploads will queue events nothing is listening for and sit in `processing` forever until this is fixed.
+
 ### Rate limiting
 
 All express-rate-limit instances (`authLimiter`, `apiLimiter`, `embedLimiter`, `adminLoginLimiter` in `backend/server.js`, plus the per-visitor AI-cost limiters on `/embed/:publicId/ask`, `/study`, and `/retrieve` in `backend/routes/embed.js`) share one Redis-backed store via `backend/services/rateLimitStore.js` when one is configured. Without it they fall back to per-process MemoryStore and a loud warning is logged at boot — on Vercel that means limits reset on every cold invocation and are effectively disabled, so **configure a store before serving real traffic**:
@@ -404,4 +425,4 @@ Keying:
 - **Vector search** uses pgvector HNSW — fast at millions of chunks, no external vector DB needed.
 - **Usage tracking** uses SQL `ON CONFLICT` upserts — safe under concurrent load.
 - **Rate limiting** is shared through Redis (see "Rate limiting" above); without a Redis store it degrades to in-memory per instance.
-- **Background processing** (`processFileAsync`) uses `setImmediate` — fine for single-instance. For heavier workloads, move to a job queue (BullMQ).
+- **Background processing** uses Inngest by default on Vercel, and an in-process `setImmediate` fallback everywhere else — see "Background file processing (Inngest / inline)" above. `PROCESS_MODE=inngest` on any deployment gets durable retries even off Vercel.

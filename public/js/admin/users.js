@@ -68,7 +68,7 @@ async function renderUserDetail(userId) {
   const c = usage.counters, l = usage.limits;
   const items = [
     { label: 'Chatbots', current: c.projects, limit: l.projects, unit: '' },
-    { label: 'Files (across all)', current: c.files, limit: l.filesPerProject, unit: '' },
+    { label: 'Files (across all)', current: c.files, limit: l.maxFiles, unit: '' },
     { label: 'Storage', current: c.storageMb, limit: l.storageMb, unit: ' MB' },
     { label: 'URL sources', current: c.urlSources, limit: l.urlSources, unit: '' },
     { label: 'Messages this month', current: c.messages, limit: l.monthlyMessages, unit: '' },

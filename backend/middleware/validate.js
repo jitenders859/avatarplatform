@@ -47,6 +47,12 @@ const schemas = {
     password: z.string().min(1, 'Password is required'),
   }),
 
+  contactMessage: z.object({
+    name: z.string().min(1, 'Name is required').max(120, 'Name too long').trim(),
+    email,
+    message: z.string().min(1, 'Message is required').max(5000, 'Message too long').trim(),
+  }),
+
   forgotPassword: z.object({
     email,
   }),
@@ -324,7 +330,7 @@ const schemas = {
     name: z.string().trim().min(1, 'Name is required').max(80, 'Name too long'),
     limits: z.object({
       projects: z.number().int().positive(),
-      filesPerProject: z.number().int().positive(),
+      maxFiles: z.number().int().positive(),
       storageMb: z.number().int().positive(),
       monthlyMessages: z.number().int().positive(),
       monthlyEmbeddingChars: z.number().int().positive(),

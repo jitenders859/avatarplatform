@@ -95,4 +95,29 @@ async function sendWelcome(toEmail, name) {
   });
 }
 
-module.exports = { sendPasswordReset, sendWelcome };
+/**
+ * Relay a contact-page message to support. The visitor's address goes in
+ * replyTo (not from — most SMTP providers reject or spam-flag mail sent
+ * with an arbitrary From), so replying in the inbox goes straight back to
+ * the visitor.
+ * @param {{ name: string, email: string, message: string }} fields
+ */
+const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+async function sendContactMessage({ name, email, message }) {
+  const to = process.env.CONTACT_TO_EMAIL || FROM();
+  await send({
+    to,
+    replyTo: email,
+    subject: `Contact form: ${name}`,
+    text: `From: ${name} <${email}>\n\n${message}`,
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
+        <h2 style="margin:0 0 16px;font-size:20px">New contact message</h2>
+        <p style="color:#555"><strong>${escapeHtml(name)}</strong> &lt;${escapeHtml(email)}&gt;</p>
+        <p style="color:#333;line-height:1.6;white-space:pre-wrap">${escapeHtml(message)}</p>
+      </div>`,
+  });
+}
+
+module.exports = { sendPasswordReset, sendWelcome, sendContactMessage };

@@ -431,7 +431,7 @@ CREATE TABLE IF NOT EXISTS admin_users (
 CREATE TABLE IF NOT EXISTS plan_tiers (
   id          TEXT        PRIMARY KEY,   -- slug, e.g. "custom-acme-corp-a1b2c3"
   name        TEXT        NOT NULL,
-  limits      JSONB       NOT NULL,      -- { projects, filesPerProject, storageMb, monthlyMessages, monthlyEmbeddingChars, urlSources }
+  limits      JSONB       NOT NULL,      -- { projects, maxFiles, storageMb, monthlyMessages, monthlyEmbeddingChars, urlSources }
   created_by  UUID        REFERENCES admin_users(id),
   created_at  BIGINT      NOT NULL,
   updated_at  BIGINT

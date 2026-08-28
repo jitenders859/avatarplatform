@@ -21,7 +21,8 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var index_exports = {};
 __export(index_exports, {
   AvatarWidget: () => AvatarWidget,
-  askAvatar: () => import_js2.askAvatar
+  askAvatar: () => import_js2.askAvatar,
+  useAvatarPlatform: () => useAvatarPlatform
 });
 module.exports = __toCommonJS(index_exports);
 
@@ -35,11 +36,32 @@ function AvatarWidget({ serverUrl, botId }) {
   return null;
 }
 
+// src/useAvatarPlatform.ts
+var import_react2 = require("react");
+function useAvatarPlatform(botId) {
+  const dispatch = (0, import_react2.useCallback)(
+    (type) => {
+      document.dispatchEvent(new CustomEvent(type, { detail: { botId } }));
+    },
+    [botId]
+  );
+  return (0, import_react2.useMemo)(
+    () => ({
+      open: () => dispatch("ap:open"),
+      close: () => dispatch("ap:close"),
+      hide: () => dispatch("ap:hide"),
+      show: () => dispatch("ap:show")
+    }),
+    [dispatch]
+  );
+}
+
 // src/index.ts
 var import_js2 = require("@avatar-platform/js");
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   AvatarWidget,
-  askAvatar
+  askAvatar,
+  useAvatarPlatform
 });
 //# sourceMappingURL=index.cjs.map

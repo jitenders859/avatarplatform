@@ -7,7 +7,7 @@ async function loadTiersTab() {
       <form id="tier-form" class="col gap-sm">
         <input type="text" id="tier-name" placeholder="Tier name (e.g. Acme Corp bump)" required class="input" />
         <div class="row gap-sm" style="flex-wrap:wrap">
-          ${['projects', 'filesPerProject', 'storageMb', 'monthlyMessages', 'monthlyEmbeddingChars', 'urlSources']
+          ${['projects', 'maxFiles', 'storageMb', 'monthlyMessages', 'monthlyEmbeddingChars', 'urlSources']
             .map(f => `<input type="number" min="1" name="${f}" placeholder="${f}" required class="input" style="max-width:180px" />`).join('')}
         </div>
         <button type="submit" class="btn btn-primary" style="align-self:flex-start">Create tier</button>
@@ -19,7 +19,7 @@ async function loadTiersTab() {
     e.preventDefault();
     const fd = new FormData(e.target);
     const limits = {};
-    for (const f of ['projects', 'filesPerProject', 'storageMb', 'monthlyMessages', 'monthlyEmbeddingChars', 'urlSources']) {
+    for (const f of ['projects', 'maxFiles', 'storageMb', 'monthlyMessages', 'monthlyEmbeddingChars', 'urlSources']) {
       limits[f] = parseInt(fd.get(f), 10);
     }
     try {

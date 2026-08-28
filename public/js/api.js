@@ -150,9 +150,6 @@ const API = {
   listChunks:  (pid, fid, search) => apiCall(`/api/projects/${pid}/files/${fid}/chunks${search ? '?search=' + encodeURIComponent(search) : ''}`),
   deleteChunk: (pid, fid, cid) => apiCall(`/api/projects/${pid}/files/${fid}/chunks/${cid}`, { method: 'DELETE' }),
 
-  // Generic passthrough for ad-hoc calls
-  request: (path, opts = {}) => apiCall(path, opts),
-
   // Analytics
   analytics:        () => apiCall('/api/analytics/overview'),
   projectAnalytics: (id) => apiCall(`/api/analytics/project/${id}`),

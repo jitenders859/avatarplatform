@@ -105,7 +105,7 @@ const followUp = await AvatarPlatform.ask('YOUR_BOT_ID', 'How long does it take?
 
         <div class="callout callout-info">
           <span class="callout-icon">ℹ️</span>
-          <div class="callout-body"><p><code>ask()</code> calls <code>POST /embed/:publicId/ask</code>. The endpoint embeds the question, performs a pgvector similarity search, calls Gemini REST (<code>gemini-2.0-flash</code>), and returns a complete answer. It is not streaming — the full answer is returned in one response.</p></div>
+          <div class="callout-body"><p><code>ask()</code> calls <code>POST /embed/:publicId/ask</code>. The endpoint embeds the question, performs a pgvector similarity search, calls Gemini REST (<code>gemini-2.5-flash</code>), and returns a complete answer. It is not streaming — the full answer is returned in one response.</p></div>
         </div>
 
         <h2>Controlling the widget</h2>

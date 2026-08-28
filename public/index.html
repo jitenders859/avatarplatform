@@ -399,7 +399,6 @@
         <a class="nav-link" href="/docs" data-i18n="common.nav.docs">Docs</a>
         <a class="nav-link" href="/pricing" data-i18n="common.nav.pricing">Pricing</a>
         <a class="nav-link" href="/characters" data-i18n="common.nav.characters">Characters</a>
-        <a class="nav-link" href="/blog" data-i18n="common.nav.blog">Blog</a>
       </div>
       <div id="lang-switch-slot"></div>
       <div id="theme-toggle-slot"></div>
@@ -436,13 +435,12 @@
         <div class="hero-code-body">
           <span class="t-comment">&lt;!-- Paste this before &lt;/body&gt; --&gt;</span><br>
           <span class="t-tag">&lt;script</span><br>
-          &nbsp;&nbsp;<span class="t-attr">src</span>=<span class="t-val">"https://app.yourdomain.com/lipsync-sdk.js"</span><br>
-          &nbsp;&nbsp;<span class="t-attr">data-public-id</span>=<span class="t-val">"YOUR_BOT_ID"</span><br>
-          &nbsp;&nbsp;<span class="t-attr">data-position</span>=<span class="t-val">"bottom-right"</span><br>
-          &nbsp;&nbsp;<span class="t-attr">data-theme</span>=<span class="t-val">"#6366f1"</span><br>
-          &nbsp;&nbsp;<span class="t-attr">data-size</span>=<span class="t-val">"md"</span><br>
+          &nbsp;&nbsp;<span class="t-attr">src</span>=<span class="t-val">"https://app.yourdomain.com/js/embed-loader.js"</span><br>
+          &nbsp;&nbsp;<span class="t-attr">data-bot</span>=<span class="t-val">"YOUR_BOT_ID"</span><br>
+          &nbsp;&nbsp;<span class="t-attr">defer</span><br>
           <span class="t-tag">&gt;&lt;/script&gt;</span><br><br>
-          <span class="t-comment">&lt;!-- That's it. Your agent is live. --&gt;</span>
+          <span class="t-comment">&lt;!-- That's it. Your agent is live. --&gt;</span><br>
+          <span class="t-comment">&lt;!-- Position/theme/size are set in your dashboard's Widget tab. --&gt;</span>
         </div>
       </div>
     </div>
@@ -522,13 +520,11 @@
           <div class="demo-panel active" id="tab-script">
             <pre class="cb"><code><span class="s-cmt">&lt;!-- No bundler needed. Paste before &lt;/body&gt; --&gt;</span>
 <span class="s-tag">&lt;script</span>
-  <span class="s-att">src</span>=<span class="s-val">"https://app.yourdomain.com/lipsync-sdk.js"</span>
-  <span class="s-att">data-public-id</span>=<span class="s-val">"YOUR_BOT_ID"</span>
-  <span class="s-att">data-position</span>=<span class="s-val">"bottom-right"</span>
-  <span class="s-att">data-theme</span>=<span class="s-val">"#6366f1"</span>
-  <span class="s-att">data-size</span>=<span class="s-val">"md"</span>
-  <span class="s-att">data-start-open</span>=<span class="s-val">"false"</span>
-<span class="s-tag">&gt;&lt;/script&gt;</span></code></pre>
+  <span class="s-att">src</span>=<span class="s-val">"https://app.yourdomain.com/js/embed-loader.js"</span>
+  <span class="s-att">data-bot</span>=<span class="s-val">"YOUR_BOT_ID"</span>
+  <span class="s-att">defer</span>
+<span class="s-tag">&gt;&lt;/script&gt;</span>
+<span class="s-cmt">&lt;!-- Position, theme, size, and start-open live in your dashboard's Widget tab --&gt;</span></code></pre>
           </div>
 
           <div class="demo-panel" id="tab-react">
@@ -668,12 +664,7 @@ console.<span class="s-fn">log</span>(result.sources);
         <a class="footer-link" href="/characters" data-i18n="common.nav.characters">Characters</a>
         <a class="footer-link" href="/terms" data-i18n="common.footer.terms">Terms</a>
         <a class="footer-link" href="/contact" data-i18n="common.footer.contact">Contact</a>
-        <a class="footer-link" href="#" data-i18n="common.footer.github">GitHub</a>
       </nav>
-      <a class="footer-x" href="#">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.259 5.632zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
-        <span data-i18n="common.footer.followX">Follow on X</span>
-      </a>
     </div>
   </footer>
 

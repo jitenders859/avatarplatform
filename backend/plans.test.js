@@ -54,7 +54,7 @@ test('getPlan resolves an unknown id from plan_tiers, merging limits on top of t
   // being undefined (which would make every checkLimit comparison in
   // usage.js silently pass with `undefined > N` === false).
   assert.equal(plan.limits.projects, PLANS[0].limits.projects);
-  assert.equal(plan.limits.filesPerProject, PLANS[0].limits.filesPerProject);
+  assert.equal(plan.limits.maxFiles, PLANS[0].limits.maxFiles);
   assert.equal(plan.limits.storageMb, PLANS[0].limits.storageMb);
   assert.equal(plan.limits.monthlyEmbeddingChars, PLANS[0].limits.monthlyEmbeddingChars);
   assert.equal(plan.limits.urlSources, PLANS[0].limits.urlSources);

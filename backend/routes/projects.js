@@ -95,13 +95,13 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
     webhookSecret: crypto.randomBytes(32).toString('hex'),
     createdAt: Date.now(),
   });
-  res.json({ project: strip(project) });
+  res.json({ project });
 });
 
 router.get('/:id', authRequired, async (req, res) => {
   const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  res.json({ project: strip(project) });
+  res.json({ project });
 });
 
 router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, res) => {
@@ -131,7 +131,7 @@ router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, r
 
   const updated = await db.update('projects', project.id, patch);
   invalidateProjectCache(project.publicId);
-  res.json({ project: strip(updated) });
+  res.json({ project: updated });
 });
 
 router.delete('/:id', authRequired, async (req, res) => {
@@ -282,13 +282,11 @@ router.post('/:id/duplicate', authRequired, async (req, res) => {
     webhookSecret: crypto.randomBytes(32).toString('hex'),
     createdAt: Date.now(),
   });
-  res.json({ project: strip(project) });
+  res.json({ project });
 });
 
-function strip(p) {
-  if (!p) return p;
-  const { ...rest } = p;
-  return rest;
-}
-
+// Project GETs return the full row, webhookSecret included — the owner
+// needs it to verify webhook signatures in their own receiving endpoint
+// (see project.html's Webhook settings, which displays it), so it's
+// intentionally not stripped.
 module.exports = { router };
