@@ -154,6 +154,7 @@
   let handoffWs = null;
   let handoffState = 'none'; // 'none' | 'connecting' | 'waiting' | 'active'
   let handoffReconnectAttempts = 0;
+  let handoffWasVoice = false; // true if this handoff disconnected a live voice session — on resolve, land back in text mode instead of leaving avatar.sendText() pointed at a dead session
 
   const AVATAR_SIZES = { small: 80, medium: 120, large: 160, xlarge: 200 };
 
@@ -477,9 +478,11 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
   function requestHandoff() {
     if (handoffState !== 'none') return;
+    handoffWasVoice = false;
     if (avatar && !textOnly) {
       avatar.disconnect();
       document.getElementById('avatar-row').style.display = 'none';
+      handoffWasVoice = true;
     }
     handoffState = 'connecting';
     addMessage('bot', 'Connecting you with a team member…', { welcome: false });
@@ -545,6 +548,29 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     }
     if (msg.type === 'resolved') {
       handoffState = 'none';
+      if (handoffWasVoice) {
+        // The voice session was disconnected when the handoff started and is
+        // never silently reconnected (by design — a resolved handoff drops
+        // the visitor back into text mode, not back into a live mic/voice
+        // session). Flip textOnly so sendMessage() routes through
+        // sendTextOnly()/'/ask' instead of calling avatar.sendText() on a
+        // session that's no longer connected. The avatar row stays hidden
+        // (already done in requestHandoff()); the mic button would be inert
+        // against a disconnected session, so hide it too.
+        textOnly = true;
+        handoffWasVoice = false;
+        // Same reasoning as the sendMessage() fix: both controls talk
+        // straight to the now-disconnected avatar session (mic toggling
+        // it, image upload calling avatar.sendImage()/avatar.connect()),
+        // so leaving them visible would either no-op or silently
+        // reconnect voice — hide them like initTextMode() does.
+        micBtn.style.display = 'none';
+        imageBtn.style.display = 'none';
+        // Match initTextMode()'s convention: the dot means "service
+        // available", not "socket connected" — avatar.disconnect() left it
+        // grey/"Offline" for the duration of the handoff.
+        statusDot.className = 'status-dot connected';
+      }
       statusText.textContent = textOnly ? 'Text mode' : 'Online';
       addMessage('system', "You're back with the AI assistant.");
     }
