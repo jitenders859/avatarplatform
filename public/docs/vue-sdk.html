@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>React SDK — AvatarPlatform Docs</title>
+  <title>Vue SDK — AvatarPlatform Docs</title>
   <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -16,7 +16,7 @@
   <div class="docs-mobile-bar">
     <button class="docs-mobile-toggle" id="menu-btn">☰</button>
     <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
-    <span class="docs-mobile-title">React SDK</span>
+    <span class="docs-mobile-title">Vue SDK</span>
   </div>
   <div class="docs-overlay" id="overlay"></div>
 
@@ -32,8 +32,8 @@
 
           <p class="docs-nav-section">Libraries</p>
           <a class="docs-nav-link" href="/docs/js-sdk">JavaScript SDK</a>
-          <a class="docs-nav-link active" href="/docs/react-sdk">React SDK</a>
-          <a class="docs-nav-link" href="/docs/vue-sdk">Vue SDK</a>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link active" href="/docs/vue-sdk">Vue SDK</a>
           <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
 
           <p class="docs-nav-section">SDK Introduction</p>
@@ -50,50 +50,45 @@
     <main class="docs-main">
       <div class="docs-content">
         <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>Libraries</div>
-        <h1>React SDK</h1>
-        <p class="docs-lead">Integrate the AvatarPlatform talking agent into any React application with a single component. Works with Next.js, Vite, Remix, and Create React App.</p>
+        <h1>Vue SDK</h1>
+        <p class="docs-lead">Embed the AvatarPlatform talking agent into any Vue 3 application with a single component. Works with Vite, Nuxt, and the Vue CLI.</p>
 
         <h2>Installation</h2>
-        <pre><code class="language-bash">npm install @avatar-platform/react
+        <pre><code class="language-bash">npm install @avatar-platform/vue
 # or
-yarn add @avatar-platform/react
+yarn add @avatar-platform/vue
 # or
-pnpm add @avatar-platform/react</code></pre>
+pnpm add @avatar-platform/vue</code></pre>
 
         <div class="callout callout-info">
           <span class="callout-icon">ℹ️</span>
-          <div class="callout-body"><p>The React SDK mounts the real <code>embed-loader.js</code> script — the same one behind the plain <code>&lt;script data-bot&gt;</code> snippet on your dashboard's Embed tab. No bundler configuration is needed. React 17+ and React 18 are both supported.</p></div>
+          <div class="callout-body"><p>The Vue SDK mounts the real <code>embed-loader.js</code> script — the same one behind the plain <code>&lt;script data-bot&gt;</code> snippet on your dashboard's Embed tab. No bundler configuration is needed. Requires Vue 3 (Composition API).</p></div>
         </div>
 
         <h2>AvatarWidget</h2>
-        <p>The primary component. Drop it anywhere in your component tree — typically near the root layout so it persists across route changes. It renders nothing visible itself.</p>
+        <p>The primary component. Place it once, typically near your root layout so it persists across route changes. It renders nothing visible itself.</p>
 
-        <pre><code class="language-tsx">import { AvatarWidget } from '@avatar-platform/react';
+        <pre><code class="language-html">&lt;script setup&gt;
+import { AvatarWidget } from '@avatar-platform/vue';
+&lt;/script&gt;
 
-export default function App() {
-  return (
-    &lt;&gt;
-      &lt;YourApp /&gt;
-      &lt;AvatarWidget
-        serverUrl="https://your-deployment.com"
-        botId="YOUR_BOT_ID"
-      /&gt;
-    &lt;/&gt;
-  );
-}</code></pre>
+&lt;template&gt;
+  &lt;YourApp /&gt;
+  &lt;AvatarWidget server-url="https://your-deployment.com" bot-id="YOUR_BOT_ID" /&gt;
+&lt;/template&gt;</code></pre>
 
         <h3>Props</h3>
         <table class="props-table">
           <thead><tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
           <tbody>
             <tr>
-              <td><span class="prop-name">serverUrl</span></td>
+              <td><span class="prop-name">server-url</span></td>
               <td><span class="prop-type">string</span></td>
               <td>—</td>
               <td><strong>Required.</strong> Base URL of your AvatarPlatform deployment, no trailing slash.</td>
             </tr>
             <tr>
-              <td><span class="prop-name">botId</span></td>
+              <td><span class="prop-name">bot-id</span></td>
               <td><span class="prop-type">string</span></td>
               <td>—</td>
               <td><strong>Required.</strong> The public ID of your project. Find it in the dashboard → Embed tab.</td>
@@ -103,80 +98,67 @@ export default function App() {
 
         <div class="callout callout-warn">
           <span class="callout-icon">⚠️</span>
-          <div class="callout-body"><p>There's no <code>position</code>/<code>theme</code>/<code>open()</code>/<code>close()</code> — those are configured per-project in your AvatarPlatform dashboard's Widget settings, not overridable per-mount.</p></div>
+          <div class="callout-body"><p>There's no <code>position</code>/<code>theme</code>/<code>open</code>/<code>close</code> prop — those are configured per-project in your AvatarPlatform dashboard's Widget settings, not overridable per-mount.</p></div>
         </div>
 
         <h2>Async Q&amp;A (no widget UI)</h2>
         <p>For headless integrations — asking questions without showing the animated character — use <code>askAvatar</code> directly:</p>
 
-        <pre><code class="language-tsx">import { askAvatar } from '@avatar-platform/react';
+        <pre><code class="language-js">import { askAvatar } from '@avatar-platform/vue';
 
-function SupportButton() {
-  const handleSearch = async (query: string) =&gt; {
-    const result = await askAvatar({
-      serverUrl: 'https://your-deployment.com',
-      botId: 'YOUR_BOT_ID',
-      question: query,
-    });
-    console.log(result.answer);   // AI answer string
-    console.log(result.sources);  // source files used
-  };
+const { answer, sources, sessionId } = await askAvatar({
+  serverUrl: 'https://your-deployment.com',
+  botId: 'YOUR_BOT_ID',
+  question: 'What payment methods do you accept?',
+});
 
-  return (
-    &lt;button onClick={() =&gt; handleSearch('How do I reset my password?')}&gt;
-      Ask the AI
-    &lt;/button&gt;
-  );
-}</code></pre>
+console.log(answer);   // AI answer string
+console.log(sources);  // { title, url, snippet }[] — source files used</code></pre>
 
         <p>This calls <code>POST /embed/:publicId/ask</code> over HTTPS — no widget, no voice, no Rive. Pass the returned <code>sessionId</code> back in on the next call to continue the same conversation.</p>
 
-        <h2>TypeScript types</h2>
-        <pre><code class="language-typescript">interface AvatarWidgetProps {
-  serverUrl: string;
-  botId: string;
-}
+        <h3>askAvatar options</h3>
+        <table class="props-table">
+          <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><span class="prop-name">serverUrl</span></td><td><span class="prop-type">string</span></td><td>—</td><td><strong>Required.</strong></td></tr>
+            <tr><td><span class="prop-name">botId</span></td><td><span class="prop-type">string</span></td><td>—</td><td><strong>Required.</strong></td></tr>
+            <tr><td><span class="prop-name">question</span></td><td><span class="prop-type">string</span></td><td>—</td><td><strong>Required.</strong></td></tr>
+            <tr><td><span class="prop-name">sessionId</span></td><td><span class="prop-type">string</span></td><td>—</td><td>Optional — continue an existing conversation instead of starting a new one.</td></tr>
+          </tbody>
+        </table>
 
-interface AskAvatarOptions {
-  serverUrl: string;
-  botId: string;
-  question: string;
-  sessionId?: string;
-}
+        <h2>TypeScript types</h2>
+        <p>Type declarations are included.</p>
+        <pre><code class="language-typescript">import type { AskAvatarOptions, AskAvatarResult } from '@avatar-platform/vue';
 
 interface AskAvatarResult {
   answer: string;
-  sources: {
-    title: string;
-    url: string | null;
-    snippet: string;
-  }[];
+  sources: { title: string; url: string | null; snippet: string }[];
   sessionId: string;
 }</code></pre>
 
-        <h2>Next.js example</h2>
-        <p>For Next.js App Router, mark the component as a client component and add the widget to your root layout:</p>
-        <pre><code class="language-tsx">// app/layout.tsx
-'use client';
-import { AvatarWidget } from '@avatar-platform/react';
+        <h2>Nuxt 3 example</h2>
+        <p>Wrap the component in a <code>&lt;ClientOnly&gt;</code> block so it never runs during server-side rendering, and place it in your root layout:</p>
+        <pre><code class="language-html">&lt;!-- layouts/default.vue --&gt;
+&lt;script setup&gt;
+import { AvatarWidget } from '@avatar-platform/vue';
+const config = useRuntimeConfig();
+&lt;/script&gt;
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
-  return (
-    &lt;html lang="en"&gt;
-      &lt;body&gt;
-        {children}
-        &lt;AvatarWidget
-          serverUrl={process.env.NEXT_PUBLIC_AVATARPLATFORM_URL!}
-          botId={process.env.NEXT_PUBLIC_BOT_ID!}
-        /&gt;
-      &lt;/body&gt;
-    &lt;/html&gt;
-  );
-}</code></pre>
+&lt;template&gt;
+  &lt;slot /&gt;
+  &lt;ClientOnly&gt;
+    &lt;AvatarWidget
+      :server-url="config.public.avatarPlatformUrl"
+      :bot-id="config.public.avatarBotId"
+    /&gt;
+  &lt;/ClientOnly&gt;
+&lt;/template&gt;</code></pre>
 
         <div class="callout callout-warn">
           <span class="callout-icon">⚠️</span>
-          <div class="callout-body"><p><strong>SSR note:</strong> The widget renders on the client only. It is safe to use inside <code>'use client'</code> components. The component tree above it can remain a Server Component.</p></div>
+          <div class="callout-body"><p><strong>SSR note:</strong> The widget renders on the client only. In Nuxt, mounting it outside <code>&lt;ClientOnly&gt;</code> is safe too — the component itself is a no-op during SSR — but <code>&lt;ClientOnly&gt;</code> avoids a hydration mismatch warning.</p></div>
         </div>
       </div>
     </main>

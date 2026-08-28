@@ -95,6 +95,34 @@ function formatNum(n) {
   return String(n);
 }
 
+// Initials avatar for table rows (users, admins) — reuses app.css's
+// .user-avatar token pair instead of a second color scheme.
+function initialsAvatar(label) {
+  const initial = (String(label || '?').trim()[0] || '?').toUpperCase();
+  return `<span class="adm-avatar">${escapeHtml(initial)}</span>`;
+}
+
+// Prev/Next pager shared by every paginated tab table (Users, Audit Log, …).
+// Renders nothing when everything fits on one page. `onChange(page)` is
+// called with the next page number to fetch.
+function renderPagination(container, { page, pageSize, total }, onChange) {
+  if (total == null || total <= pageSize) { container.innerHTML = ''; return; }
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const to = Math.min(total, page * pageSize);
+  container.innerHTML = `
+    <div class="adm-pagination">
+      <span class="adm-pagination-info">${formatNum(from)}–${formatNum(to)} of ${formatNum(total)}</span>
+      <div class="row gap-sm">
+        <button type="button" class="btn btn-ghost btn-sm" id="adm-page-prev" ${page <= 1 ? 'disabled' : ''}>← Prev</button>
+        <span class="adm-pagination-page">Page ${page} of ${totalPages}</span>
+        <button type="button" class="btn btn-ghost btn-sm" id="adm-page-next" ${page >= totalPages ? 'disabled' : ''}>Next →</button>
+      </div>
+    </div>`;
+  container.querySelector('#adm-page-prev')?.addEventListener('click', () => onChange(page - 1));
+  container.querySelector('#adm-page-next')?.addEventListener('click', () => onChange(page + 1));
+}
+
 // ── Modal helper ─────────────────────────────────────────────
 // The .modal-backdrop/.modal CSS already existed but nothing opened one —
 // existing screens used native confirm()/prompt(). New screens (character

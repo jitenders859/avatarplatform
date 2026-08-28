@@ -199,7 +199,7 @@ for (const page of PAGES) {
 
 // ── Docs ──────────────────────────────────────────────────────
 app.get('/docs', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'docs', 'index.html')));
-const DOCS_PAGES = ['react-sdk', 'react-native-sdk', 'elevenlabs-avatar', 'gemini-live', 'openai-realtime', 'natural-lipsync', 'prefetching', 'troubleshooting'];
+const DOCS_PAGES = ['js-sdk', 'react-sdk', 'vue-sdk', 'react-native-sdk', 'elevenlabs-avatar', 'gemini-live', 'openai-realtime', 'natural-lipsync', 'prefetching', 'troubleshooting'];
 for (const p of DOCS_PAGES) {
   app.get(`/docs/${p}`, (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'docs', `${p}.html`)));
 }

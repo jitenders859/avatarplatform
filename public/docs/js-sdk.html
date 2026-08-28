@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>JavaScript SDK — AvatarPlatform Docs</title>
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">JavaScript SDK</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <div id="theme-toggle-slot" style="padding:0 20px 12px"></div>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link active" href="/docs/js-sdk">JavaScript SDK</a>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link" href="/docs/vue-sdk">Vue SDK</a>
+          <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>Libraries</div>
+        <h1>JavaScript SDK</h1>
+        <p class="docs-lead">The framework-agnostic core SDK — mount the embeddable talking-agent widget, or call the headless ask API, from any web page. No framework required. React and Vue apps should generally prefer <a href="/docs/react-sdk">@avatar-platform/react</a> or <a href="/docs/vue-sdk">@avatar-platform/vue</a> instead, which wrap this package.</p>
+
+        <h2>Installation</h2>
+        <pre><code class="language-bash">npm install @avatar-platform/js
+# or
+yarn add @avatar-platform/js
+# or
+pnpm add @avatar-platform/js</code></pre>
+
+        <div class="callout callout-info">
+          <span class="callout-icon">ℹ️</span>
+          <div class="callout-body"><p>This is the same underlying package the React and Vue SDKs wrap, and mounts the real <code>embed-loader.js</code> script — the one behind the plain <code>&lt;script data-bot&gt;</code> snippet on your dashboard's Embed tab. No bundler configuration is needed.</p></div>
+        </div>
+
+        <h2>mountAvatarWidget(options)</h2>
+        <p>Mounts the same floating chat widget you'd get from the <code>&lt;script data-bot&gt;</code> snippet on your dashboard's Embed tab.</p>
+
+        <pre><code class="language-js">import { mountAvatarWidget } from '@avatar-platform/js';
+
+mountAvatarWidget({
+  serverUrl: 'https://your-deployment.com',
+  botId: 'YOUR_BOT_ID',
+});</code></pre>
+
+        <p>Call this once, typically as early as possible in your app's lifecycle (e.g. your root layout or entry file). It's safe to call more than once with the same <code>botId</code> — later calls are a no-op.</p>
+
+        <div class="callout callout-warn">
+          <span class="callout-icon">⚠️</span>
+          <div class="callout-body"><p>There's no <code>unmount()</code> — the underlying embed script doesn't support teardown, so the widget is meant to persist for the page's lifetime, the same way a support-chat widget script normally would.</p></div>
+        </div>
+
+        <h3>mountAvatarWidget options</h3>
+        <table class="props-table">
+          <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><span class="prop-name">serverUrl</span></td>
+              <td><span class="prop-type">string</span></td>
+              <td>—</td>
+              <td><strong>Required.</strong> Base URL of your AvatarPlatform deployment, no trailing slash.</td>
+            </tr>
+            <tr>
+              <td><span class="prop-name">botId</span></td>
+              <td><span class="prop-type">string</span></td>
+              <td>—</td>
+              <td><strong>Required.</strong> The public ID of your project. Find it in the dashboard → Embed tab.</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout callout-warn">
+          <span class="callout-icon">⚠️</span>
+          <div class="callout-body"><p>There's no <code>position</code>/<code>theme</code>/<code>open()</code>/<code>close()</code> option here either — those are configured per-project in your AvatarPlatform dashboard's Widget settings, not overridable per-mount.</p></div>
+        </div>
+
+        <h2>askAvatar(options)</h2>
+        <p>Headless Q&amp;A — send a question, get a text answer with source citations back. No widget UI involved.</p>
+
+        <pre><code class="language-js">import { askAvatar } from '@avatar-platform/js';
+
+const result = await askAvatar({
+  serverUrl: 'https://your-deployment.com',
+  botId: 'YOUR_BOT_ID',
+  question: 'What payment methods do you accept?',
+});
+
+console.log(result.answer);    // string
+console.log(result.sources);   // { title, url, snippet }[]
+console.log(result.sessionId); // pass this back in to continue the same conversation</code></pre>
+
+        <p>This calls <code>POST /embed/:publicId/ask</code> over HTTPS — no widget, no voice, no Rive.</p>
+
+        <h3>askAvatar options</h3>
+        <table class="props-table">
+          <thead><tr><th>Option</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td><span class="prop-name">serverUrl</span></td><td><span class="prop-type">string</span></td><td>—</td><td><strong>Required.</strong></td></tr>
+            <tr><td><span class="prop-name">botId</span></td><td><span class="prop-type">string</span></td><td>—</td><td><strong>Required.</strong></td></tr>
+            <tr><td><span class="prop-name">question</span></td><td><span class="prop-type">string</span></td><td>—</td><td><strong>Required.</strong></td></tr>
+            <tr><td><span class="prop-name">sessionId</span></td><td><span class="prop-type">string</span></td><td>—</td><td>Optional — continue an existing conversation instead of starting a new one.</td></tr>
+          </tbody>
+        </table>
+
+        <h2>TypeScript types</h2>
+        <p>Type declarations are included — no <code>@types</code> package needed.</p>
+        <pre><code class="language-typescript">import type {
+  MountAvatarWidgetOptions,
+  AskAvatarOptions,
+  AskAvatarResult,
+  AskAvatarSource,
+} from '@avatar-platform/js';
+
+interface AskAvatarResult {
+  answer: string;
+  sources: AskAvatarSource[];
+  sessionId: string;
+}
+
+interface AskAvatarSource {
+  title: string;
+  url: string | null;
+  snippet: string;
+}</code></pre>
+
+        <h2>Plain HTML / no bundler</h2>
+        <p>If your page has no build step at all, skip the npm package and use the script-tag embed instead — it's the same widget, delivered without an import:</p>
+        <pre><code class="language-html">&lt;script
+  src="https://your-deployment.com/lipsync-sdk.js"
+  data-public-id="YOUR_BOT_ID"
+  data-position="bottom-right"
+  data-theme="#6366f1"
+  data-size="md"
+&gt;&lt;/script&gt;</code></pre>
+
+        <div class="callout callout-tip">
+          <span class="callout-icon">✅</span>
+          <div class="callout-body"><p><strong>Next step:</strong> Building with React or Vue? See the <a href="/docs/react-sdk">React SDK</a> or <a href="/docs/vue-sdk">Vue SDK</a> docs — both wrap this package with a component API.</p></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/theme.js"></script>
+
+  <script>mountThemeToggle(document.getElementById('theme-toggle-slot'));</script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

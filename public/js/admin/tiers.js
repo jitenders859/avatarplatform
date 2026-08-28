@@ -44,10 +44,14 @@ async function renderTiersTable() {
   }
   const rows = tiers.map(t => `
     <tr>
-      <td>${escapeHtml(t.name)}</td>
-      <td class="muted text-sm">${escapeHtml(t.id)}</td>
-      <td class="text-sm">${Object.entries(t.limits).map(([k, v]) => `${escapeHtml(k)}: ${formatNum(v)}`).join(', ')}</td>
-      <td><button class="btn btn-ghost text-sm" data-delete-tier="${escapeHtml(t.id)}" style="color:var(--danger)">Delete</button></td>
+      <td style="font-weight:500">${escapeHtml(t.name)}</td>
+      <td class="muted text-sm"><code class="adm-code">${escapeHtml(t.id)}</code></td>
+      <td>
+        <div class="row gap-sm" style="flex-wrap:wrap">
+          ${Object.entries(t.limits).map(([k, v]) => `<span class="pill" title="${escapeHtml(k)}">${escapeHtml(k)}: ${formatNum(v)}</span>`).join('')}
+        </div>
+      </td>
+      <td class="adm-table-actions"><button class="btn btn-danger btn-sm" data-delete-tier="${escapeHtml(t.id)}">Delete</button></td>
     </tr>`).join('');
   wrap.innerHTML = `
     <div class="table-scroll">
