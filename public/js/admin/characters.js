@@ -45,32 +45,27 @@ async function inspectRiveSource(src) {
   } catch (e) {
     return { ok: false, error: e.message };
   }
-  const artboardNames = root.artboardNames || [];
+  // .contents enumerates every artboard/state machine/input in the file in
+  // one pass (unlike the artboard-scoped animationNames/stateMachineNames
+  // getters, which only reflect whichever artboard is currently active) —
+  // this is the only way to see the whole file's shape without reloading a
+  // fresh Rive instance per artboard.
+  const contents = root.contents || { artboards: [] };
   root.cleanup();
 
-  const artboards = [];
-  for (const name of artboardNames) {
-    const c = document.createElement('canvas');
-    c.width = 64; c.height = 64;
-    let inst;
-    try {
-      inst = await loadRiveInstance(src, c, { artboard: name });
-    } catch {
-      artboards.push({ name, stateMachines: [], animations: [] });
-      continue;
-    }
-    const stateMachines = (inst.stateMachineNames || []).map(smName => ({
-      name: smName,
-      inputs: (inst.stateMachineInputs(smName) || []).map(inp => ({
+  const artboardNames = contents.artboards.map(a => a.name);
+  const artboards = contents.artboards.map(a => ({
+    name: a.name,
+    animations: a.animations,
+    stateMachines: a.stateMachines.map(sm => ({
+      name: sm.name,
+      inputs: sm.inputs.map(inp => ({
         name: inp.name,
         type: inp.type === window.rive.StateMachineInputType.Trigger ? 'trigger'
             : inp.type === window.rive.StateMachineInputType.Boolean ? 'boolean' : 'number',
       })),
-    }));
-    const animations = inst.animationNames || [];
-    artboards.push({ name, stateMachines, animations });
-    inst.cleanup();
-  }
+    })),
+  }));
 
   return { ok: true, artboardNames, artboards, contract: checkRiveContract(artboards) };
 }
