@@ -39,6 +39,7 @@
       <button class="tab" data-tab="analytics">Analytics</button>
       <button class="tab" data-tab="embed">Embed</button>
       <button class="tab" data-tab="conversations">Conversations</button>
+      <button class="tab" data-tab="livechat" id="livechat-tab" hidden>Live Chat<span id="livechat-badge" class="pill pill-danger" style="display:none;margin-left:6px;font-size:10px;padding:1px 6px"></span></button>
       <button class="tab" data-tab="leads" id="leads-tab">Leads</button>
     </div>
 
@@ -186,6 +187,31 @@
         <div class="card" style="min-height:400px">
           <h3 class="card-title mb-md" id="transcript-title">Select a session</h3>
           <div id="transcript-body" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Live Chat tab (human handoff) ──────────────────── -->
+    <section class="tab-panel" id="panel-livechat" hidden>
+      <div class="row gap-lg" style="align-items:flex-start">
+        <div style="flex:1;min-width:0">
+          <h3 class="text-sm" style="margin:0 0 8px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim)">Waiting</h3>
+          <div id="livechat-pending"></div>
+          <h3 class="text-sm" style="margin:20px 0 8px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim)">My active chats</h3>
+          <div id="livechat-mine"></div>
+          <h3 class="text-sm" style="margin:20px 0 8px;text-transform:uppercase;letter-spacing:.04em;color:var(--text-dim)">Others' active chats</h3>
+          <div id="livechat-others"></div>
+        </div>
+        <div id="livechat-thread" style="flex:1.4;min-width:0;display:none;border:1px solid var(--border);border-radius:12px;padding:12px;height:520px;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <strong id="livechat-thread-title" style="font-size:13px"></strong>
+            <button type="button" class="btn btn-ghost btn-sm" id="livechat-resolve-btn">Resolve</button>
+          </div>
+          <div id="livechat-thread-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px"></div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <input type="text" id="livechat-thread-input" class="input" placeholder="Type a message…" style="flex:1" />
+            <button type="button" class="btn btn-primary" id="livechat-thread-send">Send</button>
+          </div>
         </div>
       </div>
     </section>
@@ -774,6 +800,7 @@
     if (t.dataset.tab === 'knowledge') loadFiles();
     if (t.dataset.tab === 'analytics') loadProjectAnalytics();
     if (t.dataset.tab === 'conversations') loadSessions();
+    if (t.dataset.tab === 'livechat') openLiveChat();
     if (t.dataset.tab === 'capture') loadCaptureFields();
     if (t.dataset.tab === 'quiz') loadQuizQuestions();
     if (t.dataset.tab === 'flashcards') loadFlashcards();
@@ -832,7 +859,8 @@
       // webhook secrets, capture/quiz/etc. config) stays owner-only.
       if (isOwner === false) {
         document.getElementById('delete-btn').hidden = true;
-        const allowedTabs = new Set(['analytics', 'conversations']);
+        const allowedTabs = new Set(['analytics', 'conversations', 'livechat']);
+        document.getElementById('livechat-tab').hidden = false;
         allTabs.forEach(t => { if (!allowedTabs.has(t.dataset.tab)) t.hidden = true; });
         activateTab(document.querySelector('.tab[data-tab="analytics"]'));
       } else {
@@ -933,6 +961,7 @@
 
   async function loadTeam(sub) {
     const isBusiness = !!sub && sub.plan.id === 'business';
+    document.getElementById('livechat-tab').hidden = !isBusiness;
     document.getElementById('team-upgrade-note').style.display = isBusiness ? 'none' : 'block';
     document.getElementById('team-body').style.display = isBusiness ? '' : 'none';
     if (!isBusiness) return;
@@ -1434,6 +1463,125 @@
     a.href = URL.createObjectURL(blob);
     a.download = `sessions-${projectId}.csv`;
     a.click();
+  });
+
+  // ── Live Chat tab ──
+  let liveChatWs = null;
+  let liveChatReconnectAttempts = 0;
+  let liveChatOpenSessionId = null;
+  let liveChatQueue = { pending: [], active: [] };
+
+  function liveChatWsUrl() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    return `${proto}://${location.host}/ws/dashboard/${projectId}?token=${encodeURIComponent(Auth.token)}`;
+  }
+
+  function openLiveChat() {
+    if (liveChatWs && liveChatWs.readyState === WebSocket.OPEN) return;
+    connectLiveChatWs();
+  }
+
+  function connectLiveChatWs() {
+    liveChatWs = new WebSocket(liveChatWsUrl());
+    liveChatWs.addEventListener('open', () => { liveChatReconnectAttempts = 0; });
+    liveChatWs.addEventListener('message', (ev) => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch { return; }
+      if (msg.type === 'queue_update') { liveChatQueue = msg; renderLiveChatQueue(); }
+      if (msg.type === 'chat' && liveChatOpenSessionId) appendLiveChatMessage('visitor', msg.text);
+    });
+    liveChatWs.addEventListener('close', () => {
+      const tabVisible = !document.getElementById('panel-livechat').hidden;
+      if (tabVisible && liveChatReconnectAttempts < 5) {
+        const delay = Math.min(1000 * Math.pow(2, liveChatReconnectAttempts++), 15000);
+        setTimeout(connectLiveChatWs, delay);
+      }
+    });
+  }
+
+  function currentUserId() {
+    return Auth.user?.id;
+  }
+
+  function renderLiveChatQueue() {
+    const pendingEl = document.getElementById('livechat-pending');
+    const mineEl = document.getElementById('livechat-mine');
+    const othersEl = document.getElementById('livechat-others');
+    const uid = currentUserId();
+
+    const mine = liveChatQueue.active.filter(s => s.claimedBy === uid);
+    const others = liveChatQueue.active.filter(s => s.claimedBy !== uid);
+
+    document.getElementById('livechat-badge').style.display = liveChatQueue.pending.length + mine.length > 0 ? '' : 'none';
+    document.getElementById('livechat-badge').textContent = String(liveChatQueue.pending.length + mine.length);
+
+    pendingEl.innerHTML = liveChatQueue.pending.length
+      ? liveChatQueue.pending.map(s => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border)">
+          <span class="text-sm" style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(s.preview || '(no message yet)')}</span>
+          <button type="button" class="btn btn-primary btn-sm" data-claim="${s.sessionId}">Claim</button>
+        </div>`).join('')
+      : '<p class="muted text-sm">No one waiting.</p>';
+
+    mineEl.innerHTML = mine.length
+      ? mine.map(s => `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);cursor:pointer" data-open="${s.sessionId}">
+          <span class="text-sm">${escape(s.preview || '(no message yet)')}</span>
+          <span style="color:var(--text-dim);font-size:12px">→</span>
+        </div>`).join('')
+      : '<p class="muted text-sm">Nothing claimed yet.</p>';
+
+    othersEl.innerHTML = others.length
+      ? others.map(s => `<div class="text-sm muted" style="padding:6px 0">${escape(s.preview || '(no message yet)')} — claimed by ${escape(s.claimedByName || 'a teammate')}</div>`).join('')
+      : '<p class="muted text-sm">No other active chats.</p>';
+
+    pendingEl.querySelectorAll('[data-claim]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        liveChatWs.send(JSON.stringify({ type: 'claim', sessionId: btn.dataset.claim }));
+      });
+    });
+    mineEl.querySelectorAll('[data-open]').forEach(row => {
+      row.addEventListener('click', () => openLiveChatThread(row.dataset.open));
+    });
+  }
+
+  async function openLiveChatThread(sessionId) {
+    liveChatOpenSessionId = sessionId;
+    document.getElementById('livechat-thread').style.display = 'flex';
+    document.getElementById('livechat-thread-title').textContent = 'Conversation';
+    const body = document.getElementById('livechat-thread-messages');
+    body.innerHTML = '<p class="muted text-sm">Loading…</p>';
+    try {
+      const { messages } = await API.getSession(projectId, sessionId);
+      body.innerHTML = '';
+      for (const m of messages) appendLiveChatMessage(m.role === 'human' ? 'human' : (m.role === 'user' ? 'visitor' : 'ai'), m.content);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function appendLiveChatMessage(from, text) {
+    const body = document.getElementById('livechat-thread-messages');
+    const isVisitor = from === 'visitor';
+    const div = document.createElement('div');
+    div.style.cssText = `align-self:${isVisitor ? 'flex-start' : 'flex-end'};max-width:80%;padding:8px 12px;border-radius:12px;font-size:13px;background:${isVisitor ? 'var(--bg-3)' : 'var(--accent)'};color:${isVisitor ? 'var(--text)' : '#fff'}`;
+    div.textContent = text;
+    body.appendChild(div);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  document.getElementById('livechat-thread-send').addEventListener('click', () => {
+    const input = document.getElementById('livechat-thread-input');
+    const text = input.value.trim();
+    if (!text || !liveChatOpenSessionId) return;
+    liveChatWs.send(JSON.stringify({ type: 'chat', sessionId: liveChatOpenSessionId, text }));
+    appendLiveChatMessage('human', text);
+    input.value = '';
+  });
+
+  document.getElementById('livechat-resolve-btn').addEventListener('click', () => {
+    if (!liveChatOpenSessionId) return;
+    liveChatWs.send(JSON.stringify({ type: 'resolve', sessionId: liveChatOpenSessionId }));
+    document.getElementById('livechat-thread').style.display = 'none';
+    liveChatOpenSessionId = null;
   });
 
   // ── Project analytics tab ──
