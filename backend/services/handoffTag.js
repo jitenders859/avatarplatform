@@ -18,13 +18,19 @@ the tag to the user — it will be stripped before display.`;
 const HANDOFF_TAG_RE = /\[\[REQUEST_HUMAN\]\]/g;
 
 function extractHandoffTag(text) {
+  const str = String(text || '');
   let requested = false;
-  let clean = String(text || '').replace(HANDOFF_TAG_RE, () => { requested = true; return ''; });
-  // Collapse the double space left behind when the tag sat mid-line between
-  // two words (e.g. "connect you. [[REQUEST_HUMAN]] One moment." ->
-  // "connect you.  One moment." after the tag is removed), and collapse any
-  // blank-line runs left behind when it sat on its own line.
-  clean = clean.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  let clean = str.replace(HANDOFF_TAG_RE, () => { requested = true; return ''; });
+  if (requested) {
+    // Collapse the double space left behind when the tag sat mid-line between
+    // two words (e.g. "connect you. [[REQUEST_HUMAN]] One moment." ->
+    // "connect you.  One moment." after the tag is removed), and collapse any
+    // blank-line runs left behind when it sat on its own line. Only do this
+    // when a tag was actually found — otherwise ordinary formatting (indented
+    // code, nested markdown lists, ASCII art, a stylistic double space) would
+    // get silently mangled on every response even though nothing was stripped.
+    clean = clean.replace(/[ \t]{2,}/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  }
   return { clean, requested };
 }
 

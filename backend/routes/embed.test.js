@@ -319,6 +319,58 @@ test('/ask short-circuits without calling Gemini when the session has an active 
   assert.equal(geminiConstructed, false, 'Gemini must not be called once a session is handed off');
 });
 
+// ── Case F: an active handoff pauses /study instead of calling Gemini ───
+test('/study short-circuits without calling Gemini when the session has an active handoff', async () => {
+  process.env.GEMINI_API_KEY = SERVER_KEY;
+  delete process.env.PUBLIC_GEMINI_API_KEY;
+  delete require.cache[require.resolve('./embed')];
+
+  // Distinct publicId (not just a distinct db stub) — routes/embed.js caches
+  // project lookups in the shared, module-level projectCache (see cache.js)
+  // for 60s, so reusing 'test-public-id' here would silently serve the stale
+  // PROJECT object cached by the earlier cases above. Also needs a non-basic
+  // capabilityTier since /study 403s 'basic' projects before reaching the
+  // handoff check.
+  const STUDY_PROJECT = { ...PROJECT, publicId: 'test-public-id-study', capabilityTier: 'medium' };
+
+  let geminiConstructed = false;
+  stubFile('@google/generative-ai', {
+    GoogleGenerativeAI: class { constructor() { geminiConstructed = true; } },
+  });
+  stubFile('../db', {
+    findOne: async (table, filter) => {
+      if (table === 'projects') return { ...STUDY_PROJECT };
+      if (table === 'sessions' && filter.id === 'handed-off-session-study') return { id: 'handed-off-session-study', handoffStatus: 'active' };
+      return null;
+    },
+    findAll: async () => [],
+    insert: async (table, row) => row,
+    insertMany: async () => [],
+    update: async () => null,
+    remove: async () => 0,
+    query: async () => [],
+    queryOne: async () => null,
+    pool: { end: async () => {} },
+  });
+
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/embed', require('./embed'));
+
+  const res = await require('supertest')(app)
+    .post('/embed/test-public-id-study/study')
+    .send({ message: 'are you there?', sessionId: 'handed-off-session-study' });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.answer, "You're currently connected with a team member — please continue the conversation here.");
+  assert.equal(res.body.sessionId, 'handed-off-session-study');
+  assert.deepEqual(res.body.toolCalls, []);
+  assert.deepEqual(res.body.sources, []);
+  assert.deepEqual(res.body.figures, []);
+  assert.equal(geminiConstructed, false, 'Gemini must not be called once a session is handed off');
+});
+
 test.after(() => {
   delete process.env.PUBLIC_GEMINI_API_KEY;
 });

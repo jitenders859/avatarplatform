@@ -23,3 +23,13 @@ test('extractHandoffTag handles the tag appearing mid-text, not just at the end'
 test('HANDOFF_INSTRUCTION mentions the exact tag the extractor looks for', () => {
   assert.ok(HANDOFF_INSTRUCTION.includes('[[REQUEST_HUMAN]]'));
 });
+
+test('extractHandoffTag does not collapse whitespace when no tag is present', () => {
+  // Indented code + a stylistic double space + a triple blank-line gap —
+  // none of this should be touched when the tag was never there. The
+  // whitespace-collapse regexes must only run when a tag was actually found.
+  const withFormatting = 'Step one:  do the thing.\n\n\ncode:\n    const x = 1;\n        const y = 2;';
+  const { clean, requested } = extractHandoffTag(withFormatting);
+  assert.equal(clean, withFormatting);
+  assert.equal(requested, false);
+});
