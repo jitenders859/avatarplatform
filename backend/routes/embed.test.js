@@ -371,6 +371,53 @@ test('/study short-circuits without calling Gemini when the session has an activ
   assert.equal(geminiConstructed, false, 'Gemini must not be called once a session is handed off');
 });
 
+// ── Case G: /lead always persists name/email, even with no captureFields ─
+test('POST /lead persists name/email when the project has no matching captureFields configured', async () => {
+  process.env.GEMINI_API_KEY = SERVER_KEY;
+  delete process.env.PUBLIC_GEMINI_API_KEY;
+  delete require.cache[require.resolve('./embed')];
+
+  const LEAD_PROJECT = { ...PROJECT, publicId: 'test-public-id-lead' };
+  const leadInserts = [];
+  stubFile('../db', {
+    findOne: async (table, filter) => {
+      if (table === 'projects') return { ...LEAD_PROJECT };
+      if (table === 'sessions' && filter.id === 'lead-session') return { id: 'lead-session', projectId: LEAD_PROJECT.id };
+      if (table === 'leads') return null; // no existing lead for this session
+      return null;
+    },
+    // No captureFields configured for this project at all — the common
+    // case, since capture fields are an opt-in AI-conversational feature.
+    findAll: async (table) => (table === 'captureFields' ? [] : []),
+    insert: async (table, row) => { if (table === 'leads') leadInserts.push(row); return row; },
+    insertMany: async () => [],
+    update: async () => null,
+    remove: async () => 0,
+    query: async () => [],
+    queryOne: async () => null,
+    pool: { end: async () => {} },
+  });
+  // /lead calls backfillLearnerKey(project.id, sessionId) best-effort after
+  // insert; it isn't stubbed elsewhere in this file, so let it hit the real
+  // (stubbed) db above and fail harmlessly if it queries something unstubbed
+  // — it's wrapped in .catch() in the route and does not affect res.json().
+
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/embed', require('./embed'));
+
+  const res = await require('supertest')(app)
+    .post('/embed/test-public-id-lead/lead')
+    .send({ sessionId: 'lead-session', data: { name: 'Ada Lovelace', email: 'ada@example.com' }, complete: true });
+
+  assert.equal(res.status, 200);
+  assert.equal(leadInserts.length, 1, 'a lead row must be inserted');
+  assert.deepEqual(leadInserts[0].data, { name: 'Ada Lovelace', email: 'ada@example.com' },
+    'name/email must be persisted even though no captureFields row exists for either key');
+  assert.equal(res.body.lead.complete, true);
+});
+
 test.after(() => {
   delete process.env.PUBLIC_GEMINI_API_KEY;
 });

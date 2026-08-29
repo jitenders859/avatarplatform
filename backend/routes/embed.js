@@ -842,7 +842,19 @@ router.post('/:publicId/lead', validate(schemas.embedLead), async (req, res) => 
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   const fields = await db.findAll('captureFields', { projectId: project.id });
-  const allowedKeys = new Set(fields.map(f => f.key));
+  // name/email are always allowed to be stored, independent of whatever
+  // captureFields the project has configured — capture fields are an
+  // opt-in, AI-conversational feature, and most projects won't have
+  // fields keyed exactly 'name'/'email'. Without this, the fallback
+  // "no one's available, leave your info" form (showHandoffCaptureForm in
+  // embed.html) silently persists an empty lead for the common case while
+  // still telling the visitor "we'll be in touch". These two are
+  // universally useful, low-risk fields, so they're allowed unconditionally
+  // on top of the project's own configured fields — `fields` itself (used
+  // below for the `required`/`complete` calculation) is untouched, so a
+  // project's own required custom fields still gate `complete` exactly as
+  // before.
+  const allowedKeys = new Set([...fields.map(f => f.key), 'name', 'email']);
   const sanitized = {};
   for (const [k, v] of Object.entries(data)) {
     if (allowedKeys.has(k)) sanitized[k] = String(v).slice(0, 500);
