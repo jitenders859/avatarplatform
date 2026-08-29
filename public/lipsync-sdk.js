@@ -1102,10 +1102,10 @@
         visemeMinValue: RIVE_ACTIVE_MIN_VALUE,
         visemeMaxValue: RIVE_ACTIVE_MAX_VALUE,
         visemePeakRatio: 0.88,
-        visemeOverlapMs: 35,
-        visemeSmoothingMs: 90,
+        visemeOverlapMs: 18,
+        visemeSmoothingMs: 45,
         // Hybrid lip-sync params
-        anticipationMs: 40,      // pre-roll mouth N ms before phoneme starts
+        anticipationMs: 20,      // pre-roll mouth N ms before phoneme starts
         minVisemeMs: 50,         // minimum hold per viseme (prevents flutter on fast consonants)
         smoothingMs: 70,         // not used by timed-ramp but exposed for downstream controllers
         mouthDelayMs: 0,         // positive = delay anchor (audio arrives late); negative = advance
