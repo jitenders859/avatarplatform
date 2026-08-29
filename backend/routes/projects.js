@@ -107,6 +107,7 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
     fullScreenOnDesktop: false,
     fullScreenOnMobile: false,
     showFullScreenToggle: false,
+    showCharacterFullscreen: false,
     widgetOffsetX: 0,
     widgetOffsetY: 0,
     // Avatar placement

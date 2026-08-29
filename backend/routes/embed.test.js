@@ -277,6 +277,34 @@ test('widgetMessages overrides the default limit-reached copy and exposes an inp
   });
 });
 
+test('config exposes showCharacterFullscreen', async (t) => {
+  process.env.GEMINI_API_KEY = SERVER_KEY;
+  delete process.env.PUBLIC_GEMINI_API_KEY;
+  delete require.cache[require.resolve('./embed')];
+
+  const CHARFS_PROJECT = { ...PROJECT, publicId: 'test-public-id-charfs', showCharacterFullscreen: true };
+  const resolved = require.resolve('../db');
+  require.cache[resolved] = {
+    id: resolved, filename: resolved, loaded: true, children: [], paths: [],
+    exports: {
+      findOne: async (table) => (table === 'projects' ? { ...CHARFS_PROJECT } : null),
+      findAll: async () => [], insert: async (t, r) => r, insertMany: async () => [],
+      update: async () => null, remove: async () => 0, query: async () => [], queryOne: async () => null,
+      pool: { end: async () => {} },
+    },
+  };
+
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/embed', require('./embed'));
+  const agent = require('supertest')(app);
+
+  const res = await agent.get('/embed/test-public-id-charfs/config');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.project.showCharacterFullscreen, true);
+});
+
 test.after(() => {
   delete process.env.PUBLIC_GEMINI_API_KEY;
 });

@@ -101,6 +101,7 @@ const schemas = {
     fullScreenOnDesktop: z.boolean().optional(),
     fullScreenOnMobile: z.boolean().optional(),
     showFullScreenToggle: z.boolean().optional(),
+    showCharacterFullscreen: z.boolean().optional(),
     avatarPosition: z.enum(['left', 'right'], { error: 'Invalid avatarPosition' }).optional(),
     avatarSize: z.enum(['small', 'medium', 'large', 'xlarge'], { error: 'Invalid avatarSize' }).optional(),
     showAvatarInLauncher: z.boolean().optional(),
@@ -201,6 +202,41 @@ const schemas = {
     expiresAt: z.number().int().positive().nullable().optional(),
   }).refine(d => d.suspended !== undefined || d.adminPlanId !== undefined, {
     message: 'Nothing to update',
+  }),
+
+  // Empty string clears the override (falls back to .env) — see
+  // services/settings.js setSetting.
+  adminSettingUpdate: z.object({
+    value: z.string().trim().max(500, 'value too long'),
+  }),
+
+  // Email templates (Prompt 5f) — subject/body only; see
+  // services/emailTemplates.js. `body` is the HTML template, so no length
+  // cap tight enough to matter here — generous ceiling just guards against
+  // an accidental multi-MB paste.
+  adminEmailTemplateUpdate: z.object({
+    subject: z.string().trim().min(1, 'subject is required').max(500, 'subject too long'),
+    body: z.string().min(1, 'body is required').max(50000, 'body too long'),
+  }),
+
+  // Feature-flag infra (admin-panel plan 5e) — flags are admin-defined, so
+  // unlike adminSettingUpdate's fixed key list, key is part of the create
+  // body and validated as an identifier here.
+  featureFlagCreate: z.object({
+    key: z.string().trim().min(1, 'key is required').max(80, 'key too long')
+      .regex(/^[a-z][a-z0-9_]*$/, 'key must match /^[a-z][a-z0-9_]*$/'),
+    description: z.string().trim().max(500, 'description too long').optional(),
+  }),
+
+  featureFlagUpdate: z.object({
+    enabled: z.boolean({ error: 'enabled must be a boolean' }),
+    description: z.string().trim().max(500, 'description too long').optional(),
+  }),
+
+  // Only a clear/moderation action today (Prompt 5c) — no admin full-replace
+  // of widget copy, so `clear` must be explicitly true.
+  adminClearWidgetMessages: z.object({
+    clear: z.literal(true, { error: 'clear must be true' }),
   }),
 
   adminDeleteUser: z.object({
