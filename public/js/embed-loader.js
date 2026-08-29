@@ -53,6 +53,8 @@
   let pendingOpen = false;           // user clicked placeholder before iframe was ready
   let placeholder = null;            // FAB shown while iframe loads
   let preFullscreenStyle = null;     // snapshot of inline styles before entering full-screen
+  let wholePanelFullscreen = false;  // whole-panel fullscreen toggle (header button) is active
+  let characterFullscreenOn = false; // character-only fullscreen (click avatar) is active
 
   // localStorage key for persisting drag position
   const POS_KEY = `ap-pos-${publicId}`;
@@ -362,7 +364,8 @@
 
     if (data.type === 'open') {
       panelOpen = true;
-      if (data.fullscreen) {
+      wholePanelFullscreen = !!data.fullscreen;
+      if (wholePanelFullscreen) {
         setFullscreenIframe(true);
       } else {
         iframe.style.width  = `min(${OPEN_W}px, calc(100vw - ${OFFSET_X * 2 + 8}px))`;
@@ -371,12 +374,24 @@
       document.dispatchEvent(new CustomEvent('ap:opened', { detail: { botId: publicId } }));
     } else if (data.type === 'close') {
       panelOpen = false;
+      wholePanelFullscreen = false;
+      characterFullscreenOn = false;
       setFullscreenIframe(false);
       iframe.style.width  = CLOSED_W + 'px';
       iframe.style.height = CLOSED_H + 'px';
     } else if (data.type === 'fullscreen') {
       if (!panelOpen) return;
-      setFullscreenIframe(!!data.enabled);
+      wholePanelFullscreen = !!data.enabled;
+      setFullscreenIframe(wholePanelFullscreen || characterFullscreenOn);
+    } else if (data.type === 'character-fullscreen') {
+      if (!panelOpen) return;
+      // Two independent triggers can each want the iframe expanded — the
+      // header maximize/restore button (wholePanelFullscreen) and clicking
+      // the avatar (characterFullscreenOn). The iframe should only shrink
+      // back down once BOTH are off, so it's driven by the OR of both
+      // flags rather than this message's `enabled` value alone.
+      characterFullscreenOn = !!data.enabled;
+      setFullscreenIframe(wholePanelFullscreen || characterFullscreenOn);
     }
   });
 
