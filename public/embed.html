@@ -146,6 +146,7 @@
   let unreadCount = 0;
   let panelOpen = true;
   let fullscreenActive = false;
+  let characterFullscreenActive = false;
   let avatarCanvas = null;   // single Rive canvas element shuttled between slots
   let textOnly = false;      // true when no voice key (server answers via /ask)
 
@@ -222,6 +223,21 @@
         fullscreenBtn.hidden = false;
         updateFullscreenIcon();
       }
+    }
+
+    // Character-only fullscreen: opt-in per project, click-to-toggle only
+    // while the panel is open (no separate button, no visible chrome —
+    // see docs/superpowers/specs/2026-08-28-lipsync-speed-and-character-fullscreen-design.md).
+    // Independent of the whole-panel fullscreen state above; both can be
+    // active at once (CSS in embed.css handles that combination).
+    if (config.project.showCharacterFullscreen) {
+      avatarCanvasSlot.style.cursor = 'pointer';
+      avatarCanvasSlot.addEventListener('click', () => {
+        if (!panelOpen) return;
+        characterFullscreenActive = !characterFullscreenActive;
+        root.dataset.characterFullscreen = characterFullscreenActive ? '1' : '0';
+        notifyParent({ type: 'character-fullscreen', enabled: characterFullscreenActive });
+      });
     }
 
     // Avatar placement settings
@@ -1198,6 +1214,11 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
   function closePanel(skipAnim) {
     panelOpen = false;
+    if (characterFullscreenActive) {
+      characterFullscreenActive = false;
+      root.dataset.characterFullscreen = '0';
+      notifyParent({ type: 'character-fullscreen', enabled: false });
+    }
     root.dataset.state = skipAnim ? 'closed-instant' : 'closed';
     launcher.setAttribute('aria-expanded', 'false');
 
