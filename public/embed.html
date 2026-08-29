@@ -484,6 +484,15 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       document.getElementById('avatar-row').style.display = 'none';
       handoffWasVoice = true;
     }
+    // Neither control is usable once a handoff is in progress — tapping
+    // mic would silently reconnect the (disconnected) Gemini Live session,
+    // and image upload has the same unguarded avatar.connect()/sendImage()
+    // pattern. Hide both immediately, regardless of voice vs. text mode
+    // (in text mode they're already hidden by initTextMode(), so this is a
+    // harmless no-op there). Restored on 'resolved' / 'no_one_available'
+    // below.
+    micBtn.style.display = 'none';
+    imageBtn.style.display = 'none';
     handoffState = 'connecting';
     addMessage('bot', 'Connecting you with a team member…', { welcome: false });
     const url = sessionId
@@ -532,6 +541,14 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     }
     if (msg.type === 'no_one_available') {
       handoffState = 'none';
+      // The handoff attempt is over — restore mic/image to whatever their
+      // pre-request visibility was. In text-only mode they were already
+      // (permanently) hidden by initTextMode(), so only unhide when the
+      // visitor was capable of using them before the request.
+      if (!textOnly) {
+        micBtn.style.display = '';
+        imageBtn.style.display = '';
+      }
       showHandoffCaptureForm();
       return;
     }
@@ -570,6 +587,13 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         // available", not "socket connected" — avatar.disconnect() left it
         // grey/"Offline" for the duration of the handoff.
         statusDot.className = 'status-dot connected';
+      } else if (!textOnly) {
+        // Visitor was never put into voice mode by this handoff (e.g. the
+        // avatar hadn't finished initializing when requestHandoff() ran)
+        // but isn't text-only either — requestHandoff() hid mic/image
+        // unconditionally, so restore them here since nothing else will.
+        micBtn.style.display = '';
+        imageBtn.style.display = '';
       }
       statusText.textContent = textOnly ? 'Text mode' : 'Online';
       addMessage('system', "You're back with the AI assistant.");
@@ -706,6 +730,17 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     text = (text || '').trim();
     if (!text) return;
     if (handoffState === 'active') { sendHandoffChat(text); textInput.value = ''; textInput.style.height = 'auto'; return; }
+    if (handoffState === 'connecting' || handoffState === 'waiting') {
+      // No human has claimed the session yet, and the AI must stay fully
+      // out of the loop once a handoff is in progress — don't route to
+      // sendHandoffChat() (the server would drop it anyway, since it
+      // requires handoffStatus === 'active') and don't fall through to the
+      // AI path below. Just let the visitor know why nothing happened.
+      addMessage('system', 'Please wait — connecting you with a team member…');
+      textInput.value = '';
+      textInput.style.height = 'auto';
+      return;
+    }
     if (textOnly) return sendTextOnly(text);
 
     addMessage('user', text);
@@ -812,6 +847,11 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
   let imageUploadInFlight = false;
   async function handleImageFile(file) {
+    // Defensive: imageBtn is hidden for the entire handoff window, but this
+    // is also reachable via drag-and-drop (setupImageDragDrop), which isn't
+    // gated by the button's visibility. Never let an image reach
+    // avatar.connect()/sendImage() while a handoff is requested or active.
+    if (handoffState !== 'none') return;
     if (imageUploadInFlight) return;
     imageUploadInFlight = true;
 
