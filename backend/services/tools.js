@@ -14,6 +14,7 @@ const { meetsTier } = require('./tiers');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { embedOne } = require('./embed');
 const { searchProject } = require('./vector');
+const settings = require('./settings');
 
 // Quiz/flashcard synthesis is the accuracy-critical task (it's exam
 // content), so it gets the fuller flash model, not flash-lite.
@@ -84,7 +85,7 @@ async function handleGenerateQuiz(args, ctx) {
     const sourceChunkIds = hits.map(h => h.chunk.id);
 
     try {
-      const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const genai = new GoogleGenerativeAI(await settings.getSetting('GEMINI_API_KEY'));
       const model = genai.getGenerativeModel({
         model: QUIZ_MODEL,
         generationConfig: {
@@ -153,7 +154,7 @@ async function handleGenerateFlashcards(args, ctx) {
     const primarySourceChunkId = hits[0].chunk.id;
 
     try {
-      const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const genai = new GoogleGenerativeAI(await settings.getSetting('GEMINI_API_KEY'));
       const model = genai.getGenerativeModel({
         model: FLASHCARD_MODEL,
         generationConfig: {

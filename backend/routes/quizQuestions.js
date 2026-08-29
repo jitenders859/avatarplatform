@@ -14,6 +14,7 @@ const { authRequired } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validate');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { parseQuizCsv } = require('../services/csvImport');
+const settings = require('../services/settings');
 
 const router = express.Router();
 const csvUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 2 * 1024 * 1024 } });
@@ -124,7 +125,7 @@ router.post('/:projectId/quiz-questions/suggest-distractors', authRequired, owns
   const { question, correctAnswer } = req.body;
 
   try {
-    const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+    const genai = new GoogleGenerativeAI(await settings.getSetting('GEMINI_API_KEY'));
     const model = genai.getGenerativeModel({
       model: DISTRACTOR_MODEL,
       generationConfig: {

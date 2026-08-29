@@ -50,6 +50,7 @@ const videoResourcesRoutes = require('./routes/videoResources');
 const adminRoutes = require('./routes/admin');
 const adminCharactersRoutes = require('./routes/adminCharacters');
 const adminCouponsRoutes = require('./routes/adminCoupons');
+const adminSettingsRoutes = require('./routes/adminSettings');
 const adminWebhooksRoutes = require('./routes/adminWebhooks');
 const adminAnalyticsRoutes = require('./routes/adminAnalytics');
 const adminUsageRoutes = require('./routes/adminUsage');
@@ -192,6 +193,7 @@ app.use('/api/admin/login', adminLoginLimiter);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/admin/characters', apiLimiter, adminCharactersRoutes);
 app.use('/api/admin/coupons', apiLimiter, adminCouponsRoutes);
+app.use('/api/admin/settings', apiLimiter, adminSettingsRoutes);
 app.use('/api/admin/webhooks', apiLimiter, adminWebhooksRoutes);
 app.use('/api/admin/analytics', apiLimiter, adminAnalyticsRoutes);
 app.use('/api/admin/usage', apiLimiter, adminUsageRoutes);
@@ -240,7 +242,14 @@ for (const p of DOCS_PAGES) {
 }
 
 // Pretty embed URL
+// helmet's frameguard (X-Frame-Options: SAMEORIGIN) is on by default and
+// isn't touched by the contentSecurityPolicy/crossOriginEmbedderPolicy
+// overrides above — left as-is, it makes every browser refuse to render
+// this exact document inside an iframe on a customer's site, which is the
+// widget's entire purpose. Must be stripped only here, not app-wide: the
+// dashboard/admin pages still want clickjacking protection.
 app.get('/e/:publicId', (_req, res) => {
+  res.removeHeader('X-Frame-Options');
   res.sendFile(path.join(PUBLIC_DIR, 'embed.html'));
 });
 

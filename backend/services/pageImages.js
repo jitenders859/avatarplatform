@@ -28,6 +28,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const db = require('../db');
 const storage = require('./storage');
 const { embedMany, MODEL: EMBED_MODEL, OUTPUT_DIM: EMBED_DIM } = require('./embed');
+const settings = require('./settings');
 const logger = require('../logger').child({ module: 'services/pageImages' });
 
 const PAGE_CLASSIFY_MODEL = process.env.PAGE_CLASSIFY_MODEL || 'gemini-3.5-flash';
@@ -91,7 +92,7 @@ function cropFigure(sourceCanvas, rect) {
  * that's more precise than blind exponential backoff for quota errors.
  */
 async function detectFigures(pngBuffer) {
-  const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const genai = new GoogleGenerativeAI(await settings.getSetting('GEMINI_API_KEY'));
   const model = genai.getGenerativeModel({
     model: PAGE_CLASSIFY_MODEL,
     generationConfig: {

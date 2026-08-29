@@ -18,8 +18,8 @@ const path = require('path');
 const fetch = require('node-fetch');
 const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
+const settings = require('./settings');
 
-const PLATFORM_KEY = process.env.GEMINI_API_KEY || '';
 const VISION_MODEL = 'gemini-2.0-flash';
 const BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
@@ -97,13 +97,14 @@ async function extractDoc(buffer) {
  * capped by Gemini at ~20MB; larger files would need the Files API.
  */
 async function geminiMultimodal(buffer, mimeType, prompt) {
-  if (!PLATFORM_KEY) throw new Error('GEMINI_API_KEY not configured on server');
+  const platformKey = await settings.getSetting('GEMINI_API_KEY');
+  if (!platformKey) throw new Error('GEMINI_API_KEY not configured on server');
   if (buffer.length > 19 * 1024 * 1024) {
     throw new Error(`File too large for inline processing (${(buffer.length / 1024 / 1024).toFixed(1)}MB > 19MB). Split into smaller pieces.`);
   }
   const b64 = buffer.toString('base64');
 
-  const url = `${BASE}/models/${VISION_MODEL}:generateContent?key=${PLATFORM_KEY}`;
+  const url = `${BASE}/models/${VISION_MODEL}:generateContent?key=${platformKey}`;
   const body = {
     contents: [{
       role: 'user',

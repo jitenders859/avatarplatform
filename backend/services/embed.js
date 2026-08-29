@@ -11,14 +11,14 @@
 const fetch = require('node-fetch');
 const { LRUCache } = require('lru-cache');
 const logger = require('../logger').child({ module: 'services/embed' });
+const settings = require('./settings');
 
 const MODEL      = process.env.EMBEDDING_MODEL      || 'gemini-embedding-2-preview';
 const OUTPUT_DIM = parseInt(process.env.EMBEDDING_DIMENSIONS || '768', 10);
 const BASE       = 'https://generativelanguage.googleapis.com/v1beta';
-const PLATFORM_KEY = process.env.GEMINI_API_KEY || '';
 
-if (!PLATFORM_KEY) {
-  logger.warn('GEMINI_API_KEY not set — embedding calls will fail until you set it');
+if (!process.env.GEMINI_API_KEY) {
+  logger.warn('GEMINI_API_KEY not set — embedding calls will fail until you set it (in .env or the admin panel)');
 }
 
 // Query embedding cache — only caches RETRIEVAL_QUERY calls (the hot path).
@@ -30,7 +30,8 @@ async function embedOne(text, taskType = 'RETRIEVAL_DOCUMENT') {
   const cacheKey = taskType === 'RETRIEVAL_QUERY' ? `${taskType}:${text}` : null;
   if (cacheKey && embedCache.has(cacheKey)) return embedCache.get(cacheKey);
 
-  const url = `${BASE}/models/${MODEL}:embedContent?key=${PLATFORM_KEY}`;
+  const apiKey = await settings.getSetting('GEMINI_API_KEY');
+  const url = `${BASE}/models/${MODEL}:embedContent?key=${apiKey}`;
   const body = {
     model: `models/${MODEL}`,
     content: { parts: [{ text: String(text || '').slice(0, 8000) }] },
@@ -53,8 +54,15 @@ async function embedOne(text, taskType = 'RETRIEVAL_DOCUMENT') {
   return values;
 }
 
-async function embedBatch(slice, taskType) {
-  const url = `${BASE}/models/${MODEL}:batchEmbedContents?key=${PLATFORM_KEY}`;
+// apiKey is resolved once by the embedMany caller, not looked up per
+// batch — this runs up to CONCURRENCY-wide, and ordering below depends on
+// each worker reaching its fetch() call synchronously (no await before
+// it); an async settings lookup inside this function would insert a
+// suspension point ahead of fetch in every worker and let their dispatch
+// order drift, which is exactly what the "preserves input order" test
+// below guards against.
+async function embedBatch(slice, taskType, apiKey) {
+  const url = `${BASE}/models/${MODEL}:batchEmbedContents?key=${apiKey}`;
   const body = {
     requests: slice.map(t => ({
       model: `models/${MODEL}`,
@@ -98,12 +106,13 @@ async function embedMany(texts, taskType = 'RETRIEVAL_DOCUMENT') {
   const slices = [];
   for (let i = 0; i < texts.length; i += BATCH) slices.push(texts.slice(i, i + BATCH));
 
+  const apiKey = await settings.getSetting('GEMINI_API_KEY');
   const results = new Array(slices.length);
   let next = 0;
   async function worker() {
     while (next < slices.length) {
       const i = next++;
-      results[i] = await embedBatch(slices[i], taskType);
+      results[i] = await embedBatch(slices[i], taskType, apiKey);
     }
   }
   await Promise.all(Array.from({ length: Math.min(CONCURRENCY, slices.length) }, worker));
