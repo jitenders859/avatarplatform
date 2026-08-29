@@ -355,8 +355,15 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       onDisconnected: () => {
         statusDot.className = 'status-dot';
         statusText.textContent = 'Offline';
+        // The SDK already stops mic capture internally on disconnect
+        // (ws.onclose -> _stopMicNow()), but embed.html's own micOn flag
+        // and the button's active state are separate from that — without
+        // this, a session drop (idle timeout, network blip) leaves the mic
+        // button looking "on" while it's actually silently not capturing,
+        // so the visitor keeps talking into a dead mic with no feedback.
+        if (micOn) { micOn = false; micBtn.classList.remove('active'); }
       },
-      onError: (msg) => { console.warn('[avatar]', msg); },
+      onError: (msg) => { console.warn('[avatar]', msg); addMessage('bot', `⚠️ ${msg}`); },
       onTranscript: (role, text) => {
         if (role === 'model') handleBotChunk(text);
         else if (role === 'user') handleUserChunk(text);
