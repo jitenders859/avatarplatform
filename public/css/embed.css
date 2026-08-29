@@ -190,6 +190,31 @@ body.mode-inline .launcher { display: none; }
   width: 100%; height: 100%; max-height: none; border-radius: 0;
 }
 
+/* ── Character-only fullscreen ────────────────────────────────
+   Independent of [data-fullscreen] above — hides all chat chrome and
+   expands just the avatar. Can be combined with [data-fullscreen="1"]
+   (panel already fills the iframe); the chrome-hiding rules below simply
+   take priority visually in that case, no conflict. */
+.widget-root[data-character-fullscreen="1"] .panel {
+  width: 100%; height: 100%; max-height: none; border-radius: 0;
+}
+.widget-root[data-character-fullscreen="1"] .header,
+.widget-root[data-character-fullscreen="1"] .body,
+.widget-root[data-character-fullscreen="1"] .composer,
+.widget-root[data-character-fullscreen="1"] .branding {
+  display: none;
+}
+.widget-root[data-character-fullscreen="1"] .avatar-row {
+  flex: 1;
+  height: 100%;
+  pointer-events: auto;
+}
+.widget-root[data-character-fullscreen="1"] .avatar-stage {
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+
 /* ── Header ────────────────────────────────────────────────── */
 .header {
   display: flex; align-items: center; gap: 12px;
