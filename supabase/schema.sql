@@ -60,6 +60,7 @@ CREATE TABLE IF NOT EXISTS projects (
   full_screen_on_desktop   BOOLEAN DEFAULT false,
   full_screen_on_mobile    BOOLEAN DEFAULT false,
   show_full_screen_toggle  BOOLEAN DEFAULT false,
+  show_character_fullscreen BOOLEAN DEFAULT false,
   widget_offset_x          INTEGER DEFAULT 0,
   widget_offset_y          INTEGER DEFAULT 0,
   -- Avatar placement
@@ -725,3 +726,49 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
   updated_at        BIGINT
 );
 CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_project ON webhook_deliveries(project_id, created_at DESC);
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Admin-configurable model settings — see
+-- supabase/migrations/2026-08-28_add_admin_settings.sql and
+-- backend/services/settings.js. A present row overrides the env var of
+-- the same key; deleting it reverts to .env, no redeploy either way.
+-- ═══════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS admin_settings (
+  key         TEXT    PRIMARY KEY,
+  value       TEXT    NOT NULL,
+  updated_at  BIGINT  NOT NULL,
+  updated_by  UUID    REFERENCES admin_users(id) ON DELETE SET NULL
+);
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Admin-editable email templates — see
+-- supabase/migrations/2026-08-28_add_email_templates.sql and
+-- backend/services/emailTemplates.js. A present row's subject/body is used
+-- verbatim for that key; a missing row (or an unreachable DB) falls back to
+-- the identical hardcoded string in emailTemplates.js. `body` holds the
+-- HTML template only — see emailTemplates.js for why the plain-text part
+-- of each email stays hardcoded rather than living in this table.
+-- ═══════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS email_templates (
+  key         TEXT    PRIMARY KEY,
+  subject     TEXT    NOT NULL,
+  body        TEXT    NOT NULL,
+  updated_at  BIGINT  NOT NULL,
+  updated_by  UUID    REFERENCES admin_users(id) ON DELETE SET NULL
+);
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Feature-flag infrastructure — see
+-- supabase/migrations/2026-08-28_add_feature_flags.sql and
+-- backend/services/featureFlags.js. Infra only (admin-panel plan 5e): no
+-- feature in the codebase is gated behind a flag yet; an empty list here
+-- is correct and expected. Flags are admin-defined (created ad hoc from
+-- the panel), unlike admin_settings' fixed env-var keys.
+-- ═══════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS feature_flags (
+  key         TEXT    PRIMARY KEY,
+  enabled     BOOLEAN NOT NULL DEFAULT false,
+  description TEXT,
+  updated_at  BIGINT  NOT NULL,
+  updated_by  UUID    REFERENCES admin_users(id) ON DELETE SET NULL
+);
