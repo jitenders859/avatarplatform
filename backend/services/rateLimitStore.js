@@ -169,6 +169,19 @@ function getRateLimitStore(prefix) {
 }
 
 /**
+ * Read-only accessor for the admin health tab (Phase 4 —
+ * docs/admin-panel-implementation-plan.md "Phase 4: System health tab").
+ * Resolves the shared client the same way every limiter does (so it
+ * reports exactly what's actually backing rate limiting, not just whether
+ * env vars look present) and collapses it to 'redis' | 'memory'. Does not
+ * create a new client or open a new connection — reuses getSharedClient()'s
+ * module-level singleton.
+ */
+function getBackendType() {
+  return getSharedClient() ? 'redis' : 'memory';
+}
+
+/**
  * keyGenerator for limiters mounted at /embed (mount-level middleware —
  * req.params isn't populated yet, so publicId comes out of the path).
  * Inside app.use('/embed', limiter, ...) req.path is mount-relative:
@@ -190,4 +203,4 @@ function _resetForTests() {
   fallbackWarned = false;
 }
 
-module.exports = { getRateLimitStore, getSharedClient, embedKeyGenerator, RedisRateLimitStore, _resetForTests };
+module.exports = { getRateLimitStore, getSharedClient, getBackendType, embedKeyGenerator, RedisRateLimitStore, _resetForTests };

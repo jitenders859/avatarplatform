@@ -14,6 +14,7 @@
  */
 const nodemailer = require('nodemailer');
 const logger = require('../logger').child({ module: 'services/email' });
+const { getTemplate } = require('./emailTemplates');
 
 let _transport = null;
 
@@ -34,6 +35,21 @@ function getTransport() {
 
 const FROM = () => process.env.SMTP_FROM || process.env.SMTP_USER || 'noreply@avatarplatform.ai';
 const BASE_URL = () => process.env.APP_URL || 'http://localhost:8080';
+
+// Fills a DB/fallback template's placeholder tokens (literal `${...}` text,
+// preserved verbatim from the original template literals — see
+// services/emailTemplates.js) with real values. Deliberately a plain
+// substring replace, not a templating engine (Handlebars/Mustache): every
+// occurrence of `token` is a literal string search-and-replace, so a
+// template row edited from the admin panel behaves exactly like the
+// original inline template literals did.
+function interpolate(str, replacements) {
+  let out = str;
+  for (const [token, value] of Object.entries(replacements)) {
+    out = out.split(token).join(value);
+  }
+  return out;
+}
 
 async function send(opts) {
   const transport = getTransport();
@@ -56,19 +72,16 @@ async function send(opts) {
  */
 async function sendPasswordReset(toEmail, resetToken) {
   const link = `${BASE_URL()}/reset-password?token=${resetToken}`;
+  const { subject, body } = await getTemplate('password_reset');
+  const html = interpolate(body, {
+    '${link}': link,
+    '${BASE_URL()}': BASE_URL(),
+  });
   await send({
     to: toEmail,
-    subject: 'Reset your AvatarPlatform password',
+    subject,
     text: `Click this link to reset your password (expires in 1 hour):\n\n${link}\n\nIf you didn't request this, ignore this email.`,
-    html: `
-      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
-        <h2 style="margin:0 0 16px;font-size:20px">Reset your password</h2>
-        <p style="color:#555;line-height:1.6">Click the button below to set a new password. This link expires in <strong>1 hour</strong>.</p>
-        <a href="${link}" style="display:inline-block;margin:24px 0;padding:12px 24px;background:#7c6af5;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Reset password</a>
-        <p style="color:#999;font-size:12px">If you didn't request a password reset, you can safely ignore this email.</p>
-        <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-        <p style="color:#bbb;font-size:11px">AvatarPlatform · <a href="${BASE_URL()}" style="color:#bbb">${BASE_URL()}</a></p>
-      </div>`,
+    html,
   });
 }
 
@@ -82,19 +95,16 @@ async function sendPasswordReset(toEmail, resetToken) {
  */
 async function sendVerificationEmail(toEmail, verifyToken) {
   const link = `${BASE_URL()}/verify-email?token=${verifyToken}`;
+  const { subject, body } = await getTemplate('verification');
+  const html = interpolate(body, {
+    '${link}': link,
+    '${BASE_URL()}': BASE_URL(),
+  });
   await send({
     to: toEmail,
-    subject: 'Verify your AvatarPlatform email',
+    subject,
     text: `Click this link to verify your email (expires in 24 hours):\n\n${link}\n\nIf you didn't create an AvatarPlatform account, ignore this email.`,
-    html: `
-      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
-        <h2 style="margin:0 0 16px;font-size:20px">Verify your email</h2>
-        <p style="color:#555;line-height:1.6">Click the button below to confirm your email address. This link expires in <strong>24 hours</strong>.</p>
-        <a href="${link}" style="display:inline-block;margin:24px 0;padding:12px 24px;background:#7c6af5;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Verify email</a>
-        <p style="color:#999;font-size:12px">If you didn't create an AvatarPlatform account, you can safely ignore this email.</p>
-        <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-        <p style="color:#bbb;font-size:11px">AvatarPlatform · <a href="${BASE_URL()}" style="color:#bbb">${BASE_URL()}</a></p>
-      </div>`,
+    html,
   });
 }
 
@@ -109,18 +119,18 @@ async function sendVerificationEmail(toEmail, verifyToken) {
  * @param {string} inviterEmail
  */
 async function sendTeamInviteEmail(toEmail, projectName, inviterEmail) {
+  const { subject, body } = await getTemplate('team_invite');
+  const filledSubject = interpolate(subject, { '${projectName}': projectName });
+  const html = interpolate(body, {
+    '${escapeHtml(inviterEmail)}': escapeHtml(inviterEmail),
+    '${escapeHtml(projectName)}': escapeHtml(projectName),
+    '${BASE_URL()}': BASE_URL(),
+  });
   await send({
     to: toEmail,
-    subject: `You've been added to "${projectName}" on AvatarPlatform`,
+    subject: filledSubject,
     text: `${inviterEmail} added you as a team member on "${projectName}". You can now view its conversations and analytics from your dashboard: ${BASE_URL()}/dashboard`,
-    html: `
-      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
-        <h2 style="margin:0 0 16px;font-size:20px">You've been added to a chatbot</h2>
-        <p style="color:#555;line-height:1.6"><strong>${escapeHtml(inviterEmail)}</strong> added you as a team member on <strong>${escapeHtml(projectName)}</strong>. You can view its conversations and analytics from your dashboard.</p>
-        <a href="${BASE_URL()}/dashboard" style="display:inline-block;margin:24px 0;padding:12px 24px;background:#7c6af5;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Go to dashboard →</a>
-        <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-        <p style="color:#bbb;font-size:11px">AvatarPlatform · <a href="${BASE_URL()}" style="color:#bbb">${BASE_URL()}</a></p>
-      </div>`,
+    html,
   });
 }
 
@@ -131,19 +141,16 @@ async function sendTeamInviteEmail(toEmail, projectName, inviterEmail) {
  */
 async function sendWelcome(toEmail, name) {
   const displayName = name || 'there';
+  const { subject, body } = await getTemplate('welcome');
+  const html = interpolate(body, {
+    '${displayName}': displayName,
+    '${BASE_URL()}': BASE_URL(),
+  });
   await send({
     to: toEmail,
-    subject: 'Welcome to AvatarPlatform',
+    subject,
     text: `Hi ${displayName},\n\nThanks for signing up! Get started by creating your first chatbot at ${BASE_URL()}/dashboard.\n\nIf you have any questions, reply to this email or visit ${BASE_URL()}/contact.\n\n— The AvatarPlatform team`,
-    html: `
-      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
-        <h2 style="margin:0 0 16px;font-size:20px">Welcome to AvatarPlatform, ${displayName}!</h2>
-        <p style="color:#555;line-height:1.6">You're all set. Create your first AI talking-character chatbot in minutes.</p>
-        <a href="${BASE_URL()}/dashboard" style="display:inline-block;margin:24px 0;padding:12px 24px;background:#7c6af5;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Go to dashboard →</a>
-        <p style="color:#555;line-height:1.6;font-size:13px">Questions? <a href="${BASE_URL()}/contact" style="color:#7c6af5">Book a setup call</a> or browse the <a href="${BASE_URL()}/docs" style="color:#7c6af5">docs</a>.</p>
-        <hr style="border:none;border-top:1px solid #eee;margin:24px 0"/>
-        <p style="color:#bbb;font-size:11px">AvatarPlatform · <a href="${BASE_URL()}" style="color:#bbb">${BASE_URL()}</a></p>
-      </div>`,
+    html,
   });
 }
 
@@ -158,17 +165,19 @@ const escapeHtml = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', 
 
 async function sendContactMessage({ name, email, message }) {
   const to = process.env.CONTACT_TO_EMAIL || FROM();
+  const { subject, body } = await getTemplate('contact_message');
+  const filledSubject = interpolate(subject, { '${name}': name });
+  const html = interpolate(body, {
+    '${escapeHtml(name)}': escapeHtml(name),
+    '${escapeHtml(email)}': escapeHtml(email),
+    '${escapeHtml(message)}': escapeHtml(message),
+  });
   await send({
     to,
     replyTo: email,
-    subject: `Contact form: ${name}`,
+    subject: filledSubject,
     text: `From: ${name} <${email}>\n\n${message}`,
-    html: `
-      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px">
-        <h2 style="margin:0 0 16px;font-size:20px">New contact message</h2>
-        <p style="color:#555"><strong>${escapeHtml(name)}</strong> &lt;${escapeHtml(email)}&gt;</p>
-        <p style="color:#333;line-height:1.6;white-space:pre-wrap">${escapeHtml(message)}</p>
-      </div>`,
+    html,
   });
 }
 

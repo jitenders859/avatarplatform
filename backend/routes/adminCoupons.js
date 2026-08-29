@@ -80,6 +80,22 @@ router.patch('/:id', validate(schemas.couponPatch), async (req, res) => {
   }
 });
 
+router.delete('/:id', async (req, res) => {
+  const existing = await db.findOne('coupons', { id: req.params.id });
+  if (!existing) return res.status(404).json({ error: 'Coupon not found' });
+  try {
+    await coupons.deleteCoupon(existing);
+    await logAdminAction({
+      adminId: req.admin.id,
+      action: 'coupon_delete',
+      meta: { couponId: existing.id, code: existing.code },
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(e.status || 400).json({ error: e.message });
+  }
+});
+
 router.get('/:id/redemptions', async (req, res) => {
   const existing = await db.findOne('coupons', { id: req.params.id });
   if (!existing) return res.status(404).json({ error: 'Coupon not found' });

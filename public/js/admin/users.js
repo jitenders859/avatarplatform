@@ -88,7 +88,40 @@ async function renderUserDetail(userId) {
     </div>`;
   }).join('');
 
-  const projectRows = projects.map(p => `<tr><td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.characterId)}</td><td>${p.fileCount}</td><td>${new Date(p.createdAt).toLocaleDateString()}</td></tr>`).join('');
+  const projectRows = projects.map(p => {
+    const members = p.members || [];
+    const membersHtml = members.length
+      ? `<ul class="col gap-xs" style="margin:4px 0 0;padding-left:18px">
+           ${members.map(m => `<li class="text-sm">${escapeHtml(m.name || m.email)} <span class="muted">&lt;${escapeHtml(m.email)}&gt; · joined ${new Date(m.createdAt).toLocaleDateString()}</span></li>`).join('')}
+         </ul>`
+      : `<span class="text-sm muted">No team members</span>`;
+
+    const overrideEntries = Object.entries(p.widgetMessages || {}).filter(([, v]) => v);
+    const overridesHtml = overrideEntries.length
+      ? `<ul class="col gap-xs" style="margin:4px 0 0;padding-left:18px">
+           ${overrideEntries.map(([k, v]) => `<li class="text-sm"><span class="muted">${escapeHtml(k)}:</span> ${escapeHtml(v)}</li>`).join('')}
+         </ul>`
+      : `<span class="text-sm muted">No overrides set</span>`;
+
+    return `<tr>
+        <td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.characterId)}</td><td>${p.fileCount}</td><td>${new Date(p.createdAt).toLocaleDateString()}</td>
+      </tr>
+      <tr class="project-detail-row">
+        <td colspan="4" style="padding-top:0">
+          <div class="col gap-sm" style="padding:2px 0 12px">
+            <div>
+              <span class="text-sm" style="font-weight:500">Team members</span>
+              ${membersHtml}
+            </div>
+            <div>
+              <span class="text-sm" style="font-weight:500">Widget overrides</span>
+              ${overridesHtml}
+              ${overrideEntries.length ? `<button type="button" class="btn btn-ghost btn-sm clear-override-btn" data-project-id="${p.id}" style="margin-top:6px">Clear override</button>` : ''}
+            </div>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
 
   const override = user.adminOverride;
   const tierStatusHtml = override
@@ -151,6 +184,17 @@ async function renderUserDetail(userId) {
       window.open(`/dashboard#imp=${encodeURIComponent(token)}`, '_blank');
     } catch (err) { adminToast(err.message, 'error'); }
   });
+
+  for (const btn of detail.querySelectorAll('.clear-override-btn')) {
+    btn.addEventListener('click', async () => {
+      if (!confirm('Clear this chatbot\'s widget text overrides? It reverts to the default widget copy immediately.')) return;
+      try {
+        await AdminAPI.clearWidgetMessages(btn.dataset.projectId);
+        adminToast('Widget overrides cleared', 'success');
+        renderUserDetail(userId);
+      } catch (err) { adminToast(err.message, 'error'); }
+    });
+  }
 
   document.getElementById('delete-user-btn').addEventListener('click', async () => {
     const typed = prompt(`This permanently deletes ${user.email} and all of their data. Type their email to confirm.`);

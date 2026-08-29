@@ -98,4 +98,9 @@ async function queueWebhookDelivery(project, eventType, payload) {
   await attemptDelivery(delivery.id);
 }
 
-module.exports = { queueWebhookDelivery, attemptDelivery, MAX_ATTEMPTS };
+// Exported alongside MAX_ATTEMPTS so callers that only need to *display*
+// the retry schedule (e.g. the admin webhook-deliveries tab estimating a
+// "next retry" time for a pending row) can read the same backoff table
+// instead of hardcoding a second copy of it. Read-only use — the actual
+// scheduling decision still lives entirely in scheduleRetry() above.
+module.exports = { queueWebhookDelivery, attemptDelivery, MAX_ATTEMPTS, BACKOFF_MS };

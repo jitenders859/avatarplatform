@@ -100,6 +100,30 @@ async function setCouponActive(couponRow, active) {
   return db.update('coupons', couponRow.id, { active });
 }
 
+// Hard delete is only safe for a never-used coupon — deleting a redeemed
+// one would sever coupon_redemptions' FK context and erase revenue/audit
+// history, so this blocks with a 409-flagged error instead (mirrors the
+// tier-delete in-use guard at admin.js's DELETE /tiers/:tierId). Stripe has
+// no "delete" for a Promotion Code, only deactivation, so — like
+// setCouponActive(false) — this revokes it via promotionCodes.update
+// rather than inventing an unsupported delete call.
+async function deleteCoupon(couponRow) {
+  const { count } = await db.queryOne(
+    'SELECT COUNT(*)::int AS count FROM coupon_redemptions WHERE coupon_id = $1',
+    [couponRow.id]
+  );
+  if (count > 0) {
+    const err = new Error('This coupon has been redeemed and cannot be deleted');
+    err.status = 409;
+    throw err;
+  }
+  const stripe = getStripe();
+  if (stripe) {
+    await stripe.promotionCodes.update(couponRow.stripePromotionCodeId, { active: false }).catch(() => {});
+  }
+  await db.remove('coupons', { id: couponRow.id });
+}
+
 // Shared by the admin coupon list (informational) and billing.js's
 // pre-checkout check (authoritative — never trust a client-reported code
 // as valid without re-running this here).
@@ -137,4 +161,4 @@ async function recordRedemption({ couponId, userId, stripeCheckoutSessionId, pla
   });
 }
 
-module.exports = { createCoupon, setCouponActive, validateCoupon, findByStripePromotionCodeId, recordRedemption };
+module.exports = { createCoupon, setCouponActive, deleteCoupon, validateCoupon, findByStripePromotionCodeId, recordRedemption };

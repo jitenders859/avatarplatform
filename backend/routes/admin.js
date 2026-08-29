@@ -104,7 +104,7 @@ router.get('/users/:id', adminAuthRequired, async (req, res) => {
   const [snapshot, projects, subs] = await Promise.all([
     getUsageSnapshot(user.id),
     db.query(
-      `SELECT p.id, p.name, p.character_id, p.created_at,
+      `SELECT p.id, p.name, p.character_id, p.created_at, p.widget_messages,
               COUNT(f.id)::int AS file_count
          FROM projects p LEFT JOIN files f ON f.project_id = p.id
         WHERE p.user_id = $1 GROUP BY p.id ORDER BY p.created_at DESC`,
@@ -112,6 +112,26 @@ router.get('/users/:id', adminAuthRequired, async (req, res) => {
     ),
     db.query(`SELECT * FROM subscriptions WHERE user_id = $1 ORDER BY created_at DESC`, [user.id]),
   ]);
+
+  // Batch-fetch project_members for every project owned by this user in one
+  // query (not one query per project) — same reasoning as the file_count
+  // join above, just kept separate since it's a one-to-many fan-out that
+  // would otherwise blow up the GROUP BY.
+  const projectIds = projects.map(p => p.id);
+  const members = projectIds.length
+    ? await db.query(
+        `SELECT pm.id, pm.project_id, pm.user_id, pm.created_at, u.email, u.name
+           FROM project_members pm JOIN users u ON u.id = pm.user_id
+          WHERE pm.project_id = ANY($1::uuid[])
+          ORDER BY pm.created_at ASC`,
+        [projectIds]
+      )
+    : [];
+  const membersByProject = new Map();
+  for (const m of members) {
+    if (!membersByProject.has(m.projectId)) membersByProject.set(m.projectId, []);
+    membersByProject.get(m.projectId).push(m);
+  }
 
   const overrideActive = isAdminPlanOverrideActive(user);
   const setter = user.adminPlanSetBy ? await db.findOne('admin_users', { id: user.adminPlanSetBy }) : null;
@@ -129,7 +149,11 @@ router.get('/users/:id', adminAuthRequired, async (req, res) => {
       } : null,
     },
     usage: snapshot,
-    projects,
+    projects: projects.map(p => ({
+      id: p.id, name: p.name, characterId: p.characterId, createdAt: p.createdAt, fileCount: p.fileCount,
+      widgetMessages: p.widgetMessages || {},
+      members: membersByProject.get(p.id) || [],
+    })),
     subscriptions: subs,
   });
 });
@@ -223,6 +247,32 @@ router.post('/users/:id/impersonate', adminAuthRequired, async (req, res) => {
     targetEmail: user.email,
   });
   res.json({ token, user: { id: user.id, email: user.email, name: user.name } });
+});
+
+// ── Projects (project-scoped admin actions) ─────────────────────
+// No dedicated adminProjects.js exists yet (only owner-scoped routes in
+// routes/projects.js) — kept here per the plan's guidance to extend admin.js
+// rather than stand up a new route file for a single moderation action.
+router.patch('/projects/:id/widget-messages', adminAuthRequired, validate(schemas.adminClearWidgetMessages), async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  // Only supported operation today is clearing — {} matches the column's
+  // own DEFAULT '{}' and is what embed.js's read path (project.widgetMessages
+  // && project.widgetMessages.xxx) already treats as "no override" for
+  // every key, same as NULL would.
+  const updated = await db.update('projects', project.id, { widgetMessages: {} });
+
+  const owner = await db.findOne('users', { id: project.userId });
+  await logAdminAction({
+    adminId: req.admin.id,
+    action: 'widget_override_cleared',
+    targetUserId: project.userId,
+    targetEmail: owner?.email || null,
+    meta: { projectId: project.id, projectName: project.name },
+  });
+
+  res.json({ project: { id: updated.id, widgetMessages: updated.widgetMessages } });
 });
 
 // ── Plan tiers ────────────────────────────────────────────────

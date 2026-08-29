@@ -5,6 +5,7 @@
 const express = require('express');
 const db = require('../db');
 const { authRequired } = require('../middleware/auth');
+const { getFunnelAndDuration } = require('../services/analytics');
 
 const router = express.Router();
 
@@ -139,7 +140,7 @@ router.get('/project/:id', authRequired, async (req, res) => {
 
   const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
-  const [totals, avgRow, funnelRow, durationRow, msgDaily, sessDaily, topQ] = await Promise.all([
+  const [totals, avgRow, funnelAndDuration, msgDaily, sessDaily, topQ] = await Promise.all([
     db.queryOne(
       `SELECT
          (SELECT COUNT(*) FROM sessions WHERE project_id = $1)                   AS sessions,
@@ -154,27 +155,9 @@ router.get('/project/:id', authRequired, async (req, res) => {
        FROM (SELECT session_id, COUNT(*) AS msg_count FROM messages WHERE project_id = $1 GROUP BY session_id) sub`,
       [project.id]
     ),
-    // Conversion funnel: every session a visitor starts, how many actually
-    // sent a message (vs. opening the widget and leaving), how many of
-    // those left lead-capture info, and how many completed every capture
-    // field. Each stage is a strict subset of the one before it.
-    db.queryOne(
-      `SELECT
-         (SELECT COUNT(DISTINCT session_id) FROM messages WHERE project_id = $1) AS engaged_sessions,
-         (SELECT COUNT(DISTINCT session_id) FROM leads    WHERE project_id = $1) AS sessions_with_lead`,
-      [project.id]
-    ),
-    // Session duration = time between a session's first and last message.
-    // A single-message session has a duration of 0, which is correct (not
-    // missing data) — there's nothing to measure a span across yet.
-    db.queryOne(
-      `SELECT COALESCE(AVG(span_ms), 0) AS avg_ms
-       FROM (
-         SELECT session_id, MAX(created_at) - MIN(created_at) AS span_ms
-         FROM messages WHERE project_id = $1 GROUP BY session_id
-       ) sub`,
-      [project.id]
-    ),
+    // Conversion funnel + avg session duration — shared with the
+    // platform-wide admin rollup, see services/analytics.js.
+    getFunnelAndDuration(project.id),
     db.query(
       `SELECT to_char(to_timestamp(created_at / 1000.0), 'YYYY-MM-DD') AS date, COUNT(*) AS count
        FROM messages WHERE project_id = $1 AND created_at > $2 GROUP BY date`,
@@ -206,13 +189,8 @@ router.get('/project/:id', authRequired, async (req, res) => {
       leads:         Number(totals.leads),
       leadsComplete: Number(totals.leadsComplete),
     },
-    funnel: {
-      sessions:         Number(totals.sessions),
-      engagedSessions:  Number(funnelRow.engagedSessions),
-      leadsCaptured:    Number(funnelRow.sessionsWithLead),
-      leadsCompleted:   Number(totals.leadsComplete),
-    },
-    avgSessionDurationSec: Math.round((Number(durationRow.avgMs) || 0) / 1000),
+    funnel: funnelAndDuration.funnel,
+    avgSessionDurationSec: funnelAndDuration.avgSessionDurationSec,
     daily: buildDailyBuckets(msgDaily, sessDaily),
     topQuestions: topQ.map(r => ({ text: r.text, createdAt: r.createdAt })),
   });

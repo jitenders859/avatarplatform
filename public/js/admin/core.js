@@ -44,6 +44,7 @@ const AdminAPI = {
   patchUser: (id, patch) => adminApiCall(`/api/admin/users/${id}`, { method: 'PATCH', body: patch }),
   deleteUser: (id, confirmEmail) => adminApiCall(`/api/admin/users/${id}`, { method: 'DELETE', body: { confirmEmail } }),
   impersonate: (id) => adminApiCall(`/api/admin/users/${id}/impersonate`, { method: 'POST' }),
+  clearWidgetMessages: (projectId) => adminApiCall(`/api/admin/projects/${projectId}/widget-messages`, { method: 'PATCH', body: { clear: true } }),
   listTiers: () => adminApiCall('/api/admin/tiers'),
   createTier: (data) => adminApiCall('/api/admin/tiers', { method: 'POST', body: data }),
   updateTier: (id, data) => adminApiCall(`/api/admin/tiers/${id}`, { method: 'PATCH', body: data }),
@@ -66,7 +67,39 @@ const AdminAPI = {
   listCoupons: () => adminApiCall('/api/admin/coupons'),
   createCoupon: (data) => adminApiCall('/api/admin/coupons', { method: 'POST', body: data }),
   patchCoupon: (id, patch) => adminApiCall(`/api/admin/coupons/${id}`, { method: 'PATCH', body: patch }),
+  deleteCoupon: (id) => adminApiCall(`/api/admin/coupons/${id}`, { method: 'DELETE' }),
   getCouponRedemptions: (id) => adminApiCall(`/api/admin/coupons/${id}/redemptions`),
+
+  listSettings: () => adminApiCall('/api/admin/settings'),
+  updateSetting: (key, value) => adminApiCall(`/api/admin/settings/${key}`, { method: 'PUT', body: { value } }),
+
+  listWebhookDeliveries: (page, status) => adminApiCall(`/api/admin/webhooks?page=${page || 1}${status ? `&status=${encodeURIComponent(status)}` : ''}`),
+  getProjectWebhookDeliveries: (projectId, page, status) => adminApiCall(`/api/admin/webhooks/${projectId}?page=${page || 1}${status ? `&status=${encodeURIComponent(status)}` : ''}`),
+  retryWebhookDelivery: (id) => adminApiCall(`/api/admin/webhooks/${id}/retry`, { method: 'POST' }),
+
+  getUsageOverview: (page, sortBy) => adminApiCall(`/api/admin/usage/overview?page=${page || 1}${sortBy ? `&sortBy=${encodeURIComponent(sortBy)}` : ''}`),
+
+  getAnalyticsOverview: () => adminApiCall('/api/admin/analytics/overview'),
+  getTopProjects: (windowParam) => adminApiCall(`/api/admin/analytics/top-projects?window=${encodeURIComponent(windowParam || '30d')}`),
+
+  getHealth: () => adminApiCall('/api/admin/health'),
+
+  listSessions: (page, filters = {}) => {
+    const params = new URLSearchParams({ page: page || 1 });
+    if (filters.projectId) params.set('projectId', filters.projectId);
+    if (filters.email) params.set('email', filters.email);
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+    return adminApiCall(`/api/admin/sessions?${params.toString()}`);
+  },
+  getSessionMessages: (id, page) => adminApiCall(`/api/admin/sessions/${id}/messages?page=${page || 1}`),
+
+  listFeatureFlags: () => adminApiCall('/api/admin/feature-flags'),
+  createFeatureFlag: (data) => adminApiCall('/api/admin/feature-flags', { method: 'POST', body: data }),
+  updateFeatureFlag: (key, patch) => adminApiCall(`/api/admin/feature-flags/${key}`, { method: 'PUT', body: patch }),
+
+  listEmailTemplates: () => adminApiCall('/api/admin/email-templates'),
+  updateEmailTemplate: (key, data) => adminApiCall(`/api/admin/email-templates/${key}`, { method: 'PUT', body: data }),
 };
 
 // Lazy-loaded once — same pattern as public/js/api.js's getSupabaseClient,

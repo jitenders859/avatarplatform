@@ -50,6 +50,13 @@ const videoResourcesRoutes = require('./routes/videoResources');
 const adminRoutes = require('./routes/admin');
 const adminCharactersRoutes = require('./routes/adminCharacters');
 const adminCouponsRoutes = require('./routes/adminCoupons');
+const adminWebhooksRoutes = require('./routes/adminWebhooks');
+const adminAnalyticsRoutes = require('./routes/adminAnalytics');
+const adminUsageRoutes = require('./routes/adminUsage');
+const adminHealthRoutes = require('./routes/adminHealth');
+const adminSessionsRoutes = require('./routes/adminSessions');
+const adminFeatureFlagsRoutes = require('./routes/adminFeatureFlags');
+const adminEmailTemplatesRoutes = require('./routes/adminEmailTemplates');
 const inngestClient = require('./inngest/client');
 const { functions: inngestFunctions } = require('./inngest/functions');
 const { checkProcessModeConfigured } = require('./services/processMode');
@@ -185,6 +192,13 @@ app.use('/api/admin/login', adminLoginLimiter);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/admin/characters', apiLimiter, adminCharactersRoutes);
 app.use('/api/admin/coupons', apiLimiter, adminCouponsRoutes);
+app.use('/api/admin/webhooks', apiLimiter, adminWebhooksRoutes);
+app.use('/api/admin/analytics', apiLimiter, adminAnalyticsRoutes);
+app.use('/api/admin/usage', apiLimiter, adminUsageRoutes);
+app.use('/api/admin/health', apiLimiter, adminHealthRoutes);
+app.use('/api/admin/sessions', apiLimiter, adminSessionsRoutes);
+app.use('/api/admin/feature-flags', apiLimiter, adminFeatureFlagsRoutes);
+app.use('/api/admin/email-templates', apiLimiter, adminEmailTemplatesRoutes);
 app.use('/embed', embedLimiter, embedRoutes);
 
 // ── Static frontend ───────────────────────────────────────────

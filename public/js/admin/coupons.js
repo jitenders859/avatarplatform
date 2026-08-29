@@ -14,7 +14,7 @@ async function loadCouponsTab() {
     </div>
     <div id="coupons-table"></div>
   `;
-  document.getElementById('create-coupon-btn').addEventListener('click', openCreateCouponModal);
+  document.getElementById('create-coupon-btn').addEventListener('click', () => openCreateCouponModal());
   await renderCouponsTable();
 }
 
@@ -48,6 +48,10 @@ async function renderCouponsTable() {
         <td class="adm-table-actions">
           <button class="btn btn-ghost btn-sm" data-view-redemptions="${c.id}" data-code="${escapeHtml(c.code)}">Redemptions</button>
           <button class="btn ${c.active ? 'btn-ghost' : 'btn-primary'} btn-sm" data-toggle-coupon="${c.id}" data-active="${c.active}">${c.active ? 'Deactivate' : 'Activate'}</button>
+          <button class="btn btn-ghost btn-sm" data-edit-coupon="${c.id}">Edit</button>
+          ${c.redemptionCount === 0
+            ? `<button class="btn btn-danger btn-sm" data-delete-coupon="${c.id}" data-code="${escapeHtml(c.code)}">Delete</button>`
+            : `<button class="btn btn-ghost btn-sm" disabled title="Coupon has been redeemed and cannot be deleted">Delete</button>`}
         </td>
       </tr>`;
   }).join('');
@@ -72,9 +76,49 @@ async function renderCouponsTable() {
   wrap.querySelectorAll('[data-view-redemptions]').forEach(btn => {
     btn.addEventListener('click', () => openRedemptionsModal(btn.dataset.viewRedemptions, btn.dataset.code));
   });
+  wrap.querySelectorAll('[data-delete-coupon]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!confirm(`Delete coupon ${btn.dataset.code}? This cannot be undone.`)) return;
+      try {
+        await AdminAPI.deleteCoupon(btn.dataset.deleteCoupon);
+        adminToast('Coupon deleted', 'success');
+        renderCouponsTable();
+      } catch (err) { adminToast(err.message, 'error'); }
+    });
+  });
+  wrap.querySelectorAll('[data-edit-coupon]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const coupon = coupons.find(c => c.id === btn.dataset.editCoupon);
+      if (!coupon) return;
+      // Stripe coupons/promo codes are immutable after creation, so "editing"
+      // is really: deactivate the old one, then create a replacement with the
+      // same terms. The deactivation is a real side effect even if the admin
+      // then cancels the replacement modal, so confirm first.
+      if (!confirm(`Editing ${coupon.code} will immediately deactivate the original coupon, even if you cancel the replacement. Continue?`)) return;
+      try {
+        await AdminAPI.patchCoupon(coupon.id, { active: false });
+      } catch (err) {
+        adminToast(err.message, 'error');
+        return;
+      }
+      adminToast('Original coupon deactivated', 'success');
+      renderCouponsTable();
+      openCreateCouponModal({
+        code: `${coupon.code}-2`,
+        oldCode: coupon.code,
+        discountType: coupon.discountType,
+        discountValue: coupon.discountValue,
+        currency: coupon.currency,
+        applicablePlanIds: coupon.applicablePlanIds || [],
+        maxRedemptions: coupon.maxRedemptions,
+        maxRedemptionsPerUser: coupon.maxRedemptionsPerUser,
+        expiresAt: coupon.expiresAt,
+      });
+    });
+  });
 }
 
-async function openCreateCouponModal() {
+async function openCreateCouponModal(prefill = null) {
   let plans = [];
   try {
     const res = await fetch('/api/billing/plans');
@@ -86,35 +130,40 @@ async function openCreateCouponModal() {
     ({ tiers: customTiers } = await AdminAPI.listTiers());
   } catch { /* custom tiers are optional context, not required to create a coupon */ }
 
+  const prefillPlanIds = prefill?.applicablePlanIds || [];
   const planCheckboxes = [...plans.map(p => ({ id: p.id, name: p.name })), ...customTiers.map(t => ({ id: t.id, name: t.name }))]
-    .map(p => `<label class="row gap-sm text-sm" style="align-items:center"><input type="checkbox" value="${escapeHtml(p.id)}" class="coupon-plan-cb" /> ${escapeHtml(p.name)}</label>`)
+    .map(p => `<label class="row gap-sm text-sm" style="align-items:center"><input type="checkbox" value="${escapeHtml(p.id)}" class="coupon-plan-cb" ${prefillPlanIds.includes(p.id) ? 'checked' : ''} /> ${escapeHtml(p.name)}</label>`)
     .join('');
+
+  const isFixed = prefill?.discountType === 'fixed';
+  const expiryValue = prefill?.expiresAt ? new Date(prefill.expiresAt).toISOString().slice(0, 10) : '';
 
   openModal(`
     <div class="modal-header">
-      <h3 class="modal-title">Create coupon</h3>
+      <h3 class="modal-title">${prefill ? 'Create replacement coupon' : 'Create coupon'}</h3>
       <button class="modal-close" id="modal-close-btn" aria-label="Close">&times;</button>
     </div>
+    ${prefill?.oldCode ? `<p class="text-sm muted" style="margin:-8px 0 0">Replacing <code class="adm-code">${escapeHtml(prefill.oldCode)}</code>, which has been deactivated. Pick a new, unique code below.</p>` : ''}
     <form id="coupon-form" class="col gap-md">
       <div class="field">
         <label for="coupon-code">Code</label>
-        <input type="text" id="coupon-code" class="input" placeholder="Leave blank to auto-generate" maxlength="40" style="text-transform:uppercase" />
+        <input type="text" id="coupon-code" class="input" value="${escapeHtml(prefill?.code || '')}" placeholder="Leave blank to auto-generate" maxlength="40" style="text-transform:uppercase" />
       </div>
       <div class="row gap-sm">
         <div class="field" style="flex:1">
           <label for="coupon-type">Discount type</label>
           <select id="coupon-type" class="select">
-            <option value="percent">Percent off</option>
-            <option value="fixed">Fixed amount off</option>
+            <option value="percent" ${!isFixed ? 'selected' : ''}>Percent off</option>
+            <option value="fixed" ${isFixed ? 'selected' : ''}>Fixed amount off</option>
           </select>
         </div>
         <div class="field" style="flex:1">
           <label for="coupon-value">Value</label>
-          <input type="number" id="coupon-value" class="input" min="0" step="0.01" required />
+          <input type="number" id="coupon-value" class="input" min="0" step="0.01" value="${prefill?.discountValue ?? ''}" required />
         </div>
-        <div class="field" id="coupon-currency-field" style="flex:1;display:none">
+        <div class="field" id="coupon-currency-field" style="flex:1;display:${isFixed ? 'block' : 'none'}">
           <label for="coupon-currency">Currency</label>
-          <input type="text" id="coupon-currency" class="input" placeholder="usd" maxlength="3" />
+          <input type="text" id="coupon-currency" class="input" value="${escapeHtml(prefill?.currency || '')}" placeholder="usd" maxlength="3" />
         </div>
       </div>
       <div class="field">
@@ -127,20 +176,20 @@ async function openCreateCouponModal() {
       <div class="row gap-sm">
         <div class="field" style="flex:1">
           <label for="coupon-max-total">Max redemptions (total)</label>
-          <input type="number" id="coupon-max-total" class="input" min="1" placeholder="Unlimited" />
+          <input type="number" id="coupon-max-total" class="input" min="1" placeholder="Unlimited" value="${prefill?.maxRedemptions ?? ''}" />
         </div>
         <div class="field" style="flex:1">
           <label for="coupon-max-per-user">Max redemptions (per user)</label>
-          <input type="number" id="coupon-max-per-user" class="input" min="1" placeholder="Unlimited" />
+          <input type="number" id="coupon-max-per-user" class="input" min="1" placeholder="Unlimited" value="${prefill?.maxRedemptionsPerUser ?? ''}" />
         </div>
       </div>
       <div class="field">
         <label for="coupon-expiry">Expires (optional)</label>
-        <input type="date" id="coupon-expiry" class="input" />
+        <input type="date" id="coupon-expiry" class="input" value="${expiryValue}" />
       </div>
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="modal-cancel-btn">Cancel</button>
-        <button type="submit" class="btn btn-primary">Create coupon</button>
+        <button type="submit" class="btn btn-primary">${prefill ? 'Create replacement coupon' : 'Create coupon'}</button>
       </div>
     </form>
   `);
