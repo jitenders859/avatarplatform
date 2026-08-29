@@ -296,7 +296,7 @@ router.get('/:id/leads', authRequired, async (req, res) => {
   const offset   = (pageNum - 1) * pageSize;
 
   const fields = await db.findAll('captureFields', { projectId: project.id });
-  const fieldMap = Object.fromEntries(fields.map(f => [f.key, f.label]));
+  const fieldMap = { name: 'Name', email: 'Email', ...Object.fromEntries(fields.map(f => [f.key, f.label])) };
 
   // Build WHERE clause for complete filter
   let completeClause = '';
@@ -331,7 +331,7 @@ router.get('/:id/leads/:leadId', authRequired, async (req, res) => {
   if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
   const fields = await db.findAll('captureFields', { projectId: project.id });
-  const fieldMap = Object.fromEntries(fields.map(f => [f.key, f.label]));
+  const fieldMap = { name: 'Name', email: 'Email', ...Object.fromEntries(fields.map(f => [f.key, f.label])) };
 
   const session = await db.findOne('sessions', { id: lead.sessionId });
   const messages = session
