@@ -1553,6 +1553,7 @@
     body.innerHTML = '<p class="muted text-sm">Loading…</p>';
     try {
       const { messages } = await API.getSession(projectId, sessionId);
+      if (liveChatOpenSessionId !== sessionId) return; // a different thread was opened while this was loading
       body.innerHTML = '';
       for (const m of messages) appendLiveChatMessage(m.role === 'human' ? 'human' : (m.role === 'user' ? 'visitor' : 'ai'), m.content);
     } catch (e) { toast(e.message, 'error'); }
