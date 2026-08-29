@@ -28,6 +28,7 @@
         <h2 class="card-title">Current plan</h2>
         <span id="plan-pill" class="pill pill-info">Loading…</span>
       </div>
+      <div id="usage-alert" style="display:none;margin-bottom:12px"></div>
       <div id="usage-bars" class="col gap-md"></div>
     </div>
 
@@ -90,7 +91,24 @@
     } catch (e) { toast(e.message, 'error'); }
   }
 
+  // 3a — usage-based billing overlay (see
+  // docs/competitor-feature-implementation-plan.md 3a): a soft warning
+  // banner at 80%+ of the monthly message cap, and an over-cap notice with
+  // a projected cost if the plan has an overageRate. Informational only —
+  // no real metered Stripe charge is created for this yet.
+  function renderUsageAlert(alert) {
+    const el = document.getElementById('usage-alert');
+    if (!alert || alert.level === 'ok') { el.style.display = 'none'; return; }
+    el.style.display = '';
+    if (alert.level === 'over') {
+      el.innerHTML = `<div class="pill pill-warn" style="display:block;padding:10px 14px">You're over your monthly message limit.${alert.projectedOverageCost ? ` At this plan's overage rate, that's roughly $${alert.projectedOverageCost.toFixed(2)} beyond your included messages.` : ' Upgrade to raise your cap.'}</div>`;
+    } else {
+      el.innerHTML = `<div class="pill pill-info" style="display:block;padding:10px 14px">You've used ${Math.round(alert.ratio * 100)}% of this month's message limit.</div>`;
+    }
+  }
+
   function renderUsage(u) {
+    renderUsageAlert(u.usageAlert);
     const c = u.counters, l = u.limits;
     const items = [
       { label: 'Chatbots',           current: c.projects,        limit: l.projects,             unit: '' },

@@ -140,7 +140,7 @@ router.get('/project/:id', authRequired, async (req, res) => {
 
   const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
-  const [totals, avgRow, funnelAndDuration, msgDaily, sessDaily, topQ] = await Promise.all([
+  const [totals, avgRow, funnelAndDuration, msgDaily, sessDaily, topQ, csatRow, dropOffRow] = await Promise.all([
     db.queryOne(
       `SELECT
          (SELECT COUNT(*) FROM sessions WHERE project_id = $1)                   AS sessions,
@@ -178,7 +178,28 @@ router.get('/project/:id', authRequired, async (req, res) => {
        ORDER BY created_at DESC LIMIT 10`,
       [project.id]
     ),
+    // 1b. CSAT — thumbs-up/down set via POST /embed/:publicId/satisfaction.
+    db.queryOne(
+      `SELECT
+         COUNT(*) FILTER (WHERE satisfaction = 'up')   AS up,
+         COUNT(*) FILTER (WHERE satisfaction = 'down') AS down
+       FROM sessions WHERE project_id = $1`,
+      [project.id]
+    ),
+    // 1b. Drop-off — assistant replies where RAG retrieval found nothing
+    // above RAG_MIN_SCORE (see services/vector.js), flagged at insert time
+    // in routes/embed.js's /ask and /study handlers.
+    db.queryOne(
+      `SELECT
+         COUNT(*) FILTER (WHERE no_answer_found)                AS no_answer,
+         COUNT(*) FILTER (WHERE role = 'assistant')              AS total_answers
+       FROM messages WHERE project_id = $1`,
+      [project.id]
+    ),
   ]);
+
+  const csatTotal = Number(csatRow.up) + Number(csatRow.down);
+  const totalAnswers = Number(dropOffRow.totalAnswers);
 
   res.json({
     totals: {
@@ -193,6 +214,17 @@ router.get('/project/:id', authRequired, async (req, res) => {
     avgSessionDurationSec: funnelAndDuration.avgSessionDurationSec,
     daily: buildDailyBuckets(msgDaily, sessDaily),
     topQuestions: topQ.map(r => ({ text: r.text, createdAt: r.createdAt })),
+    csat: {
+      up: Number(csatRow.up),
+      down: Number(csatRow.down),
+      rated: csatTotal,
+      upRate: csatTotal ? Number(csatRow.up) / csatTotal : null,
+    },
+    dropOff: {
+      noAnswerCount: Number(dropOffRow.noAnswer),
+      totalAnswers,
+      rate: totalAnswers ? Number(dropOffRow.noAnswer) / totalAnswers : null,
+    },
   });
 });
 

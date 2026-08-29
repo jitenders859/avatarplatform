@@ -83,6 +83,7 @@
         <input type="file" id="image-input" accept="image/jpeg,image/png,image/webp" style="display:none" />
         <button class="icon-btn" id="quiz-btn" title="Quiz me on this" aria-label="Quiz me" style="display:none">📝</button>
         <button class="icon-btn" id="progress-btn" title="Your progress" aria-label="Your progress" style="display:none">📊</button>
+        <button class="icon-btn" id="handoff-btn" title="Talk to a human" aria-label="Talk to a human" type="button">🙋</button>
         <textarea id="text-input" rows="1" placeholder="Type a message…" aria-label="Message"></textarea>
         <button class="send-btn" id="send-btn" title="Send" aria-label="Send" type="button">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
@@ -149,6 +150,10 @@
   let characterFullscreenActive = false;
   let avatarCanvas = null;   // single Rive canvas element shuttled between slots
   let textOnly = false;      // true when no voice key (server answers via /ask)
+  let satisfactionShown = false; // 1b — show the thumbs prompt at most once per session
+  let handoffState = 'none';     // 1a — 'none' | 'requested' | 'human'
+  let handoffPollTimer = null;
+  let handoffLastTs = 0;
 
   const AVATAR_SIZES = { small: 80, medium: 120, large: 160, xlarge: 200 };
 
@@ -170,6 +175,7 @@
   const lightboxClose      = document.getElementById('lightbox-close');
   const quizBtn           = document.getElementById('quiz-btn');
   const progressBtn       = document.getElementById('progress-btn');
+  const handoffBtn        = document.getElementById('handoff-btn');
   const textInput         = document.getElementById('text-input');
   const minimizeBtn       = document.getElementById('minimize-btn');
   const fullscreenBtn     = document.getElementById('fullscreen-btn');
@@ -458,6 +464,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         })));
       }
       notifyParent({ type: 'response', sessionId, answer: data.answer || '', sources: data.sources || [] });
+      attachSatisfactionPrompt(answerEl);
       // No logTurn here: /ask already persists both turns + bumped the
       // message counter server-side; hitting /log too would double-count.
       // The ap:message/ap:response host events above are independent of
@@ -737,7 +744,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         attachOptionButtons(currentBotMsgEl, pendingOptions);
       }
       pendingOptions = null;
-      if (botBuffer) logTurn('assistant', botBuffer);
+      if (botBuffer) { logTurn('assistant', botBuffer); attachSatisfactionPrompt(currentBotMsgEl); }
       botBuffer = '';
       currentBotMsgEl = null;
     }, 1500);
@@ -1126,6 +1133,87 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     }
     progressBtn.disabled = false;
   });
+
+  // ── Live agent handoff (see docs/competitor-feature-implementation-plan.md
+  // 1a) — visitor-initiated, async. The widget polls for the owner's reply
+  // rather than holding a second real-time connection open.
+  handoffBtn.addEventListener('click', async () => {
+    if (!sessionId) {
+      addMessage('bot', 'Send a message first, then I can connect you with a human.');
+      return;
+    }
+    if (handoffState !== 'none') {
+      addMessage('bot', "You're already connected — a human will reply here.");
+      return;
+    }
+    handoffBtn.disabled = true;
+    try {
+      const res = await fetch(`/embed/${publicId}/handoff`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId }),
+      });
+      if (!res.ok) { addMessage('bot', 'Could not reach a human right now — please try again.'); return; }
+      handoffState = 'requested';
+      addMessage('bot', "I've let a human know you'd like to talk — they'll reply right here. Feel free to keep chatting with me in the meantime.");
+      startHandoffPolling();
+    } catch (e) {
+      addMessage('bot', 'Could not reach a human right now — please try again.');
+    } finally {
+      handoffBtn.disabled = false;
+    }
+  });
+
+  // Polls every 4s for owner replies, capped at 15 minutes of polling.
+  function startHandoffPolling() {
+    if (handoffPollTimer) return;
+    handoffLastTs = Date.now();
+    let elapsed = 0;
+    handoffPollTimer = setInterval(async () => {
+      elapsed += 4000;
+      if (elapsed > 15 * 60 * 1000) { clearInterval(handoffPollTimer); handoffPollTimer = null; return; }
+      try {
+        const res = await fetch(`/embed/${publicId}/messages?sessionId=${encodeURIComponent(sessionId)}&after=${handoffLastTs}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.status === 'human') handoffState = 'human';
+        for (const m of data.messages || []) {
+          if (m.role === 'owner') addMessage('bot', m.text);
+          handoffLastTs = Math.max(handoffLastTs, m.createdAt);
+        }
+      } catch (e) { /* keep polling — a transient network error isn't fatal here */ }
+    }, 4000);
+  }
+
+  // ── CSAT (see docs/competitor-feature-implementation-plan.md 1b) ──
+  function attachSatisfactionPrompt(afterEl) {
+    if (satisfactionShown || !afterEl) return;
+    satisfactionShown = true;
+    const wrap = document.createElement('div');
+    wrap.className = 'quick-replies';
+    wrap.style.opacity = '0.85';
+    const mkBtn = (label, value) => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'quick-reply';
+      btn.textContent = label;
+      btn.addEventListener('click', () => {
+        for (const b of wrap.querySelectorAll('.quick-reply')) b.disabled = true;
+        btn.classList.add('selected');
+        if (sessionId) {
+          fetch(`/embed/${publicId}/satisfaction`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId, satisfaction: value }),
+          }).catch(() => {});
+        }
+      });
+      return btn;
+    };
+    wrap.appendChild(mkBtn('👍 Helpful', 'up'));
+    wrap.appendChild(mkBtn('👎 Not helpful', 'down'));
+    afterEl.parentNode.insertBefore(wrap, afterEl.nextSibling);
+  }
 
   function renderProgressCard(p) {
     const card = document.createElement('div');

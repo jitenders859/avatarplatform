@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Zapier &amp; CRM Integration — AvatarPlatform Docs</title>
+  <meta name="description" content="Send chatbot leads and messages to Zapier, HubSpot, Salesforce, or any CRM using AvatarPlatform's signed webhooks." />
+  <link rel="canonical" href="https://avatarplatform.ai/docs/zapier-integration" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="AvatarPlatform" />
+  <meta property="og:title" content="Zapier &amp; CRM Integration — AvatarPlatform Docs" />
+  <meta property="og:description" content="Send chatbot leads and messages to Zapier, HubSpot, Salesforce, or any CRM using AvatarPlatform's signed webhooks." />
+  <meta property="og:url" content="https://avatarplatform.ai/docs/zapier-integration" />
+  <meta property="og:image" content="https://avatarplatform.ai/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Zapier &amp; CRM Integration — AvatarPlatform Docs" />
+  <meta name="twitter:description" content="Send chatbot leads and messages to Zapier, HubSpot, Salesforce, or any CRM using AvatarPlatform's signed webhooks." />
+  <meta name="twitter:image" content="https://avatarplatform.ai/og-image.png" />
+  <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css" />
+  <link rel="stylesheet" href="/css/docs.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" />
+</head>
+<body>
+  <div class="docs-mobile-bar">
+    <button class="docs-mobile-toggle" id="menu-btn">☰</button>
+    <a class="docs-mobile-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+    <span class="docs-mobile-title">Zapier &amp; CRM Integration</span>
+  </div>
+  <div class="docs-overlay" id="overlay"></div>
+
+  <div class="docs-layout">
+    <aside class="docs-sidebar" id="docs-sidebar">
+      <div class="docs-sidebar-inner">
+        <a class="docs-brand" href="/"><span class="docs-brand-mark">AP</span><span>AvatarPlatform</span></a>
+        <div id="theme-toggle-slot" style="padding:0 20px 12px"></div>
+        <a class="docs-back" href="/dashboard">← Back to app</a>
+        <nav class="docs-nav">
+          <p class="docs-nav-section">Getting Started</p>
+          <a class="docs-nav-link" href="/docs">Introduction</a>
+
+          <p class="docs-nav-section">Libraries</p>
+          <a class="docs-nav-link" href="/docs/js-sdk">JavaScript SDK</a>
+          <a class="docs-nav-link" href="/docs/react-sdk">React SDK</a>
+          <a class="docs-nav-link" href="/docs/vue-sdk">Vue SDK</a>
+          <a class="docs-nav-link" href="/docs/react-native-sdk">React Native SDK</a>
+
+          <p class="docs-nav-section">SDK Introduction</p>
+          <a class="docs-nav-link" href="/docs/elevenlabs-avatar">ElevenLabs Avatar</a>
+          <a class="docs-nav-link" href="/docs/gemini-live">Gemini Live API Avatar</a>
+          <a class="docs-nav-link" href="/docs/openai-realtime">OpenAI Realtime API Avatar</a>
+          <a class="docs-nav-link" href="/docs/natural-lipsync">Natural Lip Sync</a>
+          <a class="docs-nav-link" href="/docs/prefetching">Prefetching &amp; Advanced Control</a>
+          <a class="docs-nav-link active" href="/docs/zapier-integration">Zapier &amp; CRM Integration</a>
+          <a class="docs-nav-link" href="/docs/troubleshooting">Troubleshooting</a>
+        </nav>
+      </div>
+    </aside>
+
+    <main class="docs-main">
+      <div class="docs-content">
+        <div class="docs-breadcrumb"><a href="/docs">Docs</a><span class="docs-breadcrumb-sep">›</span>Integrations</div>
+        <h1>Zapier &amp; CRM Integration</h1>
+        <p class="docs-lead">AvatarPlatform doesn't have native CRM connectors (HubSpot, Salesforce, etc.) yet — but every project already has a signed outbound webhook, and Zapier's "Webhooks by Zapier" trigger can catch it directly. This gets you into 5,000+ apps (HubSpot, Salesforce, Slack, Google Sheets, email) without any code.</p>
+
+        <h2>Step 1 — Set your webhook URL</h2>
+        <p>In Zapier, create a new Zap and choose <strong>Webhooks by Zapier → Catch Hook</strong> as the trigger. Zapier gives you a unique URL like <code>https://hooks.zapier.com/hooks/catch/123456/abcdef/</code>.</p>
+        <p>Paste that URL into your project's <strong>Settings</strong> tab → <strong>Webhook URL</strong> field, and save.</p>
+
+        <h2>Step 2 — Verify the signature (recommended)</h2>
+        <p>Every request carries an <code>X-Avatar-Signature: sha256=&lt;hmac&gt;</code> header, computed over the raw JSON body using your project's webhook secret (shown in the same Settings tab). Zapier's built-in "Code by Zapier" step can verify this before continuing, the same way any other webhook receiver would:</p>
+        <pre><code class="language-javascript">const crypto = require('crypto');
+const expected = 'sha256=' + crypto.createHmac('sha256', WEBHOOK_SECRET).update(rawBody).digest('hex');
+if (expected !== receivedSignature) throw new Error('Invalid signature');</code></pre>
+
+        <h2>Step 3 — Filter by event type</h2>
+        <p>Two event types are sent to the same URL — add a Zapier <strong>Filter</strong> step keyed on the <code>event</code> field so a "New Lead" Zap doesn't also fire on every chat message:</p>
+        <table class="props-table">
+          <thead><tr><th>event</th><th>Fires when</th><th>Typical Zap</th></tr></thead>
+          <tbody>
+            <tr><td><code>lead</code></td><td>A visitor completes your capture form (all required fields filled)</td><td>Create/update a CRM contact (HubSpot, Salesforce, Pipedrive…)</td></tr>
+            <tr><td><code>message</code></td><td>Every visitor chat message</td><td>Log to a spreadsheet, post to Slack for review</td></tr>
+            <tr><td><code>handoff_requested</code></td><td>A visitor asks to talk to a human (see <a href="/docs/troubleshooting">live agent handoff</a>)</td><td>Notify your support team (Slack, email, SMS)</td></tr>
+          </tbody>
+        </table>
+
+        <h3>Lead payload</h3>
+        <pre><code class="language-json">{
+  "event": "lead",
+  "publicId": "abc123",
+  "sessionId": "uuid",
+  "leadId": "uuid",
+  "data": { "email": "visitor@example.com", "name": "Jane Doe" },
+  "timestamp": 1747221600000
+}</code></pre>
+
+        <div class="callout callout-tip">
+          <span class="callout-icon">💡</span>
+          <div class="callout-body"><p>Map <code>data</code>'s keys to your capture fields' <code>key</code> values (configured in the Settings tab's capture form editor) — they're the same across every lead payload for a given project, so the Zapier field mapping only needs to be set up once per Zap.</p></div>
+        </div>
+
+        <div class="callout callout-warn">
+          <span class="callout-icon">⚠️</span>
+          <div class="callout-body"><p>Only one webhook URL per project today — if you need both a Zapier Zap and a custom integration, point the webhook at your own endpoint and forward to Zapier's catch-hook URL from there.</p></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="/js/theme.js"></script>
+
+  <script>mountThemeToggle(document.getElementById('theme-toggle-slot'));</script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    hljs.highlightAll();
+    const btn = document.getElementById('menu-btn');
+    const sidebar = document.getElementById('docs-sidebar');
+    const overlay = document.getElementById('overlay');
+    function toggleMenu() { sidebar.classList.toggle('open'); overlay.classList.toggle('open'); }
+    btn.addEventListener('click', toggleMenu);
+    overlay.addEventListener('click', toggleMenu);
+  </script>
+</body>
+</html>

@@ -28,6 +28,14 @@ const PLANS = [
       monthlyEmbeddingChars: 100_000,
       urlSources: 3,
     },
+    // 3a — informational only (see docs/competitor-feature-implementation-plan.md
+    // 3a): what an overage message would notionally cost, surfaced as a
+    // usage-alert projection in services/usage.js#getUsageSnapshot. NOT
+    // wired up to real Stripe metered billing/usage records — that needs a
+    // metered Price object created in the Stripe dashboard plus verified
+    // Billing Meters API calls, which can't be safely built or tested
+    // without a live Stripe account. Free has no overage: hard-capped.
+    overageRate: null,
     features: ['3 chatbots', '5 files total', '100 messages / month', 'Watermarked widget'],
   },
   {
@@ -44,6 +52,7 @@ const PLANS = [
       monthlyEmbeddingChars: 2_000_000,
       urlSources: 25,
     },
+    overageRate: 0.01,
     features: ['3 chatbots', '25 files total', '2,000 messages / month', 'No watermark', 'Email support'],
   },
   {
@@ -60,6 +69,7 @@ const PLANS = [
       monthlyEmbeddingChars: 10_000_000,
       urlSources: 200,
     },
+    overageRate: 0.006,
     features: ['10 chatbots', '100 files total', '10,000 messages / month', 'Custom themes', 'Priority support'],
     popular: true,
   },
@@ -77,6 +87,7 @@ const PLANS = [
       monthlyEmbeddingChars: 100_000_000,
       urlSources: 2_000,
     },
+    overageRate: 0.004,
     features: ['50 chatbots', '500 files total', '100,000 messages / month', 'Analytics export', 'Slack/email support'],
   },
 ];

@@ -74,6 +74,7 @@ const TABLE_MAP = {
   pageImages: 'page_images',
   projectMembers: 'project_members',
   webhookDeliveries: 'webhook_deliveries',
+  projectActions: 'project_actions',
 };
 const tbl = name => TABLE_MAP[name] || name;
 

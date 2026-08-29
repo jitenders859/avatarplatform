@@ -772,3 +772,53 @@ CREATE TABLE IF NOT EXISTS feature_flags (
   updated_at  BIGINT  NOT NULL,
   updated_by  UUID    REFERENCES admin_users(id) ON DELETE SET NULL
 );
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Phase 1 engagement features — see
+-- supabase/migrations/2026-08-29_add_phase1_engagement_features.sql and
+-- docs/competitor-feature-implementation-plan.md.
+-- ═══════════════════════════════════════════════════════════════════
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'bot'; -- 'bot' | 'handoff_requested' | 'human'
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS updated_at BIGINT;
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS satisfaction TEXT; -- 'up' | 'down'
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS sentiment TEXT;   -- 'positive' | 'neutral' | 'negative'
+CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(project_id, status) WHERE status <> 'bot';
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS no_answer_found BOOLEAN NOT NULL DEFAULT false;
+
+CREATE TABLE IF NOT EXISTS project_actions (
+  id                UUID    PRIMARY KEY,
+  project_id        UUID    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name              TEXT    NOT NULL,
+  description       TEXT    NOT NULL,
+  parameters        JSONB   NOT NULL DEFAULT '{}',
+  webhook_url       TEXT    NOT NULL,
+  active            BOOLEAN NOT NULL DEFAULT true,
+  created_at        BIGINT  NOT NULL,
+  updated_at        BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_project_actions_project ON project_actions(project_id);
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Phase 2 white-labeling — see
+-- supabase/migrations/2026-08-29_add_phase2_customdomain.sql. Informational
+-- only — no DNS/TLS provisioning behind this column yet.
+-- ═══════════════════════════════════════════════════════════════════
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS custom_domain TEXT;
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Phase 3 WhatsApp channel — see
+-- supabase/migrations/2026-08-29_add_phase3_whatsapp.sql.
+-- ═══════════════════════════════════════════════════════════════════
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS whatsapp_phone_number_id TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS whatsapp_access_token TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_projects_whatsapp_phone ON projects(whatsapp_phone_number_id) WHERE whatsapp_phone_number_id IS NOT NULL;
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Phase 3 SSO (OIDC) — see supabase/migrations/2026-08-29_add_phase3_sso.sql.
+-- SECURITY NOTE: not professionally reviewed or tested against a live
+-- OIDC provider — see backend/services/oidc.js's header comment.
+-- ═══════════════════════════════════════════════════════════════════
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_provider TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_subject  TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_sso ON users(sso_provider, sso_subject) WHERE sso_provider IS NOT NULL;

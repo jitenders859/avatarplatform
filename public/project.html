@@ -71,6 +71,15 @@
               <select class="select" id="f-voice"></select>
             </div>
           </div>
+          <div class="field" id="voice-clone-field">
+            <label>Clone a custom voice</label>
+            <div class="row" style="gap:8px;align-items:center">
+              <input type="file" id="voice-clone-input" accept="audio/*" style="display:none" />
+              <button class="btn btn-ghost btn-sm" id="voice-clone-btn" type="button">Upload a voice sample</button>
+              <span class="muted text-sm" id="voice-clone-status"></span>
+            </div>
+            <span class="help">Pro/Business plan. Upload a short (30s+) clean audio sample to create a custom ElevenLabs voice for this chatbot.</span>
+          </div>
           <div class="field">
             <label>Capability tier</label>
             <select class="select" id="f-tier">
@@ -81,9 +90,23 @@
             <span class="help">Which study-tool features this chatbot has. Higher tiers include everything in the ones below them.</span>
           </div>
           <div class="field">
+            <label>Custom domain</label>
+            <input class="input" id="f-custom-domain" type="text" placeholder="chat.yoursite.com" />
+            <span class="help" id="f-custom-domain-help">Business plan. Point a CNAME at your embed host — DNS/TLS setup is handled manually today; <a href="mailto:support@avatarplatform.ai">contact support</a> to finish activation after saving.</span>
+          </div>
+          <div class="field">
             <label>Webhook URL</label>
             <input class="input" id="f-webhook-url" type="url" placeholder="https://yoursite.com/webhooks/avatar" />
             <span class="help">We'll POST each visitor message here in real time.</span>
+          </div>
+          <div class="field">
+            <label>WhatsApp phone number ID</label>
+            <input class="input" id="f-whatsapp-phone" type="text" placeholder="from Meta developer dashboard" />
+          </div>
+          <div class="field">
+            <label>WhatsApp access token</label>
+            <input class="input" id="f-whatsapp-token" type="password" placeholder="from Meta developer dashboard" autocomplete="off" />
+            <span class="help">Lets visitors chat with this bot over WhatsApp. Register your webhook URL as <code id="whatsapp-webhook-url">/api/whatsapp/webhook</code> in Meta's developer dashboard (once, app-wide).</span>
           </div>
           <div class="field" id="f-webhook-secret-row" hidden>
             <label>Webhook secret</label>
@@ -126,6 +149,20 @@
           </form>
           <div id="team-list" class="col gap-sm"></div>
         </div>
+      </div>
+
+      <div class="card mt-md" id="actions-card">
+        <div class="card-header">
+          <h3 class="card-title">AI actions</h3>
+        </div>
+        <p class="muted text-sm mb-md">Let the bot call your API mid-conversation — e.g. "check order status". Available on the Medium/Advanced capability tier's chat (POST /study). Each call is a signed POST to your webhook URL with <code>{ event: 'action', action, args }</code>, verified the same way as the message webhook.</p>
+        <form id="action-form" class="grid grid-2" style="gap:8px;margin-bottom:16px">
+          <input class="input" id="af-name" placeholder="name (snake_case), e.g. check_order_status" required />
+          <input class="input" id="af-webhook" type="url" placeholder="https://yoursite.com/actions/order-status" required />
+          <input class="input" id="af-description" placeholder="When should the model call this? e.g. \"Look up an order's shipping status by order ID.\"" style="grid-column:1/-1" required />
+          <button type="submit" class="btn btn-primary btn-sm" style="grid-column:1/-1;justify-self:start">Add action</button>
+        </form>
+        <div id="actions-list" class="col gap-sm"></div>
       </div>
     </section>
 
@@ -186,6 +223,10 @@
         <div class="card" style="min-height:400px">
           <h3 class="card-title mb-md" id="transcript-title">Select a session</h3>
           <div id="transcript-body" style="display:flex;flex-direction:column;gap:8px"></div>
+          <div id="transcript-reply" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);gap:8px;flex-direction:column">
+            <textarea id="transcript-reply-text" rows="2" placeholder="Reply as the human agent…" style="width:100%;resize:vertical;font-family:inherit;font-size:13px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-2);color:var(--text)"></textarea>
+            <button class="btn btn-sm" id="transcript-reply-btn" style="align-self:flex-end">Send reply</button>
+          </div>
         </div>
       </div>
     </section>
@@ -914,6 +955,20 @@
       document.getElementById('f-msg-placeholder').value = widgetMessages.inputPlaceholder || '';
       document.getElementById('f-msg-limit').value = widgetMessages.limitReachedMessage || '';
 
+      // Settings tab: white-label (2b — Business plan only)
+      const customDomainField = document.getElementById('f-custom-domain');
+      customDomainField.value = p.customDomain || '';
+      const isBusinessPlan = sub && sub.plan.id === 'business';
+      customDomainField.disabled = !isBusinessPlan;
+      document.getElementById('f-custom-domain-help').innerHTML = isBusinessPlan
+        ? 'Point a CNAME at your embed host — DNS/TLS setup is handled manually today; <a href="mailto:support@avatarplatform.ai">contact support</a> to finish activation after saving.'
+        : 'Business plan required. <a href="/billing">Upgrade →</a>';
+
+      // Settings tab: WhatsApp (3b)
+      document.getElementById('f-whatsapp-phone').value = p.whatsappPhoneNumberId || '';
+      document.getElementById('f-whatsapp-token').value = p.whatsappAccessToken || '';
+      document.getElementById('whatsapp-webhook-url').textContent = `${location.origin}/api/whatsapp/webhook`;
+
       // Settings tab: webhook
       document.getElementById('f-webhook-url').value = p.webhookUrl || '';
       if (p.webhookSecret) {
@@ -934,7 +989,7 @@
       document.getElementById('snippet-link').textContent = link;
       [...document.querySelectorAll('.code')].forEach(addCopyButton);
 
-      if (isOwner !== false) loadTeam(sub);
+      if (isOwner !== false) { loadTeam(sub); loadActions(); }
     } catch (e) {
       toast(e.message, 'error');
     }
@@ -995,6 +1050,68 @@
     btn.disabled = false;
   });
 
+  // ── AI actions (see docs/competitor-feature-implementation-plan.md 1d) ──
+  async function loadActions() {
+    try {
+      const { actions } = await API.listActions(projectId);
+      renderActions(actions);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function renderActions(actions) {
+    const list = document.getElementById('actions-list');
+    if (actions.length === 0) {
+      list.innerHTML = '<p class="muted text-sm">No actions yet — add one above.</p>';
+      return;
+    }
+    list.innerHTML = actions.map(a => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="min-width:0">
+          <div style="font-size:13px;font-family:monospace">${escape(a.name)}${a.active ? '' : ' <span class="muted text-sm">(disabled)</span>'}</div>
+          <div class="muted text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(a.description)}</div>
+          <div class="muted text-sm" style="font-size:11px">${escape(a.webhookUrl)}</div>
+        </div>
+        <div class="row" style="gap:6px;flex-shrink:0">
+          <button class="btn btn-ghost btn-sm" data-toggle-id="${a.id}" data-active="${a.active}">${a.active ? 'Disable' : 'Enable'}</button>
+          <button class="btn btn-ghost btn-sm" data-delete-id="${a.id}">Delete</button>
+        </div>
+      </div>`).join('');
+    list.querySelectorAll('button[data-toggle-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        try {
+          await API.patchAction(projectId, btn.dataset.toggleId, { active: btn.dataset.active !== 'true' });
+          loadActions();
+        } catch (e) { toast(e.message, 'error'); }
+      });
+    });
+    list.querySelectorAll('button[data-delete-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this action? The bot will no longer be able to call it.')) return;
+        try {
+          await API.deleteAction(projectId, btn.dataset.deleteId);
+          loadActions();
+        } catch (e) { toast(e.message, 'error'); }
+      });
+    });
+  }
+
+  document.getElementById('action-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    try {
+      await API.createAction(projectId, {
+        name: document.getElementById('af-name').value.trim(),
+        webhookUrl: document.getElementById('af-webhook').value.trim(),
+        description: document.getElementById('af-description').value.trim(),
+      });
+      e.target.reset();
+      toast('Action added', 'success');
+      loadActions();
+    } catch (err) { toast(err.message, 'error'); }
+    btn.disabled = false;
+  });
+
   function addCopyButton(el) {
     const btn = document.createElement('button');
     btn.className = 'code-copy';
@@ -1017,6 +1134,9 @@
         voice: document.getElementById('f-voice').value,
         capabilityTier: document.getElementById('f-tier').value,
         webhookUrl: document.getElementById('f-webhook-url').value.trim() || null,
+        customDomain: document.getElementById('f-custom-domain').value.trim() || null,
+        whatsappPhoneNumberId: document.getElementById('f-whatsapp-phone').value.trim() || null,
+        whatsappAccessToken: document.getElementById('f-whatsapp-token').value.trim() || null,
       };
       const { project: p } = await API.updateProject(projectId, patch);
       project = p;
@@ -1025,6 +1145,32 @@
       applyTierVisibility(p.capabilityTier || 'basic');
       toast('Saved', 'success');
     } catch (e) { toast(e.message, 'error'); }
+  });
+
+  // ── Voice cloning (see docs/competitor-feature-implementation-plan.md 2c) ──
+  document.getElementById('voice-clone-btn').addEventListener('click', () => {
+    document.getElementById('voice-clone-input').click();
+  });
+  document.getElementById('voice-clone-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const statusEl = document.getElementById('voice-clone-status');
+    const btn = document.getElementById('voice-clone-btn');
+    btn.disabled = true;
+    statusEl.textContent = 'Cloning voice…';
+    try {
+      const form = new FormData();
+      form.append('sample', file);
+      const { voice } = await API.cloneVoice(projectId, form);
+      statusEl.textContent = `Done — voice set to ${voice}`;
+      toast('Voice cloned and applied to this chatbot', 'success');
+    } catch (err) {
+      statusEl.textContent = '';
+      toast(err.message, 'error');
+    } finally {
+      btn.disabled = false;
+      e.target.value = '';
+    }
   });
 
   // ── Webhook helpers ──
@@ -1406,19 +1552,29 @@
             <div style="font-size:13px;font-weight:500">${new Date(s.createdAt).toLocaleString()}</div>
             <div class="muted text-sm">${s.messageCount} message${s.messageCount === 1 ? '' : 's'}</div>
           </div>
+          ${s.status === 'handoff_requested' ? '<span class="badge" style="background:#f59e0b;color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap">Needs reply</span>' : ''}
+          ${s.status === 'human' ? '<span class="badge" style="background:var(--accent);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap">Human</span>' : ''}
           <span style="color:var(--text-dim);font-size:12px">→</span>
         </div>`).join('');
     } catch (e) { toast(e.message, 'error'); }
   }
 
+  let transcriptSessionId = null;
+
   window.loadTranscript = async (sessionId) => {
     const title = document.getElementById('transcript-title');
     const body  = document.getElementById('transcript-body');
+    const replyBox = document.getElementById('transcript-reply');
     title.textContent = 'Loading…';
     body.innerHTML = '';
+    replyBox.style.display = 'none';
+    transcriptSessionId = sessionId;
     try {
       const { session, messages } = await API.getSession(projectId, sessionId);
       title.textContent = new Date(session.createdAt).toLocaleString();
+      // 1a — a session that requested (or already got) a human reply gets a
+      // reply box here; see docs/competitor-feature-implementation-plan.md.
+      replyBox.style.display = (session.status === 'handoff_requested' || session.status === 'human') ? 'flex' : 'none';
       if (messages.length === 0) {
         body.innerHTML = '<p class="muted text-sm">No messages in this session.</p>';
         return;
@@ -1431,6 +1587,22 @@
         </div>`).join('');
     } catch (e) { toast(e.message, 'error'); }
   };
+
+  document.getElementById('transcript-reply-btn').addEventListener('click', async () => {
+    const textEl = document.getElementById('transcript-reply-text');
+    const text = textEl.value.trim();
+    if (!text || !transcriptSessionId) return;
+    const btn = document.getElementById('transcript-reply-btn');
+    btn.disabled = true;
+    try {
+      await API.replySession(projectId, transcriptSessionId, text);
+      textEl.value = '';
+      toast('Reply sent', 'success');
+      loadTranscript(transcriptSessionId);
+      loadSessions();
+    } catch (e) { toast(e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
 
   document.getElementById('export-csv-btn').addEventListener('click', () => {
     if (allSessions.length === 0) return toast('No sessions to export', 'error');
@@ -1450,16 +1622,20 @@
   async function loadProjectAnalytics() {
     document.getElementById('pa-totals').innerHTML = '<div class="muted text-sm" style="grid-column:1/-1;padding:8px 0">Loading…</div>';
     try {
-      const { totals, funnel, avgSessionDurationSec, daily, topQuestions } = await API.projectAnalytics(projectId);
+      const { totals, funnel, avgSessionDurationSec, daily, topQuestions, csat, dropOff } = await API.projectAnalytics(projectId);
 
       const durationLabel = avgSessionDurationSec >= 60
         ? `${Math.floor(avgSessionDurationSec / 60)}m ${avgSessionDurationSec % 60}s`
         : `${avgSessionDurationSec}s`;
+      const csatLabel = csat.rated ? `${Math.round(csat.upRate * 100)}% (${csat.rated} rated)` : '—';
+      const dropOffLabel = dropOff.totalAnswers ? `${Math.round(dropOff.rate * 100)}% (${dropOff.noAnswerCount}/${dropOff.totalAnswers})` : '—';
       document.getElementById('pa-totals').innerHTML = [
         { label: 'Sessions', value: totals.sessions },
         { label: 'Messages', value: totals.messages },
         { label: 'Sources',  value: totals.files },
         { label: 'Avg session duration', value: durationLabel },
+        { label: 'Satisfaction (👍 rate)', value: csatLabel },
+        { label: 'No-answer rate', value: dropOffLabel },
       ].map(i => `<div class="card"><div class="muted text-sm">${i.label}</div><div style="font-size:28px;font-weight:700;letter-spacing:-0.02em;margin-top:4px">${i.value}</div></div>`).join('');
 
       renderFunnel(funnel);

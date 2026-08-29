@@ -113,6 +113,12 @@ const schemas = {
     // runs in routes/projects.js before this is persisted.
     webhookUrl: z.string().url('Invalid webhookUrl').max(2048).nullable().optional(),
     capabilityTier: z.enum(CAPABILITY_TIERS, { error: 'Invalid capabilityTier' }).optional(),
+    // Business-plan gated in routes/projects.js — format-only here. No
+    // scheme allowed (bare hostname), matching how a DNS CNAME target is
+    // normally written.
+    customDomain: z.string().trim().max(253).regex(/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/i, 'customDomain must be a bare hostname, e.g. chat.example.com').nullable().optional(),
+    whatsappPhoneNumberId: z.string().trim().max(64).nullable().optional(),
+    whatsappAccessToken: z.string().trim().max(1024).nullable().optional(),
     // Owner-editable overrides for widget copy that's otherwise hardcoded
     // English — see improvement-prompts.md Prompt F4 item 4. Both keys
     // optional/independent; an unset key falls back to the widget default.
@@ -387,6 +393,35 @@ const schemas = {
       monthlyEmbeddingChars: z.number().int().positive(),
       urlSources: z.number().int().positive(),
     }).strict(),
+  }),
+
+  embedHandoff: z.object({
+    sessionId: z.string().min(1, 'sessionId required'),
+  }),
+
+  sessionReply: z.object({
+    text: z.string().trim().min(1, 'text is required').max(2000, 'text too long'),
+  }),
+
+  sessionSatisfaction: z.object({
+    sessionId: z.string().min(1, 'sessionId required'),
+    satisfaction: z.enum(['up', 'down'], { error: 'satisfaction must be up or down' }),
+  }),
+
+  projectActionCreate: z.object({
+    name: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/, 'name must be snake_case, starting with a letter'),
+    description: z.string().trim().min(1, 'description is required').max(500, 'description too long'),
+    parameters: z.record(z.string(), z.unknown()).optional(),
+    webhookUrl: z.string().url('webhookUrl must be a valid URL'),
+    active: z.boolean().optional(),
+  }),
+
+  projectActionPatch: z.object({
+    name: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/, 'name must be snake_case, starting with a letter').optional(),
+    description: z.string().trim().min(1).max(500).optional(),
+    parameters: z.record(z.string(), z.unknown()).optional(),
+    webhookUrl: z.string().url('webhookUrl must be a valid URL').optional(),
+    active: z.boolean().optional(),
   }),
 };
 

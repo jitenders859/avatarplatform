@@ -233,6 +233,15 @@ router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, r
       return res.status(400).json({ error: `Invalid webhookUrl: ${e.message}` });
     }
   }
+  // 2b — white-labeling (custom domain) is a Business-plan feature, same
+  // gate style as showBranding's server-side enforcement in
+  // routes/embed.js's /config handler.
+  if (patch.customDomain) {
+    const planId = await userPlanId(req.user.id);
+    if (planId !== 'business') {
+      return res.status(402).json({ error: 'Custom domains require the Business plan.', code: 'PLAN_UPGRADE_REQUIRED' });
+    }
+  }
 
   const updated = await db.update('projects', project.id, patch);
   invalidateProjectCache(project.publicId);
@@ -255,11 +264,11 @@ router.get('/:id/sessions', authRequired, async (req, res) => {
 
   // Use SQL to avoid N+1 message-count queries
   const sessions = await db.query(
-    `SELECT s.id, s.created_at, COUNT(m.id) AS message_count
+    `SELECT s.id, s.created_at, s.status, COUNT(m.id) AS message_count
      FROM sessions s
      LEFT JOIN messages m ON m.session_id = s.id
      WHERE s.project_id = $1
-     GROUP BY s.id, s.created_at
+     GROUP BY s.id, s.created_at, s.status
      ORDER BY s.created_at DESC`,
     [project.id]
   );
@@ -267,6 +276,7 @@ router.get('/:id/sessions', authRequired, async (req, res) => {
     sessions: sessions.map(s => ({
       id: s.id,
       createdAt: s.createdAt,
+      status: s.status,
       messageCount: Number(s.messageCount),
     })),
   });
@@ -282,9 +292,29 @@ router.get('/:id/sessions/:sessionId', authRequired, async (req, res) => {
 
   const messages = await db.findAll('messages', { sessionId: session.id }, { orderBy: 'createdAt', order: 'asc' });
   res.json({
-    session: { id: session.id, createdAt: session.createdAt },
+    session: { id: session.id, createdAt: session.createdAt, status: session.status, satisfaction: session.satisfaction, sentiment: session.sentiment },
     messages: messages.map(m => ({ id: m.id, role: m.role, content: m.text, createdAt: m.createdAt })),
   });
+});
+
+// Live agent handoff reply (see docs/competitor-feature-implementation-plan.md
+// 1a) — owner-only (project_members are read-only, per findProjectForRead's
+// header comment), so this checks isOwner explicitly rather than reusing
+// findProjectForRead's member-inclusive read path.
+router.post('/:id/sessions/:sessionId/reply', authRequired, validate(schemas.sessionReply), async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const session = await db.findOne('sessions', { id: req.params.sessionId, projectId: project.id });
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+
+  const message = await db.insert('messages', {
+    id: uuid(), sessionId: session.id, projectId: project.id,
+    role: 'owner', text: req.body.text.slice(0, 2000), createdAt: Date.now(),
+  });
+  await db.update('sessions', session.id, { status: 'human', updatedAt: Date.now() });
+
+  res.json({ message: { id: message.id, role: message.role, content: message.text, createdAt: message.createdAt } });
 });
 
 router.get('/:id/leads', authRequired, async (req, res) => {

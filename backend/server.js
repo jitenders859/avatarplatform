@@ -37,6 +37,7 @@ const { pool } = require('./db');
 const { getRateLimitStore, embedKeyGenerator } = require('./services/rateLimitStore');
 
 const authRoutes = require('./routes/auth');
+const ssoAuthRoutes = require('./routes/ssoAuth');
 const { router: projectsRoutes } = require('./routes/projects');
 const filesRoutes = require('./routes/files');
 const embedRoutes = require('./routes/embed');
@@ -47,6 +48,9 @@ const captureFieldsRoutes = require('./routes/captureFields');
 const quizQuestionsRoutes = require('./routes/quizQuestions');
 const flashcardsRoutes = require('./routes/flashcards');
 const videoResourcesRoutes = require('./routes/videoResources');
+const projectActionsRoutes = require('./routes/projectActions');
+const voiceCloneRoutes = require('./routes/voiceClone');
+const { router: whatsappRoutes, webhookHandler: whatsappWebhookHandler } = require('./routes/whatsapp');
 const adminRoutes = require('./routes/admin');
 const adminCharactersRoutes = require('./routes/adminCharacters');
 const adminCouponsRoutes = require('./routes/adminCoupons');
@@ -141,6 +145,7 @@ app.use(cors()); // open CORS — required for embed pages on third-party domain
 // so it must be mounted BEFORE express.json(). Everything else gets parsed
 // JSON normally.
 app.post('/api/billing/webhook', express.raw({ type: 'application/json' }), stripeWebhook);
+app.post('/api/whatsapp/webhook', express.raw({ type: 'application/json' }), whatsappWebhookHandler);
 
 app.use(express.json({ limit: '2mb' }));
 app.use(express.urlencoded({ extended: true }));
@@ -180,11 +185,15 @@ app.use('/api/inngest', serveInngest({ client: inngestClient, functions: inngest
 
 // ── API routes ────────────────────────────────────────────────
 app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/auth/sso', authLimiter, ssoAuthRoutes);
 app.use('/api/projects', apiLimiter, projectsRoutes);
 app.use('/api/projects', apiLimiter, captureFieldsRoutes);
 app.use('/api/projects', apiLimiter, quizQuestionsRoutes);
 app.use('/api/projects', apiLimiter, flashcardsRoutes);
 app.use('/api/projects', apiLimiter, videoResourcesRoutes);
+app.use('/api/projects', apiLimiter, projectActionsRoutes);
+app.use('/api/projects', apiLimiter, voiceCloneRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api', apiLimiter, filesRoutes); // files routes are project-nested
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/analytics', apiLimiter, analyticsRoutes);
@@ -236,7 +245,7 @@ for (const page of PAGES) {
 
 // ── Docs ──────────────────────────────────────────────────────
 app.get('/docs', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'docs', 'index.html')));
-const DOCS_PAGES = ['js-sdk', 'react-sdk', 'vue-sdk', 'react-native-sdk', 'elevenlabs-avatar', 'gemini-live', 'openai-realtime', 'natural-lipsync', 'prefetching', 'troubleshooting'];
+const DOCS_PAGES = ['js-sdk', 'react-sdk', 'vue-sdk', 'react-native-sdk', 'elevenlabs-avatar', 'gemini-live', 'openai-realtime', 'natural-lipsync', 'prefetching', 'zapier-integration', 'troubleshooting'];
 for (const p of DOCS_PAGES) {
   app.get(`/docs/${p}`, (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'docs', `${p}.html`)));
 }

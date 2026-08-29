@@ -9,11 +9,13 @@
  * Handlers receive (args, ctx) where ctx = { project }. They should return
  * a plain object — it's sent back to the model as the function's response.
  */
+const crypto = require('crypto');
 const db = require('../db');
 const { meetsTier } = require('./tiers');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { embedOne } = require('./embed');
 const { searchProject } = require('./vector');
+const { safeFetch } = require('./safeFetch');
 const settings = require('./settings');
 
 // Quiz/flashcard synthesis is the accuracy-critical task (it's exam
@@ -294,4 +296,45 @@ function toolsForTier(tier) {
   };
 }
 
-module.exports = { toolsForTier };
+/**
+ * AI actions (see docs/competitor-feature-implementation-plan.md 1d) — an
+ * owner-defined outbound webhook the model can call as a function during
+ * /embed/:publicId/study's tool loop, e.g. "check_order_status". Signed
+ * with the same HMAC scheme as services/webhookDelivery.js, but dispatched
+ * synchronously (no retry/queue table) since the model is blocked waiting
+ * on the result within the function-calling loop.
+ */
+async function callProjectAction(action, args, project) {
+  const payload = {
+    event: 'action', action: action.name, args: args || {}, projectId: project.id,
+  };
+  const payloadStr = JSON.stringify(payload);
+  const sig = 'sha256=' + crypto.createHmac('sha256', project.webhookSecret || '').update(payloadStr).digest('hex');
+  try {
+    const response = await safeFetch(action.webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Avatar-Signature': sig },
+      body: payloadStr,
+      timeout: 8000,
+    });
+    if (!response.ok) return { error: `Action endpoint returned HTTP ${response.status}` };
+    return await response.json().catch(() => ({}));
+  } catch (e) {
+    return { error: 'Action failed: ' + e.message };
+  }
+}
+
+/** Returns { declarations, dispatch } for a project's active custom actions. */
+async function projectActionTools(project) {
+  const rows = (await db.findAll('projectActions', { projectId: project.id })).filter(a => a.active);
+  return {
+    declarations: rows.map(a => ({
+      name: a.name,
+      description: a.description,
+      parameters: (a.parameters && Object.keys(a.parameters).length) ? a.parameters : { type: 'object', properties: {} },
+    })),
+    dispatch: Object.fromEntries(rows.map(a => [a.name, (args, ctx) => callProjectAction(a, args, ctx.project)])),
+  };
+}
+
+module.exports = { toolsForTier, projectActionTools };

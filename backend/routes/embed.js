@@ -11,12 +11,13 @@ const db = require('../db');
 const storage = require('../services/storage');
 const { embedOne } = require('../services/embed');
 const { searchProject } = require('../services/vector');
+const { answerQuestion } = require('../services/answerQuestion');
 const { resolveFigures } = require('../services/figures');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const { projectCache } = require('../cache');
 const { validate, schemas } = require('../middleware/validate');
-const { toolsForTier } = require('../services/tools');
+const { toolsForTier, projectActionTools } = require('../services/tools');
 const { resolveLearnerKey, backfillLearnerKey } = require('../services/learner');
 const { checkLimit, userPlanId } = require('../services/usage');
 const logger = require('../logger').child({ module: 'embed' });
@@ -336,83 +337,17 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
     const limitCheck = await checkLimit(project.userId, 'message', 1);
     if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason, limitReached: true, limitMessage: limitMessageFor(project, limitCheck) });
 
-    const ip = req.ip || 'unknown';
     const { question, sessionId: incomingSessionId } = req.body;
-
-    // 1. Embed the question
-    let queryEmbedding;
+    let result;
     try {
-      queryEmbedding = await embedOne(String(question).slice(0, 1500), 'RETRIEVAL_QUERY');
+      // Shared with the WhatsApp channel — see services/answerQuestion.js.
+      result = await answerQuestion(project, question, incomingSessionId, { ip: req.ip || 'unknown' });
     } catch (e) {
-      logger.error({ err: e.message }, 'ask embed failed');
-      return res.status(502).json({ error: 'Embedding service unavailable' });
-    }
-
-    // 2. Retrieve relevant chunks
-    const hits = await searchProject(project.id, queryEmbedding, 5);
-
-    const fileCache = await filesForHits(hits);
-    const sources = [];
-    const contextParts = [];
-
-    for (const hit of hits) {
-      const file = fileCache.get(hit.chunk.fileId);
-      contextParts.push(`[Source: ${file ? file.originalName : 'Unknown'}]\n${hit.chunk.text}`);
-      if (file && !sources.find(s => s.fileId === file.id)) {
-        sources.push({
-          title: file.originalName || file.sourceUrl || 'Document',
-          url: file.kind === 'url' ? file.sourceUrl : null,
-          snippet: hit.chunk.text.slice(0, 180).trim(),
-        });
-      }
-    }
-
-    // 3. Build prompt
-    const systemPrompt = project.systemPrompt ||
-      'You are a helpful AI assistant. Answer the user\'s question using the provided knowledge base context. Be concise and accurate.';
-    const contextText = contextParts.length
-      ? `Knowledge base context:\n\n${contextParts.join('\n\n---\n\n')}`
-      : 'No relevant context found in the knowledge base.';
-
-    const prompt = `${systemPrompt}\n\n${contextText}\n\nUser question: ${String(question).slice(0, 1000)}\n\nAnswer:`;
-
-    // 4. Call Gemini REST
-    let answer = '';
-    try {
-      const genai = new GoogleGenerativeAI(await settings.getSetting('GEMINI_API_KEY'));
-      const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
-      const result = await model.generateContent(prompt);
-      answer = result.response.text();
-    } catch (e) {
-      logger.error({ err: e.message }, 'ask Gemini call failed');
+      logger.error({ err: e.message }, 'ask failed');
       return res.status(502).json({ error: 'AI service unavailable' });
     }
 
-    // 5. Persist session + messages
-    let sid = incomingSessionId;
-    try {
-      if (!sid) {
-        sid = uuid();
-        await db.insert('sessions', { id: sid, projectId: project.id, ip, createdAt: Date.now() });
-      }
-      await db.insert('messages', {
-        id: uuid(), sessionId: sid, projectId: project.id,
-        role: 'user', text: String(question).slice(0, 2000), createdAt: Date.now(),
-      });
-      await db.insert('messages', {
-        id: uuid(), sessionId: sid, projectId: project.id,
-        role: 'assistant', text: answer.slice(0, 2000), createdAt: Date.now(),
-      });
-      try {
-        const { trackMessage } = require('../services/usage');
-        await trackMessage(project.userId);
-      } catch (_) { /* best effort */ }
-    } catch (e) {
-      logger.error({ err: e.message }, 'ask persist failed');
-      // Non-fatal — still return the answer
-    }
-
-    res.json({ answer, sources, sessionId: sid });
+    res.json(result);
   } catch (e) {
     logger.error({ err: e.message }, 'ask error');
     res.status(500).json({ error: 'Server error' });
@@ -492,8 +427,12 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
       : 'No relevant context found in the knowledge base.';
     const systemInstruction = `${basePrompt}\n\n${contextText}`;
 
-    // 2. Function-calling loop
-    const { declarations, dispatch } = toolsForTier(project.capabilityTier);
+    // 2. Function-calling loop — study-tier tools plus this project's
+    // owner-defined AI actions (see services/tools.js#projectActionTools).
+    const tierTools = toolsForTier(project.capabilityTier);
+    const actionTools = await projectActionTools(project);
+    const declarations = [...tierTools.declarations, ...actionTools.declarations];
+    const dispatch = { ...tierTools.dispatch, ...actionTools.dispatch };
     const toolCalls = [];
     let answer = '';
     try {
@@ -552,6 +491,7 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
       await db.insert('messages', {
         id: uuid(), sessionId: sid, projectId: project.id,
         role: 'assistant', text: answer.slice(0, 2000), createdAt: Date.now(),
+        noAnswerFound: hits.length === 0,
       });
       try {
         const { trackMessage } = require('../services/usage');
@@ -818,16 +758,19 @@ router.post('/:publicId/lead', validate(schemas.embedLead), async (req, res) => 
 
   const existing = await db.findOne('leads', { sessionId, projectId: project.id });
   let lead;
+  let justCompleted = false;
   if (existing) {
     const merged = { ...existing.data, ...sanitized };
     const isComplete = complete !== undefined ? !!complete : (
       fields.filter(f => f.required).every(f => merged[f.key] && merged[f.key].trim())
     );
+    justCompleted = isComplete && !existing.complete;
     lead = await db.update('leads', existing.id, { data: merged, complete: isComplete });
   } else {
     const isComplete = complete !== undefined ? !!complete : (
       fields.filter(f => f.required).every(f => sanitized[f.key] && sanitized[f.key].trim())
     );
+    justCompleted = isComplete;
     lead = await db.insert('leads', {
       id: uuid(),
       projectId: project.id,
@@ -838,12 +781,114 @@ router.post('/:publicId/lead', validate(schemas.embedLead), async (req, res) => 
     });
   }
 
+  // 2a — a 'lead' webhook event, separate from 'message', so a Zapier
+  // "Webhooks by Zapier" catch-hook (or any CRM integration) can trigger
+  // specifically on lead completion instead of filtering every chat
+  // message. See docs/zapier-integration.html.
+  if (justCompleted && project.webhookUrl) {
+    setImmediate(() => {
+      queueWebhookDelivery(project, 'lead', {
+        event: 'lead',
+        publicId: project.publicId,
+        sessionId,
+        leadId: lead.id,
+        data: lead.data,
+        timestamp: Date.now(),
+      }).catch((e) => logger.warn({ err: e.message }, 'webhook delivery failed to queue'));
+    });
+  }
+
   // Best-effort: a captured email may unlock a durable learner_key for
   // quiz/flashcard activity already logged earlier in this same session.
   backfillLearnerKey(project.id, sessionId).catch(err =>
     logger.warn({ err: err.message }, 'learner_key backfill failed'));
 
   res.json({ lead: { id: lead.id, complete: lead.complete } });
+});
+
+/**
+ * POST /embed/:publicId/handoff
+ *
+ * Live agent handoff (see docs/competitor-feature-implementation-plan.md
+ * 1a) — visitor-initiated, async. Marks the session so it surfaces in the
+ * owner's dashboard; the owner replies via POST
+ * /api/projects/:id/sessions/:sessionId/reply (routes/projects.js), and the
+ * widget picks up the reply by polling GET /embed/:publicId/messages below.
+ * Deliberately not real-time/WebSocket — see the plan doc for why.
+ */
+router.post('/:publicId/handoff', validate(schemas.embedHandoff), async (req, res) => {
+  const project = await findByPublicId(req.params.publicId);
+  if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+
+  const { sessionId } = req.body;
+  const session = await db.findOne('sessions', { id: sessionId, projectId: project.id });
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+
+  if (session.status === 'bot') {
+    await db.update('sessions', session.id, { status: 'handoff_requested', updatedAt: Date.now() });
+  }
+  await db.insert('messages', {
+    id: uuid(), sessionId: session.id, projectId: project.id,
+    role: 'system', text: 'Visitor requested to speak with a human.', createdAt: Date.now(),
+  });
+
+  if (project.webhookUrl) {
+    setImmediate(() => {
+      queueWebhookDelivery(project, 'handoff_requested', {
+        event: 'handoff_requested',
+        publicId: project.publicId,
+        sessionId: session.id,
+        timestamp: Date.now(),
+      }).catch((e) => logger.warn({ err: e.message }, 'webhook delivery failed to queue'));
+    });
+  }
+
+  res.json({ ok: true, status: 'handoff_requested' });
+});
+
+/**
+ * GET /embed/:publicId/messages?sessionId=&after=
+ *
+ * Polling endpoint the widget uses only while awaiting a human reply (see
+ * /handoff above) — returns messages created after `after` (ms epoch,
+ * default 0) for one session, oldest first. Not used for the normal
+ * bot-driven chat flow, which renders its own replies inline.
+ */
+router.get('/:publicId/messages', async (req, res) => {
+  const project = await findByPublicId(req.params.publicId);
+  if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+
+  const { sessionId, after } = req.query;
+  if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
+  const session = await db.findOne('sessions', { id: sessionId, projectId: project.id });
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+
+  const afterTs = parseInt(after, 10) || 0;
+  const messages = (await db.findAll('messages', { sessionId: session.id }, { orderBy: 'createdAt', order: 'asc' }))
+    .filter(m => m.createdAt > afterTs);
+
+  res.json({
+    status: session.status,
+    messages: messages.map(m => ({ id: m.id, role: m.role, text: m.text, createdAt: m.createdAt })),
+  });
+});
+
+/**
+ * POST /embed/:publicId/satisfaction
+ *
+ * Thumbs-up/down prompt (see docs/competitor-feature-implementation-plan.md
+ * 1b) — one rating per session, last write wins if the visitor changes it.
+ */
+router.post('/:publicId/satisfaction', validate(schemas.sessionSatisfaction), async (req, res) => {
+  const project = await findByPublicId(req.params.publicId);
+  if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+
+  const { sessionId, satisfaction } = req.body;
+  const session = await db.findOne('sessions', { id: sessionId, projectId: project.id });
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+
+  await db.update('sessions', session.id, { satisfaction, updatedAt: Date.now() });
+  res.json({ ok: true });
 });
 
 module.exports = router;

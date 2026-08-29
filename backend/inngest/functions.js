@@ -11,6 +11,7 @@ const inngest = require('./client');
 const db = require('../db');
 const { processFile } = require('../services/process');
 const { attemptDelivery } = require('../services/webhookDelivery');
+const { tagRecentSessions } = require('../services/sentiment');
 const logger = require('../logger').child({ module: 'inngest' });
 
 // The whole extract→chunk→embed→save pipeline runs as one step rather than
@@ -47,4 +48,14 @@ const webhookRetryJob = inngest.createFunction(
   }
 );
 
-module.exports = { functions: [processFileJob, webhookRetryJob] };
+// Periodic sentiment tagging (see docs/competitor-feature-implementation-plan.md
+// 1c and services/sentiment.js) — runs on a schedule rather than an event,
+// since there's no natural "conversation ended" event to trigger on.
+const sentimentTagJob = inngest.createFunction(
+  { id: 'sentiment-tag', triggers: { cron: '*/15 * * * *' } },
+  async ({ step }) => {
+    await step.run('tag', () => tagRecentSessions());
+  }
+);
+
+module.exports = { functions: [processFileJob, webhookRetryJob, sentimentTagJob] };
