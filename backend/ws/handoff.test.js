@@ -239,6 +239,22 @@ test('dashboard upgrade is rejected for a non-business plan', async () => {
   }
 });
 
+test('visitor upgrade is rejected for a non-business plan', async () => {
+  const db = makeDb();
+  const { server, port } = await startServer(db, { planId: 'pro' });
+  try {
+    const visitorWs = new WebSocket(`ws://localhost:${port}/ws/embed/${PROJECT.publicId}`);
+    const result = await new Promise(resolve => {
+      visitorWs.on('open', () => resolve('open'));
+      visitorWs.on('unexpected-response', (req, res) => resolve(res.statusCode));
+      visitorWs.on('error', () => resolve('error'));
+    });
+    assert.equal(result, 403);
+  } finally {
+    server.close();
+  }
+});
+
 test('dashboard upgrade is rejected with an invalid token', async () => {
   const db = makeDb();
   const { server, port } = await startServer(db);

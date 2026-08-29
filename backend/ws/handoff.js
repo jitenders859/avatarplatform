@@ -72,6 +72,14 @@ async function handleVisitorUpgrade(wss, req, socket, head, publicId, sessionIdP
   const project = await findProjectByPublicId(publicId);
   if (!project) return reject(socket, 404, 'Not Found');
 
+  // publicId is deliberately public (shipped to every embedding page), so
+  // without this gate anyone could open this socket directly for ANY
+  // project — including free-tier ones — and trigger request_handoff,
+  // same as /config, /ask, /study, and the dashboard upgrade all already
+  // require the business plan for this feature.
+  const planId = await userPlanId(project.userId);
+  if (planId !== 'business') return reject(socket, 403, 'Forbidden');
+
   let session = sessionIdParam ? await db.findOne('sessions', { id: sessionIdParam, projectId: project.id }) : null;
   if (!session) {
     session = await db.insert('sessions', {
