@@ -280,6 +280,14 @@
             <span class="help">Adds a header button so visitors can toggle full screen regardless of the defaults above.</span>
           </div>
           <div class="field">
+            <label>Character full screen (click avatar)</label>
+            <select class="select" id="f-character-fullscreen">
+              <option value="false">No</option>
+              <option value="true">Yes — visitors can click the avatar to fill the screen with just the character</option>
+            </select>
+            <span class="help">Distinct from the full-screen settings above: this hides the whole chat window (header, messages, composer) and shows only the talking character. Exit is by clicking the character again — no close button is shown.</span>
+          </div>
+          <div class="field">
             <label>Show "Powered by" branding</label>
             <select class="select" id="f-branding">
               <option value="true">Yes</option>
@@ -869,6 +877,7 @@
       document.getElementById('f-fullscreen-desktop').value = String(p.fullScreenOnDesktop === true);
       document.getElementById('f-fullscreen-mobile').value  = String(p.fullScreenOnMobile === true);
       document.getElementById('f-fullscreen-toggle').value  = String(p.showFullScreenToggle === true);
+      document.getElementById('f-character-fullscreen').value = String(p.showCharacterFullscreen === true);
       document.getElementById('f-branding').value  = String(p.showBranding !== false);
 
       // Removing the "Powered by" badge is a paid-plan feature (see
@@ -1088,6 +1097,7 @@
         fullScreenOnDesktop:  document.getElementById('f-fullscreen-desktop').value === 'true',
         fullScreenOnMobile:   document.getElementById('f-fullscreen-mobile').value === 'true',
         showFullScreenToggle: document.getElementById('f-fullscreen-toggle').value === 'true',
+        showCharacterFullscreen: document.getElementById('f-character-fullscreen').value === 'true',
         showBranding:         document.getElementById('f-branding').value === 'true',
         widgetOffsetX:        parseInt(document.getElementById('f-offset-x').value, 10) || 0,
         widgetOffsetY:        parseInt(document.getElementById('f-offset-y').value, 10) || 0,
