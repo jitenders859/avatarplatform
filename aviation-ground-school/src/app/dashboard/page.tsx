@@ -9,6 +9,8 @@ interface Me {
   id: string;
   name: string;
   subscriptionStatus: string | null;
+  subscriptionCancelAtPeriodEnd: boolean;
+  subscriptionCurrentPeriodEnd: string | null;
   emailVerified: boolean;
 }
 interface ChatSessionRow {
@@ -88,12 +90,16 @@ function DashboardContent() {
   if (me === undefined) return null;
 
   const verifiedNotice = searchParams.get("verified");
+  const bookingNotice = searchParams.get("booking");
+  const checkoutNotice = searchParams.get("checkout");
 
   return (
     <div className="container section">
       <h1>Welcome back, {me?.name}</h1>
 
       {verifiedNotice === "1" && <p className="dim">Email verified — thanks!</p>}
+      {bookingNotice === "success" && <p className="dim">Booking confirmed — see it below.</p>}
+      {checkoutNotice === "success" && <p className="dim">Subscription active — you're all set.</p>}
 
       {me && !me.emailVerified && (
         <div className="card" style={{ marginTop: 12 }}>
@@ -117,6 +123,13 @@ function DashboardContent() {
 
       <div className="card" style={{ marginTop: 20 }}>
         <strong>Subscription: {me?.subscriptionStatus ?? "None yet"}</strong>
+        {me?.subscriptionStatus && me.subscriptionCurrentPeriodEnd && (
+          <p className="dim" style={{ margin: "4px 0 0" }}>
+            {me.subscriptionCancelAtPeriodEnd
+              ? `Cancels on ${new Date(me.subscriptionCurrentPeriodEnd).toLocaleDateString()} — you'll keep access until then.`
+              : `Renews on ${new Date(me.subscriptionCurrentPeriodEnd).toLocaleDateString()}.`}
+          </p>
+        )}
         <div style={{ marginTop: 10, display: "flex", gap: 10 }}>
           {me?.subscriptionStatus && (
             <button className="btn btn-secondary" onClick={openBillingPortal} disabled={portalLoading}>

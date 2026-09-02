@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, FormEvent } from "react";
+import { Suspense, useEffect, useState, FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, ApiClientError } from "@/lib/api-client";
 
 interface Me {
@@ -42,7 +42,16 @@ function isFutureBooking(b: BookingRow) {
 }
 
 export default function InstructorDashboardPage() {
+  return (
+    <Suspense fallback={null}>
+      <InstructorDashboardContent />
+    </Suspense>
+  );
+}
+
+function InstructorDashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [countries, setCountries] = useState<Country[]>([]);
   const [licenseTypes, setLicenseTypes] = useState<LicenseType[]>([]);
@@ -74,6 +83,16 @@ export default function InstructorDashboardPage() {
     }
   }
 
+  async function markNoShow(id: string) {
+    if (!confirm("Mark this session as a no-show?")) return;
+    try {
+      await apiFetch(`/api/bookings/${id}/no-show`, { method: "POST" });
+      refreshBookings();
+    } catch (err) {
+      if (err instanceof ApiClientError) alert(err.message);
+    }
+  }
+
   useEffect(() => {
     refreshMe();
     apiFetch<{ countries: Country[] }>("/api/countries").then((res) => setCountries(res.countries));
@@ -84,9 +103,25 @@ export default function InstructorDashboardPage() {
 
   if (me === undefined) return null;
 
+  const connectNotice = searchParams.get("connect");
+
   return (
     <div className="container section">
       <h1>Teaching on Ground School AI</h1>
+
+      {connectNotice === "return" && !me?.instructor?.connectOnboarded && (
+        <div className="card" style={{ marginTop: 12 }}>
+          <p className="dim" style={{ margin: 0 }}>
+            Stripe onboarding submitted — this can take a minute to reflect here.{" "}
+            <button className="btn btn-secondary" onClick={refreshMe} style={{ marginLeft: 8 }}>
+              Refresh status
+            </button>
+          </p>
+        </div>
+      )}
+      {connectNotice === "refresh" && (
+        <p className="dim">That onboarding link expired — click below to get a new one.</p>
+      )}
 
       {!me?.isInstructor && (
         <InstructorProfileForm
@@ -145,6 +180,11 @@ export default function InstructorDashboardPage() {
                           Cancel
                         </button>
                       )}
+                      {(b.status === "CONFIRMED" || b.status === "COMPLETED") && !isFutureBooking(b) && (
+                        <button className="btn btn-secondary" onClick={() => markNoShow(b.id)}>
+                          Mark no-show
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -153,13 +193,57 @@ export default function InstructorDashboardPage() {
           )}
         </>
       )}
+
+      {me?.isInstructor && me.instructor && <ReviewsReceived instructorId={me.instructor.id} />}
     </div>
+  );
+}
+
+interface ReviewRow {
+  id: string;
+  rating: number;
+  comment: string | null;
+  createdAt: string;
+  student: { name: string };
+}
+
+function ReviewsReceived({ instructorId }: { instructorId: string }) {
+  const [reviews, setReviews] = useState<ReviewRow[] | null>(null);
+
+  useEffect(() => {
+    apiFetch<{ reviews: ReviewRow[] }>(`/api/instructors/${instructorId}/reviews`)
+      .then((res) => setReviews(res.reviews))
+      .catch(() => setReviews([]));
+  }, [instructorId]);
+
+  if (reviews === null) return null;
+
+  return (
+    <>
+      <h2 style={{ marginTop: 32 }}>Reviews you&apos;ve received</h2>
+      {reviews.length === 0 && <p className="dim">No reviews yet.</p>}
+      <div className="grid grid-2">
+        {reviews.map((r) => (
+          <div className="card" key={r.id}>
+            <strong>
+              {"★".repeat(r.rating)}
+              {"☆".repeat(5 - r.rating)}
+            </strong>
+            <p className="dim" style={{ fontSize: 13 }}>
+              {r.student.name} · {new Date(r.createdAt).toLocaleDateString()}
+            </p>
+            {r.comment && <p style={{ marginTop: 8 }}>{r.comment}</p>}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
 interface InstructorProfileInitial {
   hourlyRate: number;
   bio: string;
+  currency: string;
   countryCodes: string[];
   licenseTypeCodes: string[];
 }
@@ -203,6 +287,7 @@ function InstructorProfileForm({
         body: JSON.stringify({
           hourlyRateCents: Math.round(hourlyRate * 100),
           bio,
+          currency: initial?.currency ?? "usd",
           countryCodes: selectedCountries,
           licenseTypeCodes: selectedLicenses,
           timezone,
@@ -307,6 +392,7 @@ function InstructorProfileEditor({
       instructor: {
         hourlyRateCents: number;
         bio: string | null;
+        currency: string;
         countries: { country: { code: string } }[];
         licenseTypes: { licenseType: { code: string } }[];
       };
@@ -314,6 +400,7 @@ function InstructorProfileEditor({
       setInitial({
         hourlyRate: res.instructor.hourlyRateCents / 100,
         bio: res.instructor.bio ?? "",
+        currency: res.instructor.currency,
         countryCodes: res.instructor.countries.map((c) => c.country.code),
         licenseTypeCodes: res.instructor.licenseTypes.map((l) => l.licenseType.code),
       });

@@ -14,6 +14,8 @@ export async function GET() {
       role: user.role,
       country: user.country?.code ?? null,
       subscriptionStatus: user.subscription?.status ?? null,
+      subscriptionCancelAtPeriodEnd: user.subscription?.cancelAtPeriodEnd ?? false,
+      subscriptionCurrentPeriodEnd: user.subscription?.currentPeriodEnd?.toISOString() ?? null,
       isInstructor: user.instructor !== null,
       emailVerified: user.emailVerified,
       instructor: user.instructor

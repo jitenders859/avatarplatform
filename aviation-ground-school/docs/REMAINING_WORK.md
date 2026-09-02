@@ -43,6 +43,38 @@ was built and the assumption/simplification each one landed on.
 - **Cancel had no UI.** `POST /api/bookings/:id/cancel` existed from the first pass but nothing ever
   called it — added Cancel buttons to both the student and instructor booking tables.
 
+## Second pass: gaps found by audit, not by spec
+
+After the punch list above shipped, a targeted code audit (cross-referencing every API route against
+every page, and every schema field against where it's read/written) turned up real, working-but-broken
+issues that hadn't been on anyone's list. All fixed and verified the same way as everything else here:
+
+- [x] **`?next=` redirects were ignored.** Five-plus call sites across the app build a
+  `/login?next=/wherever` URL for a bounced-out user (booking flow, dashboards, pricing), but login and
+  signup both hardcoded their post-auth destination instead of reading it. Fixed in both pages; the
+  "sign up"/"log in" cross-links between them now carry `next` along too.
+- [x] **Stripe/Connect redirect params were written but never read.** `success_url`/`cancel_url` on both
+  Checkout flows, and the Connect account-link's `return_url`/`refresh_url`, all encode outcome via query
+  string — no destination page displayed any of it (only `?verified=1` was wired up). Added banners on
+  `/dashboard` (`booking=success`, `checkout=success`), `/pricing` (`checkout=canceled`),
+  `/instructors/:id` (`booking=canceled`), and `/instructor-dashboard` (`connect=return`/`refresh`).
+- [x] **`Subscription.cancelAtPeriodEnd` was write-only.** The webhook persisted it; nothing read it back,
+  so a student who canceled via the billing portal still saw a plain "ACTIVE" with no hint it wouldn't
+  renew. Now returned from `/api/auth/me` and shown on `/dashboard` ("Renews on…" / "Cancels on…").
+- [x] **`User.countryId` was dead.** The signup API accepted `countryCode` but the signup page never
+  collected it. Added a geo-prefilled (reusing `/api/geo`, same as onboarding) country select to signup.
+- [x] **`GET /api/instructors/:id/reviews` had no caller.** The public profile page fetched reviews
+  directly via Prisma instead. Rather than delete the route, gave it a real job: a new "Reviews you've
+  received" section on `/instructor-dashboard`, so instructors can finally see their own reviews.
+- [x] **`BookingStatus.NO_SHOW` was displayed but never set.** The admin panel had a stat tile for it that
+  could only ever read zero. Added `POST /api/bookings/:id/no-show` (instructor-only, only after the
+  session's start time has passed; doesn't touch price or payout — it's a record, not a refund trigger)
+  and a "Mark no-show" button on `/instructor-dashboard`. Only the instructor can report a no-show; a
+  student-side "the instructor didn't show" flow would need dispute handling and isn't built.
+- [x] **Instructor `currency` was silently reset on every profile edit.** The edit form never sent it, so
+  the API's `"usd"` zod default clobbered any non-default currency on save. The edit form now round-trips
+  the instructor's actual currency instead of omitting the field.
+
 ## Explicitly out of scope (not on this list)
 
 - **Usage-metered billing** (charging for actual call attendance instead of booked duration) — a deliberate

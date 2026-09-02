@@ -4,7 +4,13 @@ import InstructorBooking from "@/components/InstructorBooking";
 
 export const dynamic = "force-dynamic";
 
-export default async function InstructorProfilePage({ params }: { params: { id: string } }) {
+export default async function InstructorProfilePage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams: { booking?: string };
+}) {
   const instructor = await prisma.instructor.findUnique({
     where: { id: params.id },
     include: {
@@ -25,6 +31,7 @@ export default async function InstructorProfilePage({ params }: { params: { id: 
 
   return (
     <div className="container section">
+      {searchParams.booking === "canceled" && <p className="dim">Checkout canceled — no charge was made.</p>}
       <div className="card">
         <h1>{instructor.user.name}</h1>
         <p className="dim">

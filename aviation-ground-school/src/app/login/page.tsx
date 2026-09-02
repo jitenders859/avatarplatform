@@ -1,11 +1,21 @@
 "use client";
 
-import { useState, FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, ApiClientError } from "@/lib/api-client";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const next = searchParams.get("next") || "/dashboard";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +27,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await apiFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
-      router.push("/dashboard");
+      router.push(next);
       router.refresh();
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Something went wrong");
@@ -50,7 +60,8 @@ export default function LoginPage() {
         </button>
       </form>
       <p className="dim" style={{ marginTop: 12 }}>
-        No account yet? <a href="/signup">Sign up</a> · <a href="/forgot-password">Forgot password?</a>
+        No account yet? <a href={`/signup?next=${encodeURIComponent(next)}`}>Sign up</a> ·{" "}
+        <a href="/forgot-password">Forgot password?</a>
       </p>
     </div>
   );

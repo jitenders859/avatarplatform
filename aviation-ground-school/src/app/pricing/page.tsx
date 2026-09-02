@@ -1,11 +1,20 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, ApiClientError } from "@/lib/api-client";
 
 export default function PricingPage() {
+  return (
+    <Suspense fallback={null}>
+      <PricingContent />
+    </Suspense>
+  );
+}
+
+function PricingContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [loadingPlan, setLoadingPlan] = useState<"MONTHLY" | "ANNUAL" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +44,9 @@ export default function PricingPage() {
         Every plan unlocks unlimited chatbot access across every country and license. Instructor sessions are billed
         separately, per session — no subscription required for those.
       </p>
+      {searchParams.get("checkout") === "canceled" && (
+        <p className="dim">Checkout canceled — no charge was made.</p>
+      )}
       {error && <p className="error">{error}</p>}
       <div className="grid grid-2" style={{ marginTop: 24 }}>
         <div className="card">
