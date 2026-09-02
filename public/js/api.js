@@ -76,11 +76,19 @@ const API = {
 
   // Projects
   characters:    () => apiCall('/api/projects/characters'),
-  listProjects:  () => apiCall('/api/projects'),
+  listProjects:  (categoryId) => apiCall(`/api/projects${categoryId ? `?categoryId=${encodeURIComponent(categoryId)}` : ''}`),
   createProject: (data) => apiCall('/api/projects', { method: 'POST', body: data }),
   getProject:    (id)   => apiCall(`/api/projects/${id}`),
   updateProject: (id, patch) => apiCall(`/api/projects/${id}`, { method: 'PATCH', body: patch }),
   deleteProject: (id)   => apiCall(`/api/projects/${id}`, { method: 'DELETE' }),
+
+  // Chatbot categories
+  listCategories:  () => apiCall('/api/categories'),
+  createCategory:  (data) => apiCall('/api/categories', { method: 'POST', body: data }),
+  updateCategory:  (id, patch) => apiCall(`/api/categories/${id}`, { method: 'PATCH', body: patch }),
+  deleteCategory:  (id) => apiCall(`/api/categories/${id}`, { method: 'DELETE' }),
+  assignChatbotsToCategory: (id, projectIds) => apiCall(`/api/categories/${id}/chatbots`, { method: 'POST', body: { projectIds } }),
+  removeChatbotFromCategory: (id, projectId) => apiCall(`/api/categories/${id}/chatbots/${projectId}`, { method: 'DELETE' }),
 
   // Sources
   listFiles: (pid) => apiCall(`/api/projects/${pid}/files`),

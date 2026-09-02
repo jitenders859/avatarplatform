@@ -82,6 +82,8 @@ avatar-platform/
 │   │   ├── files.js               # File upload, URL ingest, chunks viewer
 │   │   ├── embed.js               # Public embed: config, retrieve, log, lead
 │   │   ├── captureFields.js       # Lead capture field management
+│   │   ├── categories.js          # Chatbot categories: create + assign chatbots
+│   │   ├── apiData.js             # Read-only export API: categories/chatbots/messages/urls/leads across the account
 │   │   ├── quizQuestions.js       # Owner-authored quiz question bank
 │   │   ├── flashcards.js          # Owner-authored flashcard bank
 │   │   ├── videoResources.js      # Owner-curated video recommendations
@@ -239,6 +241,7 @@ The schema creates 10 tables:
 | `usage` | Monthly message + embedding-char counters |
 | `capture_fields` | Lead capture form field definitions |
 | `leads` | Collected lead data per session |
+| `chatbot_categories` | User-defined groupings for chatbots (`projects.categoryId`) |
 
 The `chunks` table has an HNSW index (`m=16, ef_construction=64`) for fast cosine similarity search via the pgvector `<=>` operator.
 
@@ -278,7 +281,7 @@ All routes under `/api/*` return JSON. Authenticated routes require `Authorizati
 | GET | `/:id/leads/:leadId` | Get lead + conversation |
 | POST | `/:id/webhook/test` | Fire a test webhook event |
 
-**Project fields (PATCH):** `name`, `characterId`, `systemPrompt`, `voice`, `welcomeMessage`, `widgetPosition` (`bottom-right`|`bottom-left`|`inline`), `widgetStartOpen`, `textDirection` (`auto`|`ltr`|`rtl`), `themeColor`, `showBranding`, `showSourceCards`, `widgetOffsetX`, `widgetOffsetY`, `avatarPosition` (`left`|`right`), `avatarSize` (`small`|`medium`|`large`|`xlarge`), `showAvatarInLauncher`, `avatarOffsetX`, `avatarOffsetY`, `avatarKeepVisible`, `avatarCompactOnMobile`, `webhookUrl`
+**Project fields (PATCH):** `name`, `characterId`, `systemPrompt`, `voice`, `welcomeMessage`, `categoryId` (nullable — set to move it into a category, `null` to un-categorize), `widgetPosition` (`bottom-right`|`bottom-left`|`inline`), `widgetStartOpen`, `textDirection` (`auto`|`ltr`|`rtl`), `themeColor`, `showBranding`, `showSourceCards`, `widgetOffsetX`, `widgetOffsetY`, `avatarPosition` (`left`|`right`), `avatarSize` (`small`|`medium`|`large`|`xlarge`), `showAvatarInLauncher`, `avatarOffsetX`, `avatarOffsetY`, `avatarKeepVisible`, `avatarCompactOnMobile`, `webhookUrl`
 
 ### Files & Sources — `/api/projects/:projectId/files`
 
@@ -294,6 +297,36 @@ All routes under `/api/*` return JSON. Authenticated routes require `Authorizati
 | DELETE | `/:fileId/chunks/:chunkId` | Delete a single chunk |
 | POST | `/../sources/url` | Ingest URL(s): `{url}` or `{urls:[…]}` |
 | POST | `/../reindex` | Re-embed all ready files with current model |
+
+### Chatbot Categories — `/api/categories`
+
+User-defined groupings for chatbots. A chatbot (project) belongs to at most one category (`projects.categoryId`, nullable). Assign a chatbot to a category either here (bulk) or via `PATCH /api/projects/:id { categoryId }` (one at a time, e.g. from the project settings page). Deleting a category un-categorizes its chatbots rather than deleting them.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/` | List categories, each with its chatbots nested (`id`, `name`, `publicId`, `characterId`) |
+| POST | `/` | Create category `{name, color?, description?}` |
+| GET | `/:id` | Get category + full chatbot rows |
+| PATCH | `/:id` | Update `{name?, color?, description?}` |
+| DELETE | `/:id` | Delete category (chatbots become uncategorized) |
+| POST | `/:id/chatbots` | Bulk-assign `{projectIds: [uuid, …]}` |
+| DELETE | `/:id/chatbots/:projectId` | Unassign one chatbot from this category |
+
+`GET /api/projects` also accepts `?categoryId=` to filter the list, and `POST /api/projects` accepts an optional `categoryId` at creation time.
+
+### Data Export API — `/api/data`
+
+Read-only endpoints for pulling everything an account has — across **every** chatbot, not just one — into another platform. Same `Authorization: Bearer <token>` auth as the rest of `/api/*`; every query is scoped to the caller's own account.
+
+| Method | Path | Description |
+|---|---|---|
+| GET | `/categories` | Every category, each with its chatbots nested |
+| GET | `/chatbots` | Every chatbot; `?categoryId=` filters |
+| GET | `/messages` | Every chat message across every chatbot; `?projectId=&categoryId=&page=&limit=` |
+| GET | `/urls` | Every URL knowledge source (`files.kind = 'url'`) across every chatbot; `?projectId=&categoryId=&page=&limit=` |
+| GET | `/leads` | Every lead across every chatbot; `?projectId=&categoryId=&complete=true\|false&page=&limit=` |
+
+`messages`, `urls`, and `leads` are paginated (`page`/`limit`, default 50, max 200) and return `{ [resource], total, page, limit }`. Each row is enriched with its parent chatbot's name and category (`chatbotName`, `categoryId`, `categoryName`) so a consumer doesn't need to join against `/api/data/chatbots` itself.
 
 ### Capture Fields — `/api/projects/:projectId/capture`
 
