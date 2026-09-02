@@ -1143,6 +1143,7 @@
       this._audioCtx     = null;
       this._analyser     = null;
       this._nextPlayAt   = 0;
+      this._activeSources = [];
       this._isMicOn      = false;
       this._micProc      = null;
       this._micStream    = null;
@@ -1859,6 +1860,7 @@ When answering, speak naturally and conversationally — do not read the knowled
       this._schedQueue  = [];
       this._schedRaf    = null;
       this._lastTextAnchorMs = 0;
+      this._stopActiveSources();
 
       const url = new URL(`wss://${WS_HOST}${WS_PATH}`);
       url.searchParams.set('key', this._opts.apiKey.trim());
@@ -2015,6 +2017,7 @@ When answering, speak naturally and conversationally — do not read the knowled
         }
 
         if (content.interrupted) {
+          this._stopActiveSources();
           this._nextPlayAt = this._audioCtx.currentTime;
           this._schedQueue = [];
           this._audioStart  = 0;
@@ -2040,6 +2043,7 @@ When answering, speak naturally and conversationally — do not read the knowled
 
       ws.onclose = () => {
         this._isConnected = false;
+        this._stopActiveSources();
         this._schedQueue  = [];
         this._setStatus('Disconnected', '');
         this._el.btnConnect.innerHTML = `
@@ -2063,6 +2067,7 @@ When answering, speak naturally and conversationally — do not read the knowled
 
     _stopSession() {
       this._stopMicNow();
+      this._stopActiveSources();
       this._schedQueue = [];
       this._audioStart = 0;
       this._lastTextAnchorMs = 0;
@@ -2111,6 +2116,11 @@ When answering, speak naturally and conversationally — do not read the knowled
       const src = this._audioCtx.createBufferSource();
       src.buffer = buf;
       src.connect(this._analyser);
+      this._activeSources.push(src);
+      src.onended = () => {
+        const i = this._activeSources.indexOf(src);
+        if (i !== -1) this._activeSources.splice(i, 1);
+      };
 
       const now = this._audioCtx.currentTime;
       if (this._nextPlayAt < now + 0.01) this._nextPlayAt = now + 0.01;
@@ -2124,6 +2134,18 @@ When answering, speak naturally and conversationally — do not read the knowled
 
       src.start(this._nextPlayAt);
       this._nextPlayAt += buf.duration;
+    }
+
+    // Stop and discard every scheduled/playing PCM buffer immediately — used on
+    // barge-in ("interrupted") and session teardown so a still-queued reply
+    // can't keep sounding after a new one starts (the two would otherwise
+    // overlap, since AudioBufferSourceNodes play out to their scheduled end
+    // regardless of app-level state resets).
+    _stopActiveSources() {
+      for (const src of this._activeSources) {
+        try { src.onended = null; src.stop(); } catch (_) {}
+      }
+      this._activeSources = [];
     }
 
     // ─────────────────────────────────────────────────────
