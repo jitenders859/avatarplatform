@@ -35,6 +35,13 @@ separate deploy, no shared code with the rest of the repo.
    Daily.co room for each `CONFIRMED` booking (only joinable from shortly before it starts to shortly after it
    ends — enforced by Daily itself, not just the UI). `/session/:bookingId` mints a fresh per-participant join
    token and embeds the call.
+7. **Accounts are verified, recoverable, and reviewed.** Signup sends a verification email (soft — it's a
+   trust signal, nothing is gated on it); forgot/reset password is token-based. Every booking confirmation
+   and pre-session reminder goes out by email (`src/lib/mailer.ts`, `src/lib/notifications.ts`); a booking
+   auto-completes once its session is over, at which point the student can rate the instructor
+   (`Review`, recomputes `Instructor.ratingAvg`). Students can reschedule or cancel a booking themselves
+   from `/dashboard`. `/admin` (role-gated) gives a platform-wide view — users, revenue, commission, recent
+   bookings.
 
 ## Stack
 
@@ -48,6 +55,8 @@ separate deploy, no shared code with the rest of the repo.
   (`src/app/api/instructors/connect/*`, `src/app/api/webhooks/stripe-connect`, `src/app/api/bookings/*`).
 - **Daily.co** — video calls for confirmed bookings (`src/lib/video.ts`); optional (booking/payment still
   work without an API key, sessions just won't get a room).
+- **nodemailer / SMTP** — verification, password reset, booking confirmation, and reminder emails
+  (`src/lib/mailer.ts`); optional (every send site no-ops with a `console.warn` without it configured).
 - Hand-rolled JWT cookie auth (`src/lib/auth.ts`) — no third-party auth provider, kept intentionally simple.
 - No date library — `src/lib/timezone.ts` does DST-safe local↔UTC conversion with just `Intl`.
 
@@ -87,21 +96,44 @@ Grab an API key from [dashboard.daily.co/developers](https://dashboard.daily.co/
 and payment still work end to end; confirmed sessions just won't have a room (`/session/:bookingId` will say
 so) until it's set.
 
+### Email + the reminders cron
+
+Set `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` for real email delivery — without them, every send
+just logs a warning. Separately, `GET /api/cron/reminders` needs to be hit on a schedule by something outside
+the app (there's no in-process job queue) — it sends "starting soon" reminder emails and sweeps finished
+bookings to `COMPLETED`. `vercel.json` already wires this up for Vercel (every 5 minutes); on Vercel, set the
+`CRON_SECRET` env var and Vercel sends it automatically as the `Authorization: Bearer` header. Deploying
+elsewhere: point any scheduler (cron, GitHub Actions, etc.) at that URL with the same header.
+
+### Bootstrapping an admin
+
+There's no self-serve way to become an admin. After someone has an account:
+
+```bash
+npm run admin:promote -- someone@example.com
+```
+
+They'll see an "Admin" link in the nav and can load `/admin` for platform-wide stats.
+
 ## Project layout
 
 ```
 prisma/schema.prisma        Data model
 prisma/seed.ts               Countries, license types, chatbot system prompts
 src/lib/                     Server-side building blocks:
-                                db, auth — Postgres/Prisma client, JWT session auth
+                                db, auth — Postgres/Prisma client, JWT session auth, token generation
                                 claude — chatbot replies
                                 stripe, pricing — Stripe client, rate/commission math
                                 timezone, availability — recurring-availability calendar math
                                 video — Daily.co rooms + join tokens
+                                mailer — SMTP send (verification, reset, booking emails)
+                                notifications — ties bookings to mailer + the completion sweep
                                 instructors — matching/eligibility helpers
-src/app/api/                 Route Handlers — the whole backend
-src/app/                     Pages (App Router)
+src/app/api/                 Route Handlers — the whole backend (auth, bookings, instructors, cron, webhooks)
+src/app/                     Pages (App Router) — including /admin, /dashboard, /instructor-dashboard
 src/components/              Small client components shared across pages (Calendar, InstructorBooking, Nav)
+scripts/promote-admin.ts     One-off script to bootstrap the first admin account
+docs/REMAINING_WORK.md       Record of a completed gap-closing pass — see it for what shipped and when
 ```
 
 ## Notable product assumptions baked into the code
@@ -127,13 +159,20 @@ These were judgment calls made to ship a coherent v1 — revisit them as the rea
   simpler to ship, and sufficient unless booking volume per instructor gets very high.
 - The estimated price shown before booking (`InstructorBooking.tsx`) is rate × duration only, no commission —
   it's explicitly labeled "+ platform fee"; the exact total is whatever Stripe Checkout shows before payment.
+- Email verification is a trust signal only — nothing in the app is gated on `User.emailVerified`.
+- Only the student can reschedule a booking; the instructor's remedy for "I can't make it" is cancellation
+  (which refunds a paid session), not a reschedule.
+- Rescheduling keeps the original duration and price — you're moving the clock, not renegotiating the deal.
+- The `/admin` panel is read-only (stats + recent activity) — no user management, refund, or dispute actions
+  from it yet.
 
 ## What's intentionally not built yet
 
-- Instructor rating/review submission (the `ratingAvg`/`ratingCount` columns exist and are read, but nothing
-  writes them yet — wire this up once sessions can be marked `COMPLETED`).
-- Actually marking a booking `COMPLETED` after its call ends (nothing currently transitions it out of
-  `CONFIRMED`) — needed both for reviews and for accurate "past sessions" reporting.
-- Email notifications (booking confirmations, payment receipts, reminders, "your call starts in 10 minutes").
-- Rescheduling a booking (today it's cancel-and-rebook; a reschedule would need to juggle the Stripe payment
-  and the Daily room rather than just releasing the old window).
+- **Usage-metered billing** — charging for actual call attendance instead of booked duration. A deliberate
+  product decision, not an oversight: see "Notable product assumptions" above (price is set at booking time).
+- **Automated tests.** This project doesn't have a test suite yet; everything so far has been verified by
+  hand against a local Postgres each time something shipped (see `docs/REMAINING_WORK.md` for what was
+  checked).
+
+`docs/REMAINING_WORK.md` has the fuller history of what was deliberately deferred in earlier passes and
+then closed out — worth a read before assuming something's missing.

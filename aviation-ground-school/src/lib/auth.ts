@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import { randomBytes } from "crypto";
 import { cookies } from "next/headers";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/db";
@@ -73,6 +74,23 @@ export async function requireUser() {
   return user;
 }
 
+export async function requireAdmin() {
+  const user = await requireUser();
+  if (user.role !== "ADMIN") {
+    throw new AuthError("Admins only", 403);
+  }
+  return user;
+}
+
 export class AuthError extends Error {
-  status = 401;
+  status: number;
+  constructor(message: string, status = 401) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** A URL-safe random token for email verification / password reset links. */
+export function generateToken(): string {
+  return randomBytes(32).toString("hex");
 }

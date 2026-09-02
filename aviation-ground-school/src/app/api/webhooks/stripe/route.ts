@@ -5,6 +5,7 @@ import { getStripe } from "@/lib/stripe";
 import { env } from "@/lib/env";
 import { PLANS } from "@/lib/pricing";
 import { createSessionRoom } from "@/lib/video";
+import { notifyBookingConfirmed } from "@/lib/notifications";
 import type { SubscriptionStatus } from "@prisma/client";
 
 // Stripe subscription statuses -> our simplified SubscriptionStatus enum.
@@ -77,6 +78,9 @@ export async function POST(req: NextRequest) {
       const session = event.data.object as Stripe.Checkout.Session;
       const bookingId = session.metadata?.bookingId;
       if (session.mode === "payment" && bookingId) {
+        const existing = await prisma.booking.findUnique({ where: { id: bookingId }, select: { status: true } });
+        const alreadyConfirmed = existing?.status === "CONFIRMED";
+
         const booking = await prisma.booking.update({
           where: { id: bookingId },
           data: {
@@ -86,15 +90,20 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        const room = await createSessionRoom(booking.id, booking.startAt, booking.endAt).catch((err) => {
-          console.error("Video room creation failed for booking", booking.id, err);
-          return null;
-        });
-        if (room) {
-          await prisma.booking.update({
-            where: { id: booking.id },
-            data: { dailyRoomName: room.name, dailyRoomUrl: room.url },
+        if (!alreadyConfirmed) {
+          const room = await createSessionRoom(booking.id, booking.startAt, booking.endAt).catch((err) => {
+            console.error("Video room creation failed for booking", booking.id, err);
+            return null;
           });
+          if (room) {
+            await prisma.booking.update({
+              where: { id: booking.id },
+              data: { dailyRoomName: room.name, dailyRoomUrl: room.url },
+            });
+          }
+          await notifyBookingConfirmed(booking.id).catch((err) =>
+            console.error("Confirmation email failed", booking.id, err)
+          );
         }
       }
       break;

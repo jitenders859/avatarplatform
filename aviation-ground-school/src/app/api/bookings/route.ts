@@ -9,15 +9,21 @@ import { splitInstructorRate } from "@/lib/pricing";
 import { hasPriorBooking } from "@/lib/instructors";
 import { checkWindowAvailable } from "@/lib/availability";
 import { createSessionRoom } from "@/lib/video";
+import { notifyBookingConfirmed, completeExpiredBookings } from "@/lib/notifications";
 
 /** GET /api/bookings — the current user's bookings, as a student and/or as an instructor. */
 export async function GET() {
   try {
     const user = await requireUser();
+    // Opportunistic sweep so status is fresh even without the reminders cron configured —
+    // the cron (src/app/api/cron/reminders) does the same sweep on a schedule as a backstop
+    // for dashboards nobody happens to load.
+    await completeExpiredBookings().catch((err) => console.error("completeExpiredBookings failed", err));
+
     const [asStudent, asInstructor] = await Promise.all([
       prisma.booking.findMany({
         where: { studentId: user.id },
-        include: { instructor: { include: { user: { select: { name: true } } } } },
+        include: { instructor: { include: { user: { select: { name: true } } } }, review: true },
         orderBy: { startAt: "desc" },
       }),
       user.instructor
@@ -168,6 +174,7 @@ export async function POST(req: NextRequest) {
           data: { dailyRoomName: room.name, dailyRoomUrl: room.url },
         });
       }
+      notifyBookingConfirmed(booking.id).catch((err) => console.error("Confirmation email failed", booking.id, err));
       return NextResponse.json({ booking, checkoutUrl: null }, { status: 201 });
     }
 

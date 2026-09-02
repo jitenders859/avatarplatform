@@ -43,6 +43,7 @@ export default function Nav() {
             <>
               <Link href="/dashboard">Dashboard</Link>
               {me.isInstructor && <Link href="/instructor-dashboard">Teaching</Link>}
+              {me.role === "ADMIN" && <Link href="/admin">Admin</Link>}
               <button className="btn btn-secondary" onClick={logout}>
                 Log out
               </button>

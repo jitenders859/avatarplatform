@@ -9,7 +9,14 @@ interface Me {
   id: string;
   name: string;
   isInstructor: boolean;
-  instructor: { id: string; connectOnboarded: boolean; hourlyRateCents: number } | null;
+  instructor: {
+    id: string;
+    connectOnboarded: boolean;
+    hourlyRateCents: number;
+    bio: string | null;
+    currency: string;
+    timezone: string;
+  } | null;
 }
 interface Country {
   id: string;
@@ -30,6 +37,10 @@ interface BookingRow {
   student: { name: string };
 }
 
+function isFutureBooking(b: BookingRow) {
+  return new Date(b.startAt).getTime() > Date.now();
+}
+
 export default function InstructorDashboardPage() {
   const router = useRouter();
   const [me, setMe] = useState<Me | null | undefined>(undefined);
@@ -47,13 +58,27 @@ export default function InstructorDashboardPage() {
     });
   }
 
+  function refreshBookings() {
+    apiFetch<{ asInstructor: BookingRow[] }>("/api/bookings")
+      .then((res) => setBookings(res.asInstructor))
+      .catch(() => {});
+  }
+
+  async function cancelBooking(id: string) {
+    if (!confirm("Cancel this session?")) return;
+    try {
+      await apiFetch(`/api/bookings/${id}/cancel`, { method: "POST" });
+      refreshBookings();
+    } catch (err) {
+      if (err instanceof ApiClientError) alert(err.message);
+    }
+  }
+
   useEffect(() => {
     refreshMe();
     apiFetch<{ countries: Country[] }>("/api/countries").then((res) => setCountries(res.countries));
     apiFetch<{ licenseTypes: LicenseType[] }>("/api/license-types").then((res) => setLicenseTypes(res.licenseTypes));
-    apiFetch<{ asInstructor: BookingRow[] }>("/api/bookings")
-      .then((res) => setBookings(res.asInstructor))
-      .catch(() => {});
+    refreshBookings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -64,10 +89,24 @@ export default function InstructorDashboardPage() {
       <h1>Teaching on Ground School AI</h1>
 
       {!me?.isInstructor && (
-        <BecomeInstructorForm countries={countries} licenseTypes={licenseTypes} onDone={refreshMe} />
+        <InstructorProfileForm
+          countries={countries}
+          licenseTypes={licenseTypes}
+          onDone={refreshMe}
+          submitLabel="Create instructor profile"
+        />
       )}
 
       {me?.isInstructor && !me.instructor?.connectOnboarded && <ConnectOnboardingCard />}
+
+      {me?.isInstructor && me.instructor && (
+        <InstructorProfileEditor
+          instructorId={me.instructor.id}
+          countries={countries}
+          licenseTypes={licenseTypes}
+          onDone={refreshMe}
+        />
+      )}
 
       {me?.isInstructor && me.instructor?.connectOnboarded && me.instructor && (
         <AvailabilityEditor instructorId={me.instructor.id} />
@@ -95,11 +134,16 @@ export default function InstructorDashboardPage() {
                     <td>{new Date(b.startAt).toLocaleString()}</td>
                     <td>{b.status}</td>
                     <td>{b.isFreeSession ? "Free session" : `$${(b.instructorPayoutCents / 100).toFixed(2)}`}</td>
-                    <td>
+                    <td style={{ display: "flex", gap: 8 }}>
                       {b.status === "CONFIRMED" && (
                         <Link href={`/session/${b.id}`} className="btn btn-secondary">
                           Join call
                         </Link>
+                      )}
+                      {(b.status === "CONFIRMED" || b.status === "PENDING_PAYMENT") && isFutureBooking(b) && (
+                        <button className="btn btn-secondary" onClick={() => cancelBooking(b.id)}>
+                          Cancel
+                        </button>
                       )}
                     </td>
                   </tr>
@@ -113,21 +157,35 @@ export default function InstructorDashboardPage() {
   );
 }
 
-function BecomeInstructorForm({
+interface InstructorProfileInitial {
+  hourlyRate: number;
+  bio: string;
+  countryCodes: string[];
+  licenseTypeCodes: string[];
+}
+
+/** Shared form for both "become an instructor" (empty initial values) and editing afterward. */
+function InstructorProfileForm({
   countries,
   licenseTypes,
   onDone,
+  submitLabel,
+  initial,
 }: {
   countries: Country[];
   licenseTypes: LicenseType[];
   onDone: () => void;
+  submitLabel: string;
+  initial?: InstructorProfileInitial;
 }) {
-  const [hourlyRate, setHourlyRate] = useState(75);
-  const [bio, setBio] = useState("");
-  const [selectedCountries, setSelectedCountries] = useState<string[]>([]);
-  const [selectedLicenses, setSelectedLicenses] = useState<string[]>([]);
+  const [hourlyRate, setHourlyRate] = useState(initial?.hourlyRate ?? 75);
+  const [bio, setBio] = useState(initial?.bio ?? "");
+  const [selectedCountries, setSelectedCountries] = useState<string[]>(initial?.countryCodes ?? []);
+  const [selectedLicenses, setSelectedLicenses] = useState<string[]>(initial?.licenseTypeCodes ?? []);
+  const [timezoneOverride, setTimezoneOverride] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   function toggle(list: string[], setList: (v: string[]) => void, value: string) {
     setList(list.includes(value) ? list.filter((v) => v !== value) : [...list, value]);
@@ -136,9 +194,10 @@ function BecomeInstructorForm({
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
+    setSaved(false);
     setLoading(true);
     try {
-      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+      const timezone = timezoneOverride ?? Intl.DateTimeFormat().resolvedOptions().timeZone ?? "UTC";
       await apiFetch("/api/instructors", {
         method: "POST",
         body: JSON.stringify({
@@ -149,6 +208,7 @@ function BecomeInstructorForm({
           timezone,
         }),
       });
+      setSaved(true);
       onDone();
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Something went wrong");
@@ -159,7 +219,7 @@ function BecomeInstructorForm({
 
   return (
     <form onSubmit={onSubmit} className="card" style={{ marginTop: 20 }}>
-      <h3>Become an instructor</h3>
+      <h3>{initial ? "Edit your instructor profile" : "Become an instructor"}</h3>
       <div className="field">
         <label>Hourly rate (USD)</label>
         <input
@@ -204,11 +264,72 @@ function BecomeInstructorForm({
           ))}
         </div>
       </div>
+      {initial && (
+        <div className="field">
+          <label>Timezone</label>
+          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <span className="dim">{timezoneOverride ?? "unchanged"}</span>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setTimezoneOverride(Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")}
+            >
+              Use my current browser timezone
+            </button>
+          </div>
+        </div>
+      )}
       {error && <p className="error">{error}</p>}
+      {saved && <p className="dim">Saved.</p>}
       <button className="btn" type="submit" disabled={loading || selectedCountries.length === 0 || selectedLicenses.length === 0}>
-        {loading ? "Saving…" : "Create instructor profile"}
+        {loading ? "Saving…" : submitLabel}
       </button>
     </form>
+  );
+}
+
+/** Fetches the instructor's current profile so InstructorProfileForm can be pre-filled for editing. */
+function InstructorProfileEditor({
+  instructorId,
+  countries,
+  licenseTypes,
+  onDone,
+}: {
+  instructorId: string;
+  countries: Country[];
+  licenseTypes: LicenseType[];
+  onDone: () => void;
+}) {
+  const [initial, setInitial] = useState<InstructorProfileInitial | null>(null);
+
+  useEffect(() => {
+    apiFetch<{
+      instructor: {
+        hourlyRateCents: number;
+        bio: string | null;
+        countries: { country: { code: string } }[];
+        licenseTypes: { licenseType: { code: string } }[];
+      };
+    }>(`/api/instructors/${instructorId}`).then((res) => {
+      setInitial({
+        hourlyRate: res.instructor.hourlyRateCents / 100,
+        bio: res.instructor.bio ?? "",
+        countryCodes: res.instructor.countries.map((c) => c.country.code),
+        licenseTypeCodes: res.instructor.licenseTypes.map((l) => l.licenseType.code),
+      });
+    });
+  }, [instructorId]);
+
+  if (!initial || countries.length === 0 || licenseTypes.length === 0) return null;
+
+  return (
+    <InstructorProfileForm
+      countries={countries}
+      licenseTypes={licenseTypes}
+      onDone={onDone}
+      submitLabel="Save changes"
+      initial={initial}
+    />
   );
 }
 

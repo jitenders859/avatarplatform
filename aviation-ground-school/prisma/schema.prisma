@@ -117,6 +117,16 @@ model User {
   name         String
   role         UserRole @default(STUDENT)
 
+  /// Soft signal only — verifying an email doesn't gate any feature, it's just trust info
+  /// (e.g. could inform future fraud checks or a "verified" badge).
+  emailVerified Boolean @default(false)
+
+  emailVerificationToken   String?   @unique
+  emailVerificationExpires DateTime?
+
+  passwordResetToken   String?   @unique
+  passwordResetExpires DateTime?
+
   countryId String?
   country   Country? @relation(fields: [countryId], references: [id])
 
@@ -124,6 +134,7 @@ model User {
   subscription Subscription?
   instructor   Instructor?
   bookings     Booking[] @relation("StudentBookings")
+  reviews      Review[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -204,6 +215,7 @@ model Instructor {
   licenseTypes  InstructorLicenseType[]
   availability  InstructorAvailability[]
   bookings      Booking[] @relation("InstructorBookings")
+  reviews       Review[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -285,9 +297,37 @@ model Booking {
   dailyRoomName String? @unique
   dailyRoomUrl  String?
 
+  /// Set once the confirmation email goes out — guards against sending it twice if a Stripe
+  /// webhook retries after the booking is already CONFIRMED.
+  confirmationEmailSentAt DateTime?
+  /// Set once the pre-session reminder email goes out (src/app/api/cron/reminders).
+  reminderSentAt DateTime?
+
+  review Review?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([studentId])
   @@index([instructorId, startAt])
+}
+
+/// A student's rating of one completed booking. One per booking, written once.
+model Review {
+  id      String @id @default(cuid())
+  rating  Int // 1-5
+  comment String? @db.Text
+
+  bookingId String  @unique
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  studentId String
+  student   User   @relation(fields: [studentId], references: [id])
+
+  instructorId String
+  instructor   Instructor @relation(fields: [instructorId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([instructorId])
 }

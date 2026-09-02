@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
-import { hashPassword, setSessionCookie } from "@/lib/auth";
+import { hashPassword, setSessionCookie, generateToken } from "@/lib/auth";
 import { apiError } from "@/lib/api";
+import { sendVerificationEmail } from "@/lib/mailer";
 
 const bodySchema = z.object({
   name: z.string().min(1).max(200),
@@ -24,16 +25,23 @@ export async function POST(req: NextRequest) {
       ? await prisma.country.findUnique({ where: { code: body.countryCode } })
       : null;
 
+    const verificationToken = generateToken();
+
     const user = await prisma.user.create({
       data: {
         name: body.name,
         email: body.email,
         passwordHash: await hashPassword(body.password),
         countryId: country?.id,
+        emailVerificationToken: verificationToken,
+        emailVerificationExpires: new Date(Date.now() + 24 * 60 * 60 * 1000),
       },
     });
 
     await setSessionCookie({ userId: user.id, role: user.role });
+    sendVerificationEmail(user.email, user.name, verificationToken).catch((err) =>
+      console.error("Failed to send verification email", err)
+    );
 
     return NextResponse.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } }, { status: 201 });
   } catch (err) {

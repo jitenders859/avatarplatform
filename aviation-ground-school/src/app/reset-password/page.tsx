@@ -1,12 +1,21 @@
 "use client";
 
-import { useState, FormEvent } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState, FormEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, ApiClientError } from "@/lib/api-client";
 
-export default function LoginPage() {
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResetPasswordForm />
+    </Suspense>
+  );
+}
+
+function ResetPasswordForm() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
+  const searchParams = useSearchParams();
+  const token = searchParams.get("token") ?? "";
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -16,7 +25,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await apiFetch("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      await apiFetch("/api/auth/reset-password", { method: "POST", body: JSON.stringify({ token, password }) });
       router.push("/dashboard");
       router.refresh();
     } catch (err) {
@@ -26,19 +35,25 @@ export default function LoginPage() {
     }
   }
 
+  if (!token) {
+    return (
+      <div className="container section" style={{ maxWidth: 420 }}>
+        <h1>Reset your password</h1>
+        <p className="error">This link is missing its token. Request a new one from the forgot-password page.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="container section" style={{ maxWidth: 420 }}>
-      <h1>Log in</h1>
+      <h1>Choose a new password</h1>
       <form onSubmit={onSubmit} className="card">
         <div className="field">
-          <label htmlFor="email">Email</label>
-          <input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        </div>
-        <div className="field">
-          <label htmlFor="password">Password</label>
+          <label htmlFor="password">New password</label>
           <input
             id="password"
             type="password"
+            minLength={8}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
@@ -46,12 +61,9 @@ export default function LoginPage() {
         </div>
         {error && <p className="error">{error}</p>}
         <button className="btn" type="submit" disabled={loading}>
-          {loading ? "Logging in…" : "Log in"}
+          {loading ? "Saving…" : "Set new password"}
         </button>
       </form>
-      <p className="dim" style={{ marginTop: 12 }}>
-        No account yet? <a href="/signup">Sign up</a> · <a href="/forgot-password">Forgot password?</a>
-      </p>
     </div>
   );
 }

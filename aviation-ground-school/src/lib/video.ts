@@ -68,6 +68,34 @@ export async function createSessionRoom(
   return { name: room.name, url: room.url };
 }
 
+/**
+ * Moves an existing room's join window to match a rescheduled booking, instead of deleting
+ * and recreating it (keeps the same room URL). No-ops quietly if video isn't configured or
+ * the booking never got a room in the first place (e.g. it was booked before DAILY_API_KEY
+ * was set) — a reschedule shouldn't fail just because there's no room to move.
+ */
+export async function updateSessionRoomWindow(
+  roomName: string,
+  startAt: Date,
+  endAt: Date,
+  opts: { graceMinutesBefore?: number; graceMinutesAfter?: number } = {}
+): Promise<void> {
+  if (!env.dailyApiKey) return;
+
+  const graceBefore = opts.graceMinutesBefore ?? JOIN_GRACE_MINUTES_BEFORE;
+  const graceAfter = opts.graceMinutesAfter ?? JOIN_GRACE_MINUTES_AFTER;
+
+  await dailyFetch(`/rooms/${roomName}`, {
+    method: "POST",
+    body: JSON.stringify({
+      properties: {
+        nbf: Math.floor(startAt.getTime() / 1000) - graceBefore * 60,
+        exp: Math.floor(endAt.getTime() / 1000) + graceAfter * 60,
+      },
+    }),
+  });
+}
+
 /** Mints a short-lived, per-participant token for joining a booking's private room. */
 export async function createJoinToken(
   roomName: string,

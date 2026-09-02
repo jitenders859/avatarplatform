@@ -66,4 +66,36 @@ export const env = {
   get dailyApiKey(): string | undefined {
     return process.env.DAILY_API_KEY || undefined;
   },
+  // --- SMTP (transactional email) — optional; every send site checks for this and no-ops
+  // with a console.warn instead of failing when it's unset (same pattern as the sibling
+  // avatarplatform app in this repo). ---
+  get smtpHost(): string | undefined {
+    return process.env.SMTP_HOST || undefined;
+  },
+  get smtpPort() {
+    return Number(optional("SMTP_PORT", "587"));
+  },
+  get smtpUser(): string | undefined {
+    return process.env.SMTP_USER || undefined;
+  },
+  get smtpPass(): string | undefined {
+    return process.env.SMTP_PASS || undefined;
+  },
+  get smtpFrom() {
+    return optional("SMTP_FROM", "Ground School AI <no-reply@groundschool.ai>");
+  },
+  get appName() {
+    return optional("NEXT_PUBLIC_APP_NAME", "Ground School AI");
+  },
+  // --- Cron (reminder emails + booking completion sweep) ---
+  // Shared secret an external scheduler must send as `Authorization: Bearer <CRON_SECRET>`
+  // when hitting /api/cron/*. Required in production; falls back to a dev-only default so
+  // `npm run dev` doesn't need it configured.
+  get cronSecret() {
+    return optional("CRON_SECRET", "dev-only-cron-secret");
+  },
+  /** How far ahead of a session's start time to send the "starting soon" reminder. */
+  get reminderLeadMinutes() {
+    return Number(optional("REMINDER_LEAD_MINUTES", "15"));
+  },
 };

@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, ApiClientError } from "@/lib/api-client";
 
 interface Me {
   id: string;
   name: string;
   subscriptionStatus: string | null;
+  emailVerified: boolean;
 }
 interface ChatSessionRow {
   id: string;
@@ -22,14 +23,31 @@ interface BookingRow {
   isFreeSession: boolean;
   priceCents: number;
   instructor: { user: { name: string } };
+  review: { id: string } | null;
 }
 
 export default function DashboardPage() {
+  return (
+    <Suspense fallback={null}>
+      <DashboardContent />
+    </Suspense>
+  );
+}
+
+function DashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [me, setMe] = useState<Me | null | undefined>(undefined);
   const [sessions, setSessions] = useState<ChatSessionRow[]>([]);
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [resendState, setResendState] = useState<"idle" | "sending" | "sent">("idle");
+
+  function refreshBookings() {
+    apiFetch<{ asStudent: BookingRow[] }>("/api/bookings")
+      .then((res) => setBookings(res.asStudent))
+      .catch(() => {});
+  }
 
   useEffect(() => {
     apiFetch<{ user: Me | null }>("/api/auth/me").then((res) => {
@@ -42,9 +60,7 @@ export default function DashboardPage() {
     apiFetch<{ sessions: ChatSessionRow[] }>("/api/chat/sessions")
       .then((res) => setSessions(res.sessions))
       .catch(() => {});
-    apiFetch<{ asStudent: BookingRow[] }>("/api/bookings")
-      .then((res) => setBookings(res.asStudent))
-      .catch(() => {});
+    refreshBookings();
   }, [router]);
 
   async function openBillingPortal() {
@@ -59,11 +75,45 @@ export default function DashboardPage() {
     }
   }
 
+  async function resendVerification() {
+    setResendState("sending");
+    try {
+      await apiFetch("/api/auth/resend-verification", { method: "POST" });
+      setResendState("sent");
+    } catch {
+      setResendState("idle");
+    }
+  }
+
   if (me === undefined) return null;
+
+  const verifiedNotice = searchParams.get("verified");
 
   return (
     <div className="container section">
       <h1>Welcome back, {me?.name}</h1>
+
+      {verifiedNotice === "1" && <p className="dim">Email verified — thanks!</p>}
+
+      {me && !me.emailVerified && (
+        <div className="card" style={{ marginTop: 12 }}>
+          <p className="dim" style={{ margin: 0 }}>
+            Your email isn&apos;t verified yet.{" "}
+            {resendState === "sent" ? (
+              "Check your inbox for a new link."
+            ) : (
+              <button
+                className="btn btn-secondary"
+                style={{ marginLeft: 8 }}
+                onClick={resendVerification}
+                disabled={resendState === "sending"}
+              >
+                {resendState === "sending" ? "Sending…" : "Resend verification email"}
+              </button>
+            )}
+          </p>
+        </div>
+      )}
 
       <div className="card" style={{ marginTop: 20 }}>
         <strong>Subscription: {me?.subscriptionStatus ?? "None yet"}</strong>
@@ -94,36 +144,141 @@ export default function DashboardPage() {
 
       <h2 style={{ marginTop: 32 }}>Your instructor bookings</h2>
       {bookings.length === 0 && <p className="dim">No bookings yet — visit the instructor directory to book one.</p>}
-      {bookings.length > 0 && (
-        <table>
-          <thead>
-            <tr>
-              <th>Instructor</th>
-              <th>When</th>
-              <th>Status</th>
-              <th>Price</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody>
-            {bookings.map((b) => (
-              <tr key={b.id}>
-                <td>{b.instructor.user.name}</td>
-                <td>{new Date(b.startAt).toLocaleString()}</td>
-                <td>{b.status}</td>
-                <td>{b.isFreeSession ? "Free" : `$${(b.priceCents / 100).toFixed(2)}`}</td>
-                <td>
-                  {b.status === "CONFIRMED" && (
-                    <Link href={`/session/${b.id}`} className="btn btn-secondary">
-                      Join call
-                    </Link>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {bookings.map((b) => (
+        <BookingCard key={b.id} booking={b} onChanged={refreshBookings} />
+      ))}
+    </div>
+  );
+}
+
+function BookingCard({ booking, onChanged }: { booking: BookingRow; onChanged: () => void }) {
+  const [showReschedule, setShowReschedule] = useState(false);
+  const [showReview, setShowReview] = useState(false);
+  const [newTime, setNewTime] = useState("");
+  const [rating, setRating] = useState(5);
+  const [comment, setComment] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isFuture = new Date(booking.startAt).getTime() > Date.now();
+
+  async function cancel() {
+    if (!confirm("Cancel this session?")) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/bookings/${booking.id}/cancel`, { method: "POST" });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reschedule() {
+    if (!newTime) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/bookings/${booking.id}/reschedule`, {
+        method: "POST",
+        body: JSON.stringify({ startAt: new Date(newTime).toISOString() }),
+      });
+      setShowReschedule(false);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitReview() {
+    setBusy(true);
+    setError(null);
+    try {
+      await apiFetch(`/api/bookings/${booking.id}/review`, {
+        method: "POST",
+        body: JSON.stringify({ rating, comment: comment || undefined }),
+      });
+      setShowReview(false);
+      onChanged();
+    } catch (err) {
+      setError(err instanceof ApiClientError ? err.message : "Something went wrong");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+        <div>
+          <strong>{booking.instructor.user.name}</strong>
+          <p className="dim" style={{ margin: "4px 0 0" }}>
+            {new Date(booking.startAt).toLocaleString()} · {booking.status} ·{" "}
+            {booking.isFreeSession ? "Free" : `$${(booking.priceCents / 100).toFixed(2)}`}
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", flexWrap: "wrap" }}>
+          {booking.status === "CONFIRMED" && (
+            <Link href={`/session/${booking.id}`} className="btn btn-secondary">
+              Join call
+            </Link>
+          )}
+          {booking.status === "CONFIRMED" && isFuture && (
+            <button className="btn btn-secondary" onClick={() => setShowReschedule((v) => !v)} disabled={busy}>
+              Reschedule
+            </button>
+          )}
+          {(booking.status === "CONFIRMED" || booking.status === "PENDING_PAYMENT") && isFuture && (
+            <button className="btn btn-secondary" onClick={cancel} disabled={busy}>
+              Cancel
+            </button>
+          )}
+          {booking.status === "COMPLETED" && !booking.review && (
+            <button className="btn btn-secondary" onClick={() => setShowReview((v) => !v)} disabled={busy}>
+              Leave a review
+            </button>
+          )}
+          {booking.status === "COMPLETED" && booking.review && <span className="dim">Reviewed</span>}
+        </div>
+      </div>
+
+      {showReschedule && (
+        <div style={{ marginTop: 14, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <input type="datetime-local" value={newTime} onChange={(e) => setNewTime(e.target.value)} />
+          <button className="btn" onClick={reschedule} disabled={busy || !newTime}>
+            {busy ? "Saving…" : "Confirm new time"}
+          </button>
+        </div>
       )}
+
+      {showReview && (
+        <div style={{ marginTop: 14 }}>
+          <div className="field">
+            <label>Rating</label>
+            <select value={rating} onChange={(e) => setRating(Number(e.target.value))}>
+              {[5, 4, 3, 2, 1].map((n) => (
+                <option key={n} value={n}>
+                  {"★".repeat(n)}
+                  {"☆".repeat(5 - n)}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label>Comment (optional)</label>
+            <textarea rows={2} value={comment} onChange={(e) => setComment(e.target.value)} />
+          </div>
+          <button className="btn" onClick={submitReview} disabled={busy}>
+            {busy ? "Submitting…" : "Submit review"}
+          </button>
+        </div>
+      )}
+
+      {error && <p className="error" style={{ marginTop: 10 }}>{error}</p>}
     </div>
   );
 }

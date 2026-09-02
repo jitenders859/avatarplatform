@@ -15,11 +15,15 @@ export async function GET() {
       country: user.country?.code ?? null,
       subscriptionStatus: user.subscription?.status ?? null,
       isInstructor: user.instructor !== null,
+      emailVerified: user.emailVerified,
       instructor: user.instructor
         ? {
             id: user.instructor.id,
             connectOnboarded: user.instructor.connectOnboarded,
             hourlyRateCents: user.instructor.hourlyRateCents,
+            bio: user.instructor.bio,
+            currency: user.instructor.currency,
+            timezone: user.instructor.timezone,
           }
         : null,
     },

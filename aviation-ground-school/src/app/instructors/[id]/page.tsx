@@ -16,6 +16,13 @@ export default async function InstructorProfilePage({ params }: { params: { id: 
 
   if (!instructor) notFound();
 
+  const reviews = await prisma.review.findMany({
+    where: { instructorId: instructor.id },
+    include: { student: { select: { name: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+
   return (
     <div className="container section">
       <div className="card">
@@ -40,6 +47,26 @@ export default async function InstructorProfilePage({ params }: { params: { id: 
         hourlyRateCents={instructor.hourlyRateCents}
         currency={instructor.currency}
       />
+
+      {reviews.length > 0 && (
+        <>
+          <h2 style={{ marginTop: 32 }}>Reviews</h2>
+          <div className="grid grid-2">
+            {reviews.map((r) => (
+              <div className="card" key={r.id}>
+                <strong>
+                  {"★".repeat(r.rating)}
+                  {"☆".repeat(5 - r.rating)}
+                </strong>
+                <p className="dim" style={{ fontSize: 13 }}>
+                  {r.student.name} · {new Date(r.createdAt).toLocaleDateString()}
+                </p>
+                {r.comment && <p style={{ marginTop: 8 }}>{r.comment}</p>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
