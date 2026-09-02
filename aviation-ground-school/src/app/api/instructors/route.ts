@@ -32,6 +32,10 @@ const createSchema = z.object({
   currency: z.string().length(3).default("usd"),
   countryCodes: z.array(z.string().length(2)).min(1),
   licenseTypeCodes: z.array(z.string()).min(1),
+  // IANA zone name, e.g. "America/New_York" — captured from the instructor's browser
+  // (Intl.DateTimeFormat().resolvedOptions().timeZone) so their availability rules line up
+  // with their actual local clock.
+  timezone: z.string().min(1).max(100).default("UTC"),
 });
 
 /** POST /api/instructors — the current user becomes (or updates) an instructor profile. */
@@ -52,12 +56,14 @@ export async function POST(req: NextRequest) {
           bio: body.bio,
           hourlyRateCents: body.hourlyRateCents,
           currency: body.currency,
+          timezone: body.timezone,
         },
         create: {
           userId: user.id,
           bio: body.bio,
           hourlyRateCents: body.hourlyRateCents,
           currency: body.currency,
+          timezone: body.timezone,
         },
       });
 

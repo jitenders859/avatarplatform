@@ -47,4 +47,23 @@ export const env = {
   get platformCommissionBps() {
     return Number(optional("PLATFORM_COMMISSION_BPS", "1500"));
   },
+  get minSessionMinutes() {
+    return Number(optional("MIN_SESSION_MINUTES", "30"));
+  },
+  get maxSessionMinutes() {
+    return Number(optional("MAX_SESSION_MINUTES", "180"));
+  },
+  /** Booking durations must land on a multiple of this, e.g. 30 -> 30/60/90/120/150/180 min. */
+  get sessionDurationStepMinutes() {
+    return Number(optional("SESSION_DURATION_STEP_MINUTES", "30"));
+  },
+  /** How far in advance a student must book — no same-minute bookings. */
+  get minBookingNoticeMinutes() {
+    return Number(optional("MIN_BOOKING_NOTICE_MINUTES", "60"));
+  },
+  // --- Daily.co (video calls) — optional; booking/payment still works without it, but
+  // sessions won't get a video room until this is configured. ---
+  get dailyApiKey(): string | undefined {
+    return process.env.DAILY_API_KEY || undefined;
+  },
 };

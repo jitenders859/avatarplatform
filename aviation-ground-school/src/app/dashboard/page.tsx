@@ -102,6 +102,7 @@ export default function DashboardPage() {
               <th>When</th>
               <th>Status</th>
               <th>Price</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -111,6 +112,13 @@ export default function DashboardPage() {
                 <td>{new Date(b.startAt).toLocaleString()}</td>
                 <td>{b.status}</td>
                 <td>{b.isFreeSession ? "Free" : `$${(b.priceCents / 100).toFixed(2)}`}</td>
+                <td>
+                  {b.status === "CONFIRMED" && (
+                    <Link href={`/session/${b.id}`} className="btn btn-secondary">
+                      Join call
+                    </Link>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

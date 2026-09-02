@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/db";
-import BookSlotButton from "@/components/BookSlotButton";
+import InstructorBooking from "@/components/InstructorBooking";
 
 export const dynamic = "force-dynamic";
 
@@ -11,11 +11,6 @@ export default async function InstructorProfilePage({ params }: { params: { id: 
       user: { select: { name: true } },
       countries: { include: { country: true } },
       licenseTypes: { include: { licenseType: true } },
-      slots: {
-        where: { isBooked: false, startAt: { gt: new Date() } },
-        orderBy: { startAt: "asc" },
-        take: 20,
-      },
     },
   });
 
@@ -36,30 +31,15 @@ export default async function InstructorProfilePage({ params }: { params: { id: 
         {instructor.bio && <p style={{ marginTop: 16 }}>{instructor.bio}</p>}
       </div>
 
-      <h2 style={{ marginTop: 32 }}>Available times</h2>
+      <h2 style={{ marginTop: 32 }}>Book a session</h2>
       <p className="dim">Your first session with {instructor.user.name} is free.</p>
 
-      {instructor.slots.length === 0 && <p className="dim">No open slots right now — check back soon.</p>}
-
-      <div className="grid grid-3" style={{ marginTop: 12 }}>
-        {instructor.slots.map((slot) => (
-          <div className="card" key={slot.id}>
-            <strong>
-              {new Date(slot.startAt).toLocaleString(undefined, {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-                hour: "numeric",
-                minute: "2-digit",
-              })}
-            </strong>
-            <p className="dim">
-              {Math.round((new Date(slot.endAt).getTime() - new Date(slot.startAt).getTime()) / 60000)} min
-            </p>
-            <BookSlotButton slotId={slot.id} />
-          </div>
-        ))}
-      </div>
+      <InstructorBooking
+        instructorId={instructor.id}
+        instructorName={instructor.user.name}
+        hourlyRateCents={instructor.hourlyRateCents}
+        currency={instructor.currency}
+      />
     </div>
   );
 }

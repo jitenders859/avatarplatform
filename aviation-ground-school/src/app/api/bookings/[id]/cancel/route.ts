@@ -4,7 +4,7 @@ import { requireUser } from "@/lib/auth";
 import { apiError } from "@/lib/api";
 import { getStripe } from "@/lib/stripe";
 
-/** POST /api/bookings/:id/cancel — student or instructor cancels; frees the slot and refunds if paid. */
+/** POST /api/bookings/:id/cancel — student or instructor cancels; refunds if it was already paid. */
 export async function POST(_req: Request, { params }: { params: { id: string } }) {
   try {
     const user = await requireUser();
@@ -22,25 +22,17 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
       return NextResponse.json({ error: `Booking already ${booking.status.toLowerCase()}` }, { status: 409 });
     }
 
-    if (booking.status === "CONFIRMED" && !booking.isFreeSession && booking.priceCents > 0) {
-      // Best-effort refund via the payment intent behind the completed Checkout session.
+    // Once CONFIRMED, stripePaymentIntentId has been overwritten (by the webhook) from the
+    // Checkout session id to the actual PaymentIntent id, so it's directly refundable here.
+    if (booking.status === "CONFIRMED" && !booking.isFreeSession && booking.priceCents > 0 && booking.stripePaymentIntentId) {
       try {
-        const stripe = getStripe();
-        const checkoutSession = booking.stripePaymentIntentId
-          ? await stripe.checkout.sessions.retrieve(booking.stripePaymentIntentId)
-          : null;
-        if (checkoutSession?.payment_intent) {
-          await stripe.refunds.create({ payment_intent: checkoutSession.payment_intent as string });
-        }
+        await getStripe().refunds.create({ payment_intent: booking.stripePaymentIntentId });
       } catch (refundErr) {
         console.error("Refund on cancellation failed", refundErr);
       }
     }
 
-    await prisma.$transaction([
-      prisma.booking.update({ where: { id: booking.id }, data: { status: "CANCELED" } }),
-      prisma.instructorSlot.update({ where: { id: booking.slotId }, data: { isBooked: false } }),
-    ]);
+    await prisma.booking.update({ where: { id: booking.id }, data: { status: "CANCELED" } });
 
     return NextResponse.json({ ok: true });
   } catch (err) {

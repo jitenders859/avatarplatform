@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 
-/** GET /api/instructors/:id — public profile + open (unbooked, future) slots. */
+/** GET /api/instructors/:id — public profile. Fetch /api/instructors/:id/availability for their calendar. */
 export async function GET(_req: Request, { params }: { params: { id: string } }) {
   const instructor = await prisma.instructor.findUnique({
     where: { id: params.id },
@@ -9,10 +9,6 @@ export async function GET(_req: Request, { params }: { params: { id: string } })
       user: { select: { name: true } },
       countries: { include: { country: true } },
       licenseTypes: { include: { licenseType: true } },
-      slots: {
-        where: { isBooked: false, startAt: { gt: new Date() } },
-        orderBy: { startAt: "asc" },
-      },
     },
   });
 

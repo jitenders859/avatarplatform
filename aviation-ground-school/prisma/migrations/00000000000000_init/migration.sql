@@ -109,6 +109,7 @@ CREATE TABLE "Instructor" (
     "bio" TEXT,
     "hourlyRateCents" INTEGER NOT NULL,
     "currency" TEXT NOT NULL DEFAULT 'usd',
+    "timezone" TEXT NOT NULL DEFAULT 'UTC',
     "stripeConnectAccountId" TEXT,
     "connectOnboarded" BOOLEAN NOT NULL DEFAULT false,
     "ratingAvg" DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -136,15 +137,15 @@ CREATE TABLE "InstructorLicenseType" (
 );
 
 -- CreateTable
-CREATE TABLE "InstructorSlot" (
+CREATE TABLE "InstructorAvailability" (
     "id" TEXT NOT NULL,
-    "startAt" TIMESTAMP(3) NOT NULL,
-    "endAt" TIMESTAMP(3) NOT NULL,
-    "isBooked" BOOLEAN NOT NULL DEFAULT false,
+    "dayOfWeek" INTEGER NOT NULL,
+    "startMinute" INTEGER NOT NULL,
+    "endMinute" INTEGER NOT NULL,
     "instructorId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    CONSTRAINT "InstructorSlot_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "InstructorAvailability_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -152,9 +153,9 @@ CREATE TABLE "Booking" (
     "id" TEXT NOT NULL,
     "studentId" TEXT NOT NULL,
     "instructorId" TEXT NOT NULL,
-    "slotId" TEXT NOT NULL,
     "startAt" TIMESTAMP(3) NOT NULL,
     "endAt" TIMESTAMP(3) NOT NULL,
+    "durationMinutes" INTEGER NOT NULL,
     "isFreeSession" BOOLEAN NOT NULL DEFAULT false,
     "currency" TEXT NOT NULL DEFAULT 'usd',
     "priceCents" INTEGER NOT NULL DEFAULT 0,
@@ -162,6 +163,8 @@ CREATE TABLE "Booking" (
     "instructorPayoutCents" INTEGER NOT NULL DEFAULT 0,
     "stripePaymentIntentId" TEXT,
     "status" "BookingStatus" NOT NULL DEFAULT 'PENDING_PAYMENT',
+    "dailyRoomName" TEXT,
+    "dailyRoomUrl" TEXT,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
@@ -214,19 +217,19 @@ CREATE UNIQUE INDEX "Instructor_userId_key" ON "Instructor"("userId");
 CREATE UNIQUE INDEX "Instructor_stripeConnectAccountId_key" ON "Instructor"("stripeConnectAccountId");
 
 -- CreateIndex
-CREATE INDEX "InstructorSlot_instructorId_startAt_idx" ON "InstructorSlot"("instructorId", "startAt");
-
--- CreateIndex
-CREATE UNIQUE INDEX "Booking_slotId_key" ON "Booking"("slotId");
+CREATE INDEX "InstructorAvailability_instructorId_dayOfWeek_idx" ON "InstructorAvailability"("instructorId", "dayOfWeek");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "Booking_stripePaymentIntentId_key" ON "Booking"("stripePaymentIntentId");
 
 -- CreateIndex
+CREATE UNIQUE INDEX "Booking_dailyRoomName_key" ON "Booking"("dailyRoomName");
+
+-- CreateIndex
 CREATE INDEX "Booking_studentId_idx" ON "Booking"("studentId");
 
 -- CreateIndex
-CREATE INDEX "Booking_instructorId_idx" ON "Booking"("instructorId");
+CREATE INDEX "Booking_instructorId_startAt_idx" ON "Booking"("instructorId", "startAt");
 
 -- AddForeignKey
 ALTER TABLE "Chatbot" ADD CONSTRAINT "Chatbot_countryId_fkey" FOREIGN KEY ("countryId") REFERENCES "Country"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
@@ -265,13 +268,10 @@ ALTER TABLE "InstructorLicenseType" ADD CONSTRAINT "InstructorLicenseType_instru
 ALTER TABLE "InstructorLicenseType" ADD CONSTRAINT "InstructorLicenseType_licenseTypeId_fkey" FOREIGN KEY ("licenseTypeId") REFERENCES "LicenseType"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "InstructorSlot" ADD CONSTRAINT "InstructorSlot_instructorId_fkey" FOREIGN KEY ("instructorId") REFERENCES "Instructor"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "InstructorAvailability" ADD CONSTRAINT "InstructorAvailability_instructorId_fkey" FOREIGN KEY ("instructorId") REFERENCES "Instructor"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_studentId_fkey" FOREIGN KEY ("studentId") REFERENCES "User"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_instructorId_fkey" FOREIGN KEY ("instructorId") REFERENCES "Instructor"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Booking" ADD CONSTRAINT "Booking_slotId_fkey" FOREIGN KEY ("slotId") REFERENCES "InstructorSlot"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

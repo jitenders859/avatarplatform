@@ -6,12 +6,19 @@
 //      then need an active Subscription to keep going.
 //   3. The chatbot can recommend instructors who teach that country/license combo
 //      (Instructor <-> Country/LicenseType join tables).
-//   4. A student's *first* booking with a given instructor is free (up to
+//   4. Instructors don't open one-off slots — they set recurring weekly availability
+//      (InstructorAvailability: day-of-week + a time-of-day window, in their own timezone).
+//      Students see that expanded into a calendar of free windows (src/lib/availability.ts)
+//      and book any start time + duration (30 min increments, e.g. "1 hour", "90 min") that
+//      fits inside one, so billing is driven by however much time they actually book.
+//   5. A student's *first* booking with a given instructor is free (up to
 //      FREE_INSTRUCTOR_SESSION_MINUTES) — see Booking.isFreeSession. Every booking after that
 //      with that instructor is paid: instructor's hourly rate + platform commission on top,
 //      collected via a single Stripe PaymentIntent on the student's card and split via
 //      Stripe Connect (application_fee_amount goes to the platform, the rest transfers to the
 //      instructor's connected account).
+//   6. Every CONFIRMED booking gets its own time-boxed Daily.co video room (src/lib/video.ts)
+//      that only opens up around the booked window.
 
 generator client {
   provider = "prisma-client-js"
@@ -183,6 +190,10 @@ model Instructor {
   hourlyRateCents Int    // instructor's own rate; platform commission is added on top
   currency       String  @default("usd")
 
+  /// IANA zone (e.g. "America/New_York"), captured from the instructor's browser when they
+  /// set up their profile. All of their InstructorAvailability windows are in this timezone.
+  timezone String @default("UTC")
+
   stripeConnectAccountId String?  @unique
   connectOnboarded       Boolean  @default(false)
 
@@ -191,7 +202,7 @@ model Instructor {
 
   countries     InstructorCountry[]
   licenseTypes  InstructorLicenseType[]
-  slots         InstructorSlot[]
+  availability  InstructorAvailability[]
   bookings      Booking[] @relation("InstructorBookings")
 
   createdAt DateTime @default(now())
@@ -218,21 +229,26 @@ model InstructorLicenseType {
   @@id([instructorId, licenseTypeId])
 }
 
-/// A bookable window an instructor has opened up. Consumed (isBooked=true) by at most one Booking.
-model InstructorSlot {
-  id       String   @id @default(cuid())
-  startAt  DateTime
-  endAt    DateTime
-  isBooked Boolean  @default(false)
+/// A recurring weekly window an instructor is generally available, in Instructor.timezone.
+/// e.g. {dayOfWeek: 1 (Monday), startMinute: 540 (09:00), endMinute: 1020 (17:00)}.
+/// Expanded into an actual calendar of free windows by src/lib/availability.ts, which
+/// subtracts out anything already booked.
+model InstructorAvailability {
+  id String @id @default(cuid())
+
+  /// 0 = Sunday ... 6 = Saturday (matches JS Date#getDay in the instructor's own timezone).
+  dayOfWeek Int
+  /// Minutes since local midnight, e.g. 9:00 AM = 540.
+  startMinute Int
+  /// Minutes since local midnight; must be > startMinute.
+  endMinute Int
 
   instructorId String
   instructor   Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
 
-  booking Booking?
-
   createdAt DateTime @default(now())
 
-  @@index([instructorId, startAt])
+  @@index([instructorId, dayOfWeek])
 }
 
 model Booking {
@@ -244,11 +260,10 @@ model Booking {
   instructorId String
   instructor   Instructor @relation("InstructorBookings", fields: [instructorId], references: [id])
 
-  slotId String @unique
-  slot   InstructorSlot @relation(fields: [slotId], references: [id])
-
-  startAt DateTime
-  endAt   DateTime
+  startAt         DateTime
+  endAt           DateTime
+  /// Redundant with endAt - startAt, stored for cheap display/queries.
+  durationMinutes Int
 
   /// True for a student's first-ever booking with this instructor (free trial session).
   isFreeSession Boolean @default(false)
@@ -265,9 +280,14 @@ model Booking {
 
   status BookingStatus @default(PENDING_PAYMENT)
 
+  /// Daily.co room backing this session's video call — created once the booking is CONFIRMED,
+  /// time-boxed to open shortly before startAt and close shortly after endAt.
+  dailyRoomName String? @unique
+  dailyRoomUrl  String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([studentId])
-  @@index([instructorId])
+  @@index([instructorId, startAt])
 }

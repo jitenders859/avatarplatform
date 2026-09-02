@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { getStripe } from "@/lib/stripe";
 import { env } from "@/lib/env";
 import { PLANS } from "@/lib/pricing";
+import { createSessionRoom } from "@/lib/video";
 import type { SubscriptionStatus } from "@prisma/client";
 
 // Stripe subscription statuses -> our simplified SubscriptionStatus enum.
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
       const session = event.data.object as Stripe.Checkout.Session;
       const bookingId = session.metadata?.bookingId;
       if (session.mode === "payment" && bookingId) {
-        await prisma.booking.update({
+        const booking = await prisma.booking.update({
           where: { id: bookingId },
           data: {
             status: "CONFIRMED",
@@ -84,6 +85,17 @@ export async function POST(req: NextRequest) {
               typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id,
           },
         });
+
+        const room = await createSessionRoom(booking.id, booking.startAt, booking.endAt).catch((err) => {
+          console.error("Video room creation failed for booking", booking.id, err);
+          return null;
+        });
+        if (room) {
+          await prisma.booking.update({
+            where: { id: booking.id },
+            data: { dailyRoomName: room.name, dailyRoomUrl: room.url },
+          });
+        }
       }
       break;
     }
@@ -91,13 +103,10 @@ export async function POST(req: NextRequest) {
       const session = event.data.object as Stripe.Checkout.Session;
       const bookingId = session.metadata?.bookingId;
       if (bookingId) {
-        const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
-        if (booking && booking.status === "PENDING_PAYMENT") {
-          await prisma.$transaction([
-            prisma.booking.update({ where: { id: bookingId }, data: { status: "CANCELED" } }),
-            prisma.instructorSlot.update({ where: { id: booking.slotId }, data: { isBooked: false } }),
-          ]);
-        }
+        await prisma.booking.updateMany({
+          where: { id: bookingId, status: "PENDING_PAYMENT" },
+          data: { status: "CANCELED" },
+        });
       }
       break;
     }

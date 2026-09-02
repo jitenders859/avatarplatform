@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { apiFetch, ApiClientError } from "@/lib/api-client";
 
@@ -69,7 +70,7 @@ export default function InstructorDashboardPage() {
       {me?.isInstructor && !me.instructor?.connectOnboarded && <ConnectOnboardingCard />}
 
       {me?.isInstructor && me.instructor?.connectOnboarded && me.instructor && (
-        <SlotForm instructorId={me.instructor.id} />
+        <AvailabilityEditor instructorId={me.instructor.id} />
       )}
 
       {me?.isInstructor && (
@@ -84,6 +85,7 @@ export default function InstructorDashboardPage() {
                   <th>When</th>
                   <th>Status</th>
                   <th>Your payout</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -93,6 +95,13 @@ export default function InstructorDashboardPage() {
                     <td>{new Date(b.startAt).toLocaleString()}</td>
                     <td>{b.status}</td>
                     <td>{b.isFreeSession ? "Free session" : `$${(b.instructorPayoutCents / 100).toFixed(2)}`}</td>
+                    <td>
+                      {b.status === "CONFIRMED" && (
+                        <Link href={`/session/${b.id}`} className="btn btn-secondary">
+                          Join call
+                        </Link>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -129,6 +138,7 @@ function BecomeInstructorForm({
     setError(null);
     setLoading(true);
     try {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
       await apiFetch("/api/instructors", {
         method: "POST",
         body: JSON.stringify({
@@ -136,6 +146,7 @@ function BecomeInstructorForm({
           bio,
           countryCodes: selectedCountries,
           licenseTypeCodes: selectedLicenses,
+          timezone,
         }),
       });
       onDone();
@@ -229,26 +240,58 @@ function ConnectOnboardingCard() {
   );
 }
 
-function SlotForm({ instructorId }: { instructorId: string }) {
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+interface Rule {
+  id: string;
+  dayOfWeek: number;
+  startMinute: number;
+  endMinute: number;
+}
+
+function minutesToTimeInput(minutes: number) {
+  const h = Math.floor(minutes / 60) % 24;
+  const m = minutes % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function timeInputToMinutes(value: string) {
+  const [h, m] = value.split(":");
+  return Number(h) * 60 + Number(m);
+}
+
+function AvailabilityEditor({ instructorId }: { instructorId: string }) {
+  const [timezone, setTimezone] = useState<string | null>(null);
+  const [rules, setRules] = useState<Rule[]>([]);
+  const [dayOfWeek, setDayOfWeek] = useState(1);
+  const [start, setStart] = useState("09:00");
+  const [end, setEnd] = useState("17:00");
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  async function onSubmit(e: FormEvent) {
+  function refresh() {
+    apiFetch<{ timezone: string; rules: Rule[] }>(`/api/instructors/${instructorId}/availability-rules`).then((res) => {
+      setTimezone(res.timezone);
+      setRules(res.rules);
+    });
+  }
+
+  useEffect(refresh, [instructorId]);
+
+  async function addRule(e: FormEvent) {
     e.preventDefault();
     setError(null);
-    setSuccess(false);
     setLoading(true);
     try {
-      await apiFetch(`/api/instructors/${instructorId}/slots`, {
+      await apiFetch(`/api/instructors/${instructorId}/availability-rules`, {
         method: "POST",
-        body: JSON.stringify({ startAt: new Date(start).toISOString(), endAt: new Date(end).toISOString() }),
+        body: JSON.stringify({
+          dayOfWeek,
+          startMinute: timeInputToMinutes(start),
+          endMinute: timeInputToMinutes(end),
+        }),
       });
-      setSuccess(true);
-      setStart("");
-      setEnd("");
+      refresh();
     } catch (err) {
       setError(err instanceof ApiClientError ? err.message : "Something went wrong");
     } finally {
@@ -256,22 +299,66 @@ function SlotForm({ instructorId }: { instructorId: string }) {
     }
   }
 
+  async function removeRule(ruleId: string) {
+    await apiFetch(`/api/instructors/${instructorId}/availability-rules/${ruleId}`, { method: "DELETE" });
+    refresh();
+  }
+
   return (
-    <form onSubmit={onSubmit} className="card" style={{ marginTop: 20 }}>
-      <h3>Open a bookable time slot</h3>
-      <div className="field">
-        <label>Start</label>
-        <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} required />
-      </div>
-      <div className="field">
-        <label>End</label>
-        <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} required />
-      </div>
+    <div className="card" style={{ marginTop: 20 }}>
+      <h3>Weekly availability</h3>
+      <p className="dim">
+        Set the hours you&apos;re generally free to teach — students book any length session inside these windows.
+        Times are in your timezone{timezone ? ` (${timezone})` : ""}.
+      </p>
+
+      {DAY_NAMES.map((name, dow) => {
+        const dayRules = rules.filter((r) => r.dayOfWeek === dow);
+        return (
+          <div key={dow} style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 0", flexWrap: "wrap" }}>
+            <span style={{ width: 90, fontSize: 13 }}>{name}</span>
+            {dayRules.length === 0 && <span className="dim" style={{ fontSize: 13 }}>Unavailable</span>}
+            {dayRules.map((r) => (
+              <span key={r.id} className="badge" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                {minutesToTimeInput(r.startMinute)}–{minutesToTimeInput(r.endMinute)}
+                <button
+                  type="button"
+                  onClick={() => removeRule(r.id)}
+                  style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0 }}
+                  aria-label="Remove window"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        );
+      })}
+
+      <form onSubmit={addRule} style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginTop: 16 }}>
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>Day</label>
+          <select value={dayOfWeek} onChange={(e) => setDayOfWeek(Number(e.target.value))}>
+            {DAY_NAMES.map((name, i) => (
+              <option key={i} value={i}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>From</label>
+          <input type="time" value={start} onChange={(e) => setStart(e.target.value)} />
+        </div>
+        <div className="field" style={{ marginBottom: 0 }}>
+          <label>To</label>
+          <input type="time" value={end} onChange={(e) => setEnd(e.target.value)} />
+        </div>
+        <button className="btn" type="submit" disabled={loading}>
+          {loading ? "Adding…" : "Add window"}
+        </button>
+      </form>
       {error && <p className="error">{error}</p>}
-      {success && <p className="dim">Slot added.</p>}
-      <button className="btn" type="submit" disabled={loading}>
-        {loading ? "Adding…" : "Add slot"}
-      </button>
-    </form>
+    </div>
   );
 }
