@@ -21,7 +21,7 @@
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "@avatar-platform/js": "^0.1.0"
+    "@avatar-platform/js": "^1.1.0"
   },
   "peerDependencies": {
     "react": ">=16.8.0",
