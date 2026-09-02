@@ -1,0 +1,273 @@
+// Aviation Ground School — data model
+//
+// Core flow this schema supports:
+//   1. A student picks a country + license type -> routed to that Chatbot.
+//   2. They chat for free up to FREE_CHAT_MESSAGE_LIMIT messages (ChatSession.freeMessagesUsed),
+//      then need an active Subscription to keep going.
+//   3. The chatbot can recommend instructors who teach that country/license combo
+//      (Instructor <-> Country/LicenseType join tables).
+//   4. A student's *first* booking with a given instructor is free (up to
+//      FREE_INSTRUCTOR_SESSION_MINUTES) — see Booking.isFreeSession. Every booking after that
+//      with that instructor is paid: instructor's hourly rate + platform commission on top,
+//      collected via a single Stripe PaymentIntent on the student's card and split via
+//      Stripe Connect (application_fee_amount goes to the platform, the rest transfers to the
+//      instructor's connected account).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+enum SubscriptionPlan {
+  MONTHLY
+  ANNUAL
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  COMPLETED
+  CANCELED
+  NO_SHOW
+}
+
+model Country {
+  id   String @id @default(cuid())
+  code String @unique // ISO 3166-1 alpha-2, e.g. "US", "CA"
+  name String
+
+  chatbots           Chatbot[]
+  users              User[]
+  instructorCountries InstructorCountry[]
+
+  createdAt DateTime @default(now())
+}
+
+model LicenseType {
+  id          String @id @default(cuid())
+  code        String @unique // e.g. "PPL", "CPL", "ATPL", "MULTI_ENGINE", "INSTRUMENT", "CFI"
+  name        String
+  description String?
+
+  chatbots              Chatbot[]
+  instructorLicenseTypes InstructorLicenseType[]
+
+  createdAt DateTime @default(now())
+}
+
+/// One chatbot per (country, licenseType) combination, e.g. "US CPL", "Canada PPL".
+model Chatbot {
+  id            String @id @default(cuid())
+  slug          String @unique // e.g. "us-cpl", "ca-ppl"
+  title         String
+  systemPrompt  String @db.Text
+  isActive      Boolean @default(true)
+
+  countryId String
+  country   Country @relation(fields: [countryId], references: [id])
+
+  licenseTypeId String
+  licenseType   LicenseType @relation(fields: [licenseTypeId], references: [id])
+
+  chatSessions ChatSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([countryId, licenseTypeId])
+  @@index([countryId])
+  @@index([licenseTypeId])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole @default(STUDENT)
+
+  countryId String?
+  country   Country? @relation(fields: [countryId], references: [id])
+
+  chatSessions ChatSession[]
+  subscription Subscription?
+  instructor   Instructor?
+  bookings     Booking[] @relation("StudentBookings")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ChatSession {
+  id                String @id @default(cuid())
+  freeMessagesUsed  Int    @default(0)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  chatbotId String
+  chatbot   Chatbot @relation(fields: [chatbotId], references: [id])
+
+  messages ChatMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([chatbotId])
+}
+
+model ChatMessage {
+  id      String   @id @default(cuid())
+  role    ChatRole
+  content String   @db.Text
+
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+/// A student's paywall subscription. One active subscription unlocks unlimited chatbot
+/// usage across every country/license chatbot.
+model Subscription {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  stripeCustomerId     String  @unique
+  stripeSubscriptionId String? @unique
+
+  plan            SubscriptionPlan?
+  status          SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodEnd DateTime?
+  cancelAtPeriodEnd Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// An instructor's public profile + payout config. Wraps a User with role=INSTRUCTOR.
+model Instructor {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  bio            String? @db.Text
+  hourlyRateCents Int    // instructor's own rate; platform commission is added on top
+  currency       String  @default("usd")
+
+  stripeConnectAccountId String?  @unique
+  connectOnboarded       Boolean  @default(false)
+
+  ratingAvg   Float @default(0)
+  ratingCount Int   @default(0)
+
+  countries     InstructorCountry[]
+  licenseTypes  InstructorLicenseType[]
+  slots         InstructorSlot[]
+  bookings      Booking[] @relation("InstructorBookings")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InstructorCountry {
+  instructorId String
+  instructor   Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  countryId String
+  country   Country @relation(fields: [countryId], references: [id])
+
+  @@id([instructorId, countryId])
+}
+
+model InstructorLicenseType {
+  instructorId String
+  instructor   Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  licenseTypeId String
+  licenseType   LicenseType @relation(fields: [licenseTypeId], references: [id])
+
+  @@id([instructorId, licenseTypeId])
+}
+
+/// A bookable window an instructor has opened up. Consumed (isBooked=true) by at most one Booking.
+model InstructorSlot {
+  id       String   @id @default(cuid())
+  startAt  DateTime
+  endAt    DateTime
+  isBooked Boolean  @default(false)
+
+  instructorId String
+  instructor   Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  booking Booking?
+
+  createdAt DateTime @default(now())
+
+  @@index([instructorId, startAt])
+}
+
+model Booking {
+  id     String @id @default(cuid())
+
+  studentId String
+  student   User   @relation("StudentBookings", fields: [studentId], references: [id])
+
+  instructorId String
+  instructor   Instructor @relation("InstructorBookings", fields: [instructorId], references: [id])
+
+  slotId String @unique
+  slot   InstructorSlot @relation(fields: [slotId], references: [id])
+
+  startAt DateTime
+  endAt   DateTime
+
+  /// True for a student's first-ever booking with this instructor (free trial session).
+  isFreeSession Boolean @default(false)
+
+  currency             String @default("usd")
+  /// What the student is charged in total (0 for a free session).
+  priceCents           Int    @default(0)
+  /// Platform's cut of priceCents (PLATFORM_COMMISSION_BPS applied to the instructor rate).
+  commissionCents      Int    @default(0)
+  /// priceCents - commissionCents; what gets transferred to the instructor's connected account.
+  instructorPayoutCents Int   @default(0)
+
+  stripePaymentIntentId String? @unique
+
+  status BookingStatus @default(PENDING_PAYMENT)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([instructorId])
+}
