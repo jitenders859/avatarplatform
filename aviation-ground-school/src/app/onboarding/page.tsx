@@ -27,6 +27,7 @@ export default function OnboardingPage() {
   const [licenseTypes, setLicenseTypes] = useState<LicenseType[]>([]);
   const [countryCode, setCountryCode] = useState("");
   const [licenseCode, setLicenseCode] = useState("");
+  const [autoDetected, setAutoDetected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -34,6 +35,23 @@ export default function OnboardingPage() {
     apiFetch<{ countries: Country[] }>("/api/countries").then((res) => setCountries(res.countries));
     apiFetch<{ licenseTypes: LicenseType[] }>("/api/license-types").then((res) => setLicenseTypes(res.licenseTypes));
   }, []);
+
+  // Pre-select the student's country from their IP location, once we know both their
+  // location and which countries we actually support — falls back to a manual pick
+  // (leaves countryCode empty) if we can't detect it or don't offer it yet.
+  useEffect(() => {
+    if (countries.length === 0 || countryCode) return;
+    apiFetch<{ countryCode: string | null }>("/api/geo")
+      .then((res) => {
+        if (!res.countryCode) return;
+        const match = countries.find((c) => c.code === res.countryCode);
+        if (match) {
+          setCountryCode(match.code);
+          setAutoDetected(true);
+        }
+      })
+      .catch(() => {});
+  }, [countries, countryCode]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -71,7 +89,15 @@ export default function OnboardingPage() {
       <form onSubmit={onSubmit} className="card" style={{ marginTop: 20 }}>
         <div className="field">
           <label htmlFor="country">Country</label>
-          <select id="country" value={countryCode} onChange={(e) => setCountryCode(e.target.value)} required>
+          <select
+            id="country"
+            value={countryCode}
+            onChange={(e) => {
+              setCountryCode(e.target.value);
+              setAutoDetected(false);
+            }}
+            required
+          >
             <option value="" disabled>
               Select a country
             </option>
@@ -81,6 +107,7 @@ export default function OnboardingPage() {
               </option>
             ))}
           </select>
+          {autoDetected && <span className="dim">Detected from your location — change it if that&apos;s wrong.</span>}
         </div>
         <div className="field">
           <label htmlFor="license">License / rating</label>
