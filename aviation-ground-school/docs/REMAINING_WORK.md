@@ -75,6 +75,58 @@ issues that hadn't been on anyone's list. All fixed and verified the same way as
   the API's `"usd"` zod default clobbered any non-default currency on save. The edit form now round-trips
   the instructor's actual currency instead of omitting the field.
 
+## Third pass: correctness under concurrency and money edge cases
+
+A third audit deliberately looked for a different class of bug than the first two (dead code, unwired
+fields) — races, webhook idempotency, and business-rule bypasses. This one turned up actual money/data
+integrity bugs, not just missing UI:
+
+- [x] **Critical — the Stripe webhook could resurrect a canceled booking into a double-booked slot.**
+  `checkout.session.completed` unconditionally set a booking to `CONFIRMED` on whatever `bookingId` its
+  metadata pointed to, with no check that the booking hadn't since been canceled. Scenario: student opens
+  Checkout, cancels the booking before paying (a canceled booking drops out of the busy-check, so its
+  window is free again), a second student books that now-free window, then the first student's stale
+  Checkout tab completes payment anyway — the webhook would flip the first (canceled) booking back to
+  `CONFIRMED`, handing out two confirmed bookings for an overlapping window. Fixed: the confirmation is now
+  a conditional `updateMany` (`WHERE status = 'PENDING_PAYMENT'`) — Postgres serializes concurrent updates
+  to the same row, so this is race-safe without needing the advisory lock other booking writes use. A
+  payment that lands on a booking that's no longer `PENDING_PAYMENT` gets auto-refunded instead of
+  confirmed, and flagged (see `paymentIssueAt` below). Verified live: manually replayed exactly this
+  sequence (create → cancel → signed webhook for the canceled booking) and confirmed the booking stayed
+  `CANCELED`, not resurrected.
+- [x] **High — cancel and reschedule had no locking, so they could race each other.** `cancel` read a
+  booking's status once, then wrote `CANCELED` after an unbounded-latency Stripe refund call, with no
+  guard that the status hadn't changed in between (e.g. a concurrent reschedule). `reschedule` checked
+  status before opening its transaction, not inside it. Both now take the same per-instructor advisory
+  lock booking creation uses, and both write via a conditional `updateMany` that only succeeds if the
+  booking is still in the expected status — a losing racer gets a clean 409 instead of silently
+  clobbering the winner's write. Verified live: a second cancel on an already-canceled booking now 409s
+  with "Booking is already canceled" instead of silently no-oping.
+- [x] **Medium — free-trial eligibility could be gamed by cancel-then-rebook.** Eligibility was computed
+  from `CONFIRMED`/`COMPLETED` bookings only, so canceling a free session (always created `CONFIRMED`)
+  made a student "first-time" again with that instructor — repeatable indefinitely, holding and releasing
+  the instructor's calendar each time without ever paying. `hasUsedFreeTrial` (renamed from
+  `hasPriorBooking`) now also counts any booking that was ever `isFreeSession: true`, regardless of its
+  current status — a canceled *paid* booking still doesn't burn eligibility, since nothing free was ever
+  given out. The check itself moved inside the same advisory-locked transaction as the booking write, so
+  two concurrent requests from the same student can't both win the free trial either. Verified live: a
+  student whose only prior booking with an instructor was free-and-then-marked-`NO_SHOW` was correctly
+  charged (not given a second free session) on their next booking.
+- [x] **Medium — no reaction to out-of-band refunds or disputes.** A refund issued from the Stripe
+  dashboard, or a `charge.dispute.created` event, produced no app-side effect — the booking stayed
+  `CONFIRMED` with a joinable video room even though the money had left the platform's control. Added
+  handlers for both: they cancel the booking and set the `paymentIssueAt`/`paymentIssueNote` fields below.
+- [x] **Medium — unbounded chat cost/context growth, no send-rate limit.** The full message history was
+  replayed to Claude on every turn with no cap, and nothing throttled how fast a client could call the
+  send endpoint. Added `MAX_CHAT_HISTORY_MESSAGES` (only the most recent N are replayed — the full
+  transcript is still stored and shown to the student) and a simple per-user `CHAT_RATE_LIMIT_PER_MINUTE`
+  throttle, counted across all of a student's sessions. Verified live (429 on the 21st message within a
+  minute at the default limit of 20).
+- [x] **Low — failed refunds were swallowed.** A failed `refunds.create` was only `console.error`'d; the
+  booking still ended up `CANCELED` with no record anyone needed to look at it. Added `Booking.paymentIssueAt`
+  / `paymentIssueNote` (set on a failed cancellation refund, an auto-refunded orphaned payment, or a
+  dispute) and a "Payment issues" table + stat tile on `/admin` so these don't go unnoticed.
+
 ## Explicitly out of scope (not on this list)
 
 - **Usage-metered billing** (charging for actual call attendance instead of booked duration) — a deliberate

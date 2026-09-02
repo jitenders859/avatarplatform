@@ -6,7 +6,7 @@ import { apiError } from "@/lib/api";
 import { getStripe } from "@/lib/stripe";
 import { env } from "@/lib/env";
 import { splitInstructorRate } from "@/lib/pricing";
-import { hasPriorBooking } from "@/lib/instructors";
+import { hasUsedFreeTrial } from "@/lib/instructors";
 import { checkWindowAvailable } from "@/lib/availability";
 import { createSessionRoom } from "@/lib/video";
 import { notifyBookingConfirmed, completeExpiredBookings } from "@/lib/notifications";
@@ -99,13 +99,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "This instructor hasn't finished payout setup yet" }, { status: 409 });
     }
 
-    const isFirstBooking = !(await hasPriorBooking(user.id, instructor.id));
-    const freeMinutes = isFirstBooking ? Math.min(durationMinutes, env.freeInstructorSessionMinutes) : 0;
-    const billableMinutes = durationMinutes - freeMinutes;
+    // freeMinutes/billableMinutes are computed inside the transaction (below), not here —
+    // checking free-trial eligibility outside the advisory lock would let two concurrent
+    // booking requests for the same student+instructor both read "not used yet" and both
+    // create a free session.
+    let freeMinutes = 0;
+    let billableMinutes = durationMinutes;
 
     const booking = await prisma.$transaction(async (tx) => {
       // Serialize concurrent booking attempts for this instructor so two students can't
-      // both claim an overlapping window between our read and our write.
+      // both claim an overlapping window between our read and our write, and so this
+      // student can't win a free-trial race against themselves either.
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${instructor.id}))`;
 
       const busy = await tx.booking.findMany({
@@ -125,6 +129,10 @@ export async function POST(req: NextRequest) {
       if (!check.ok) {
         throw new BookingConflictError(check.reason);
       }
+
+      const usedFreeTrial = await hasUsedFreeTrial(user.id, instructor.id, tx);
+      freeMinutes = usedFreeTrial ? 0 : Math.min(durationMinutes, env.freeInstructorSessionMinutes);
+      billableMinutes = durationMinutes - freeMinutes;
 
       if (billableMinutes <= 0) {
         return tx.booking.create({

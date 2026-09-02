@@ -41,6 +41,16 @@ export const env = {
   get freeChatMessageLimit() {
     return Number(optional("FREE_CHAT_MESSAGE_LIMIT", "20"));
   },
+  /** How many of the most recent messages get sent to Claude as context — bounds both cost
+   * and the risk of exceeding the model's context window on a very long-running chat. The
+   * full transcript is still stored and returned by GET; this only caps what's replayed. */
+  get maxChatHistoryMessages() {
+    return Number(optional("MAX_CHAT_HISTORY_MESSAGES", "40"));
+  },
+  /** Simple per-user throttle on chat sends, across all of their sessions. */
+  get chatRateLimitPerMinute() {
+    return Number(optional("CHAT_RATE_LIMIT_PER_MINUTE", "20"));
+  },
   get freeInstructorSessionMinutes() {
     return Number(optional("FREE_INSTRUCTOR_SESSION_MINUTES", "30"));
   },

@@ -20,6 +20,7 @@ export default async function AdminPage() {
     revenue,
     recentUsers,
     recentBookings,
+    paymentIssues,
   ] = await Promise.all([
     prisma.user.count(),
     prisma.user.count({ where: { role: "STUDENT" } }),
@@ -38,6 +39,15 @@ export default async function AdminPage() {
       include: {
         student: { select: { name: true } },
         instructor: { include: { user: { select: { name: true } } } },
+      },
+    }),
+    prisma.booking.findMany({
+      where: { paymentIssueAt: { not: null } },
+      orderBy: { paymentIssueAt: "desc" },
+      take: 20,
+      include: {
+        student: { select: { name: true, email: true } },
+        instructor: { include: { user: { select: { name: true, email: true } } } },
       },
     }),
   ]);
@@ -61,7 +71,49 @@ export default async function AdminPage() {
         {(["PENDING_PAYMENT", "CONFIRMED", "COMPLETED", "CANCELED", "NO_SHOW"] as const).map((s) => (
           <Stat key={s} label={`Bookings: ${s}`} value={statusCounts[s] ?? 0} />
         ))}
+        <Stat label="Payment issues needing review" value={paymentIssues.length} />
       </div>
+
+      {paymentIssues.length > 0 && (
+        <>
+          <h2 style={{ marginTop: 32 }}>Payment issues</h2>
+          <p className="dim">Failed refunds, out-of-band refunds, and disputes — none of these clear themselves.</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Student</th>
+                <th>Instructor</th>
+                <th>Status</th>
+                <th>Flagged</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paymentIssues.map((b) => (
+                <tr key={b.id}>
+                  <td>
+                    {b.student.name}
+                    <br />
+                    <span className="dim" style={{ fontSize: 12 }}>
+                      {b.student.email}
+                    </span>
+                  </td>
+                  <td>
+                    {b.instructor.user.name}
+                    <br />
+                    <span className="dim" style={{ fontSize: 12 }}>
+                      {b.instructor.user.email}
+                    </span>
+                  </td>
+                  <td>{b.status}</td>
+                  <td>{b.paymentIssueAt ? new Date(b.paymentIssueAt).toLocaleString() : "—"}</td>
+                  <td>{b.paymentIssueNote}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
 
       <h2 style={{ marginTop: 32 }}>Recent users</h2>
       <table>

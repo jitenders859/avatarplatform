@@ -302,6 +302,13 @@ model Booking {
   confirmationEmailSentAt DateTime?
   /// Set once the pre-session reminder email goes out (src/app/api/cron/reminders).
   reminderSentAt DateTime?
+  /// Set whenever this booking's money needs a human to look at it: a refund attempt on
+  /// cancellation threw, a payment landed on a booking that was no longer PENDING_PAYMENT
+  /// (refunded automatically, but still logged here), or Stripe reported a dispute. Never
+  /// cleared automatically — surfaced as a flag on /admin.
+  paymentIssueAt DateTime?
+  /// Free-text note on what the payment issue was, for whoever reconciles it.
+  paymentIssueNote String?
 
   review Review?
 

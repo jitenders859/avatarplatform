@@ -42,10 +42,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
 
     const session = await prisma.chatSession.findUnique({
       where: { id: params.id },
-      include: {
-        messages: { orderBy: { createdAt: "asc" } },
-        chatbot: { include: { country: true, licenseType: true } },
-      },
+      include: { chatbot: { include: { country: true, licenseType: true } } },
     });
     if (!session || session.userId !== user.id) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -64,11 +61,32 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       );
     }
 
+    // Cheap per-user throttle across all of their sessions — not meant to stop a determined
+    // attacker (there's no IP/device tracking here), just to keep a runaway client or script
+    // from hammering the Claude API at unbounded rate/cost.
+    const recentMessageCount = await prisma.chatMessage.count({
+      where: { role: "USER", session: { userId: user.id }, createdAt: { gte: new Date(Date.now() - 60_000) } },
+    });
+    if (recentMessageCount >= env.chatRateLimitPerMinute) {
+      return NextResponse.json({ error: "You're sending messages too fast — try again in a moment" }, { status: 429 });
+    }
+
+    // Only the most recent messages are replayed to Claude — the full transcript is still
+    // stored and returned by GET, this just bounds token cost and context-window risk on a
+    // very long-running chat. Fetched newest-first (cheap with the index on sessionId) then
+    // reversed back to chronological order.
+    const recentMessages = await prisma.chatMessage.findMany({
+      where: { sessionId: session.id },
+      orderBy: { createdAt: "desc" },
+      take: Math.max(0, env.maxChatHistoryMessages - 1),
+    });
+    recentMessages.reverse();
+
     await prisma.chatMessage.create({
       data: { sessionId: session.id, role: "USER", content },
     });
 
-    const history = [...session.messages.map((m) => ({ role: m.role, content: m.content })), { role: "USER" as const, content }]
+    const history = [...recentMessages.map((m) => ({ role: m.role, content: m.content })), { role: "USER" as const, content }]
       .filter((m) => m.role !== "SYSTEM")
       .map((m) => ({ role: m.role.toLowerCase() as "user" | "assistant", content: m.content }));
 

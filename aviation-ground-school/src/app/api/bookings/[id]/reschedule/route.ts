@@ -14,6 +14,11 @@ const bodySchema = z.object({ startAt: z.string().datetime() });
  * time, same duration and price. The instructor's remedy for "I can't make it" stays
  * cancellation (which refunds); this just moves the clock for the student's own scheduling
  * conflicts. Revalidated against the instructor's availability exactly like a fresh booking.
+ *
+ * The initial status check below is just a fast-path rejection — the one that actually
+ * matters is the conditional update inside the transaction, re-verified after the advisory
+ * lock is held, so a reschedule can't silently overwrite a cancellation that committed in
+ * between (same per-instructor lock booking creation and cancel both use).
  */
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   try {
@@ -67,10 +72,15 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         throw new RescheduleConflictError(check.reason);
       }
 
-      return tx.booking.update({
-        where: { id: booking.id },
+      const result = await tx.booking.updateMany({
+        where: { id: booking.id, status: "CONFIRMED" },
         data: { startAt, endAt: check.endAt, reminderSentAt: null },
       });
+      if (result.count === 0) {
+        throw new RescheduleConflictError("This booking was changed elsewhere — refresh and try again");
+      }
+
+      return tx.booking.findUniqueOrThrow({ where: { id: booking.id } });
     });
 
     if (booking.dailyRoomName) {
