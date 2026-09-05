@@ -1104,6 +1104,9 @@
      * @param {Function}           [opts.onTranscript]  - (role:'user'|'model', text:string)
      * @param {Function}           [opts.onViseme]      - (azId:number, label:string)
      * @param {Function}           [opts.onError]       - (message:string)
+     * @param {Function}           [opts.onToolCall]    - (name:string) - fired synchronously right before dispatching
+     *   a model-requested tool call (see opts.tools). Useful for a host page to show a distinct "using a tool…"
+     *   status while a handler's fetch is in flight, since a tool call can add a multi-second pause mid-turn.
      * @param {boolean}            [opts.enableBehavior] - Run idle/blink/gesture animation (default: false)
      * @param {object}             [opts.behaviorConfig] - Passed through to CharacterBehaviorController (inputMap, idleIntensity, gestureIntensity, emotionKeywords, ...)
      * @param {Array<object>}      [opts.characterTriggers] - Admin-defined named gestures for this character, e.g.
@@ -2199,6 +2202,7 @@ When answering, speak naturally and conversationally — do not read the knowled
       const ws = this._ws;
       const responses = await Promise.all(functionCalls.map(async (call) => {
         const tool = this._toolsByName[call.name];
+        this._fire('onToolCall', call.name);
         let response;
         try {
           response = tool ? await tool.handler(call.args || {}) : { error: `Unknown tool: ${call.name}` };
