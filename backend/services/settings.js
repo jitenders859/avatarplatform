@@ -15,7 +15,7 @@ const logger = require('../logger').child({ module: 'services/settings' });
 // silently corrupt existing RAG search (see .env.example), and secrets
 // like JWT_SECRET/Stripe keys are boot-time wiring, not "which model" —
 // out of scope for a model-settings panel.
-const OVERRIDABLE_KEYS = ['GEMINI_API_KEY', 'PUBLIC_GEMINI_API_KEY', 'STUDY_MODEL'];
+const OVERRIDABLE_KEYS = ['GEMINI_API_KEY', 'PUBLIC_GEMINI_API_KEY', 'STUDY_MODEL', 'SERPER_API_KEY'];
 
 const CACHE_TTL_MS = 15_000;
 let cache = null;
