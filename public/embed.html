@@ -139,6 +139,7 @@
   let pendingSources = null;
   let pendingFigures = null;
   let pendingOptions = null;
+  let pendingWebSources = null;
   let sessionCapture = {};
   let captureFields = [];
   let saveLeadTimer = null;
@@ -334,7 +335,7 @@
 
     captureFields = config.captureFields || [];
     const baseSystemPrompt = (config.project.systemPrompt || '')
-      + buildKnowledgeBaseToolInstructions()
+      + buildKnowledgeBaseToolInstructions(config.project.webSearchEnabled)
       + buildCaptureInstructions(captureFields)
       + buildQuickReplyInstructions(config.project.showQuickReplies);
     const systemPromptWithGreeting = welcomeMessage
@@ -360,7 +361,10 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       // actual function, not something prefers-reduced-motion is about.
       ...(prefersReducedMotion() ? { behaviorConfig: { idleIntensity: 0 } } : {}),
       characterTriggers: config.character?.triggers || [],
-      tools: [searchKnowledgeBaseTool()],
+      tools: [
+        searchKnowledgeBaseTool(),
+        ...(config.project.webSearchEnabled ? [searchWebTool()] : []),
+      ],
 
       onConnected: () => {
         statusDot.className = 'status-dot connected';
@@ -378,8 +382,11 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         if (micOn) { micOn = false; micBtn.classList.remove('active'); }
       },
       onError: (msg) => { console.warn('[avatar]', msg); addMessage('bot', `⚠️ ${msg}`); },
+      onToolCall: (name) => {
+        if (name === 'search_web') statusText.textContent = 'Searching the web…';
+      },
       onTranscript: (role, text) => {
-        if (role === 'model') handleBotChunk(text);
+        if (role === 'model') { statusText.textContent = 'Online'; handleBotChunk(text); }
         else if (role === 'user') handleUserChunk(text);
       },
     });
@@ -747,6 +754,10 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       if (pendingFigures && pendingFigures.length) {
         for (const fig of pendingFigures) renderFigureCard(fig);
         pendingFigures = null;
+      }
+      if (pendingWebSources && pendingWebSources.length && currentBotMsgEl) {
+        attachSources(currentBotMsgEl, pendingWebSources);
+        pendingWebSources = null;
       }
       if (config.project.showQuickReplies && pendingOptions && currentBotMsgEl) {
         attachOptionButtons(currentBotMsgEl, pendingOptions);
@@ -1510,10 +1521,16 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   });
 
   // ── Capture helpers ─────────────────────────────────────────
-  function buildKnowledgeBaseToolInstructions() {
-    return `
+  function buildKnowledgeBaseToolInstructions(webSearchEnabled) {
+    let text = `
 
 You have a search_knowledge_base tool connected to this website's uploaded documents and indexed pages. Call it whenever the user asks something that might be covered there — don't guess or rely on general knowledge for anything specific to this business/product/topic. It's fine to call it more than once per turn if the first search doesn't return what you need. If it returns nothing relevant, say so honestly rather than making something up.`;
+    if (webSearchEnabled) {
+      text += `
+
+You also have a search_web tool for the public internet. Always try search_knowledge_base first. Call search_web only if search_knowledge_base found nothing relevant, the question is about current/time-sensitive information, or the user explicitly asks for a link or source. Give a concise spoken answer — never read a URL or list of links aloud.`;
+    }
+    return text;
   }
 
   // The one retrieval mechanism for the whole avatar widget — voice and
@@ -1556,6 +1573,49 @@ You have a search_knowledge_base tool connected to this website's uploaded docum
             return { results: [], note: 'No relevant content found in the knowledge base for this query.' };
           }
           return { results: data.chunks.map(c => ({ source: c.fileName || 'unnamed', text: c.text })) };
+        } catch (e) {
+          return { error: e.message || 'Search failed' };
+        }
+      },
+    };
+  }
+
+  // search_web — same client-side-tool pattern as searchKnowledgeBaseTool()
+  // above, calling the new backend/services/searchWeb.js-backed route
+  // instead. Only added to the Live session's tools when
+  // config.project.webSearchEnabled (see initSDK()) — a tenant who hasn't
+  // opted in never gets this function declared at all.
+  function searchWebTool() {
+    return {
+      name: 'search_web',
+      description:
+        "Search the public internet for current, factual information not covered in this " +
+        "chatbot's knowledge base. Call this when search_knowledge_base returned nothing " +
+        "relevant, when the user asks about current or time-sensitive information (news, " +
+        "prices, versions, schedules, \"latest\", \"today\"), or when they explicitly ask for " +
+        "a link or source. Give a direct spoken answer from the results — don't read URLs aloud.",
+      parameters: {
+        type: 'object',
+        properties: { query: { type: 'string', description: 'A focused search query.' } },
+        required: ['query'],
+      },
+      handler: async ({ query }) => {
+        try {
+          const res = await fetch(`/embed/${publicId}/search-web`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              query: String(query || '').slice(0, 300),
+              language: (navigator.language || 'en').slice(0, 2),
+            }),
+          });
+          const data = await res.json();
+          if (!res.ok) return { error: data.error || `Search failed (HTTP ${res.status})` };
+          pendingWebSources = (data.results || []).map(r => ({ fileName: r.title, url: r.url, kind: 'url' }));
+          if (!data.results || !data.results.length) return { results: [], note: 'No web results found for this query.' };
+          // No URLs sent to the model — nothing to read aloud, the widget
+          // renders the clickable cards from pendingWebSources instead.
+          return { results: data.results.map(r => ({ title: r.title, snippet: r.snippet })) };
         } catch (e) {
           return { error: e.message || 'Search failed' };
         }
