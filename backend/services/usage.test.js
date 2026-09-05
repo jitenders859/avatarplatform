@@ -23,7 +23,7 @@ function freshDb() {
     sub: null,
     planTiers: {},
     projectStats: { projects: 0, files: 0, storageBytes: 0, urlSources: 0 },
-    usage: { period: '2026-08', messages: 0, embeddingChars: 0 },
+    usage: { period: '2026-08', messages: 0, embeddingChars: 0, webSearches: 0 },
   };
   return {
     findOne: async (table, filter) => {
@@ -81,6 +81,25 @@ test('checkLimit: storageMb boundary is inclusive of the exact cap', async () =>
   dbState.projectStats.storageBytes = FREE_LIMITS.storageMb * 1024 * 1024;
   assert.equal((await checkLimit(USER_ID, 'storageMb', 0)).ok, true, 'exactly at the cap with zero delta should still pass');
   assert.equal((await checkLimit(USER_ID, 'storageMb', 1)).ok, false, 'one more MB over the cap should fail');
+});
+
+test('checkLimit: webSearch respects the plan\'s monthlyWebSearches limit', async () => {
+  const { checkLimit } = reload();
+
+  // Free plan's monthlyWebSearches is 0 (see plans.js) — any attempt fails.
+  const atZero = await checkLimit(USER_ID, 'webSearch', 1);
+  assert.equal(atZero.ok, false);
+
+  // A plan with quota: seed a paid subscription and confirm boundary math.
+  dbState.sub = { planId: 'starter' };
+  const starterLimit = require('../plans').PLANS.find(p => p.id === 'starter').limits.monthlyWebSearches;
+  dbState.usage.webSearches = starterLimit - 1;
+  const underLimit = await checkLimit(USER_ID, 'webSearch', 1);
+  assert.equal(underLimit.ok, true);
+
+  dbState.usage.webSearches = starterLimit;
+  const atLimit = await checkLimit(USER_ID, 'webSearch', 1);
+  assert.equal(atLimit.ok, false);
 });
 
 test('checkLimit: monthly message counter resets are period-scoped (delegates to getOrCreateUsage)', async () => {

@@ -42,6 +42,19 @@ async function trackMessage(userId) {
   );
 }
 
+async function trackWebSearch(userId) {
+  if (!userId) return;
+  const period = periodKey();
+  const id = `${userId}:${period}`;
+  const now = Date.now();
+  await db.query(
+    `INSERT INTO usage (id, user_id, period, messages, embedding_chars, web_searches, created_at, updated_at)
+     VALUES ($1, $2, $3, 0, 0, 1, $4, $4)
+     ON CONFLICT (id) DO UPDATE SET web_searches = usage.web_searches + 1, updated_at = $4`,
+    [id, userId, period, now]
+  );
+}
+
 async function trackEmbeddingChars(userId, count) {
   if (!userId || !count) return;
   const period = periodKey();
@@ -98,6 +111,7 @@ async function getUsageSnapshot(userId) {
       urlSources:     Number(stats.urlSources) || 0,
       messages,
       embeddingChars: usage.embeddingChars     || 0,
+      webSearches:    usage.webSearches        || 0,
     },
     limits: plan.limits,
     // 3a — usage-based billing overlay (see docs/competitor-feature-implementation-plan.md
@@ -139,6 +153,9 @@ async function checkLimit(userId, kind, delta = 1) {
       break;
     case 'embeddingChars':
       if (c.embeddingChars + delta > l.monthlyEmbeddingChars) return fail('embedding character', l.monthlyEmbeddingChars, c.embeddingChars);
+      break;
+    case 'webSearch':
+      if (c.webSearches + delta > l.monthlyWebSearches) return fail('monthly web search', l.monthlyWebSearches, c.webSearches);
       break;
     case 'urlSource':
       if (c.urlSources + delta > l.urlSources) return fail('URL source', l.urlSources, c.urlSources);
@@ -300,6 +317,6 @@ async function getUsageAcrossUsers({ page = 1, limit = 25, sortBy = 'ratio' } = 
 }
 
 module.exports = {
-  userPlanId, getUsageSnapshot, trackMessage, trackEmbeddingChars, checkLimit,
+  userPlanId, getUsageSnapshot, trackMessage, trackEmbeddingChars, trackWebSearch, checkLimit,
   isAdminPlanOverrideActive, getUsageAcrossUsers,
 };
