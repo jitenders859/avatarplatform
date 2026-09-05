@@ -26,6 +26,7 @@ const { getRateLimitStore } = require('../services/rateLimitStore');
 const { safeFetch } = require('../services/safeFetch');
 const { queueWebhookDelivery } = require('../services/webhookDelivery');
 const settings = require('../services/settings');
+const { searchWebForProject } = require('../services/searchWeb');
 const router = express.Router();
 
 // Owners can override the default "usage limit reached" copy per project
@@ -55,6 +56,20 @@ const aiCostLimiter = rateLimit({
   keyGenerator: (req) => `${ipKeyGenerator(req.ip || 'unknown')}:ai:${req.params.publicId || 'unknown'}`,
   handler: (_req, res) => res.status(429).json({ error: 'Too many questions — please slow down a little.' }),
   store: getRateLimitStore('ai'),
+});
+
+// search_web is a real per-call cost (Serper API) on top of the monthly
+// quota tracked in usage.js — this catches a runaway single session
+// (e.g. a chatty loop) between quota-check intervals. 10/min per project,
+// same Redis-backed store as aiCostLimiter.
+const webSearchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `${ipKeyGenerator(req.ip || 'unknown')}:websearch:${req.params.publicId || 'unknown'}`,
+  handler: (_req, res) => res.status(429).json({ error: 'Too many searches — please slow down a little.' }),
+  store: getRateLimitStore('websearch'),
 });
 
 const MAX_TOOL_ITERATIONS = 5;
@@ -167,6 +182,7 @@ router.get('/:publicId/config', async (req, res) => {
         showBranding:          planId === 'free' ? true : project.showBranding !== false,
         showSourceCards:       project.showSourceCards       !== false,
         showQuickReplies:      project.showQuickReplies      === true,
+        webSearchEnabled:      planId === 'free' ? false : project.webSearchEnabled === true,
         allowDragDropUpload:   project.allowDragDropUpload   === true,
         fullScreenOnDesktop:   project.fullScreenOnDesktop   === true,
         fullScreenOnMobile:    project.fullScreenOnMobile    === true,
@@ -279,6 +295,28 @@ router.post('/:publicId/retrieve', aiCostLimiter, validate(schemas.embedRetrieve
     : [];
 
   res.json({ chunks, sources, figures });
+});
+
+/**
+ * POST /embed/:publicId/search-web
+ * Client-side search_web tool backend (see public/embed.html's
+ * searchWebTool()) — only reachable when the project has opted in.
+ */
+router.post('/:publicId/search-web', webSearchLimiter, validate(schemas.searchWeb), async (req, res) => {
+  const project = await findByPublicId(req.params.publicId);
+  if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+  if (!project.webSearchEnabled) {
+    return res.status(403).json({ error: 'Web search is not enabled for this chatbot' });
+  }
+
+  try {
+    const results = await searchWebForProject(project, req.body.query, { language: req.body.language });
+    res.json({ results });
+  } catch (e) {
+    if (e.quotaExceeded) return res.status(402).json({ error: e.message, quotaExceeded: true });
+    logger.error({ err: e.message }, 'search-web failed');
+    res.status(e.status || 502).json({ error: 'Search service unavailable' });
+  }
 });
 
 /**
