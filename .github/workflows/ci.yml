@@ -27,9 +27,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 22, not 20: "npm test" (below) passes node --test a glob string
+      # ('backend/**/*.test.js') — Node 20.x's test runner has no glob
+      # support at all for positional file args (even a single '*' fails
+      # with "Could not find ..."), so every run on Node 20 failed here
+      # before even reaching a single test. Glob support landed by 22.
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       # Runs postinstall (npm run build -> terser lipsync-sdk.js), same as

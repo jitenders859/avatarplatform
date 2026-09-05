@@ -32,6 +32,8 @@
       <button class="btn btn-primary" id="create-btn">+ New chatbot</button>
     </div>
 
+    <div id="category-bar" class="row gap-sm mb-md" style="flex-wrap:wrap;align-items:center"></div>
+
     <div id="grid" class="grid grid-3"></div>
     <div id="empty" class="empty" hidden>
       <div class="empty-icon">🤖</div>
@@ -64,6 +66,29 @@
     </div>
   </div>
 
+  <!-- Category modal -->
+  <div class="modal-backdrop" id="category-modal" hidden>
+    <div class="modal">
+      <h2 style="font-size:18px;margin:0 0 4px">New category</h2>
+      <p class="muted text-sm" style="margin:0 0 20px">Group your chatbots so you can filter them here and fetch them together via the API.</p>
+      <form id="category-form" class="col gap-md">
+        <div class="field">
+          <label>Name</label>
+          <input class="input" id="new-category-name" required maxlength="80" placeholder="Support" autofocus />
+        </div>
+        <div class="field">
+          <label>Color</label>
+          <input class="input" type="color" id="new-category-color" value="#7c6af5" style="height:40px;padding:4px" />
+        </div>
+        <div id="category-error" class="text-sm" style="color:var(--danger);display:none"></div>
+        <div class="row" style="justify-content:flex-end;margin-top:8px">
+          <button type="button" class="btn btn-ghost" id="category-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="category-submit">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="/js/theme.js"></script>
   <script src="/js/toast.js"></script>
   <script src="/js/api.js"></script>
@@ -74,16 +99,21 @@
   const grid = document.getElementById('grid');
   const emptyEl = document.getElementById('empty');
   const planLine = document.getElementById('plan-line');
+  const categoryBar = document.getElementById('category-bar');
 
   let characters = [];
+  let categories = [];
+  let activeCategoryId = null; // null = "All"
 
   async function load() {
     try {
-      const [{ projects }, { characters: chars }, sub, meResult] = await Promise.all([
-        API.listProjects(), API.characters(), API.subscription().catch(() => null), API.me().catch(() => null),
+      const [catsResult, { characters: chars }, sub, meResult] = await Promise.all([
+        API.listCategories().catch(() => ({ categories: [] })),
+        API.characters(), API.subscription().catch(() => null), API.me().catch(() => null),
       ]);
       document.getElementById('verify-banner').hidden = !meResult || !!meResult.user.emailVerifiedAt;
       characters = chars;
+      categories = catsResult.categories;
       const select = document.getElementById('new-character');
       select.innerHTML = chars.map(c =>
         `<option value="${c.id}">${c.name} — ${c.description}</option>`
@@ -107,30 +137,86 @@
         planLine.appendChild(link);
       }
 
-      if (projects.length === 0) { emptyEl.hidden = false; grid.hidden = true; return; }
-
-      grid.innerHTML = projects.map((p) => `
-        <div class="card" style="position:relative;transition:border-color .15s" onmouseover="this.style.borderColor='var(--border-strong)'" onmouseout="this.style.borderColor='var(--border)'">
-          <a href="/project?id=${p.id}" style="text-decoration:none;color:inherit;display:block">
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
-              <div>
-                <div style="font-weight:600;font-size:15px">${escape(p.name)}</div>
-                <div class="muted text-sm mt-sm">${charName(p.characterId)} · /e/${p.publicId}</div>
-              </div>
-              <span class="pill pill-info">${p.widgetPosition || 'bottom-right'}</span>
-            </div>
-          </a>
-          <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px">
-            ${p.leadCount > 0 ? `<a href="/project?id=${p.id}#leads" class="pill pill-success" style="text-decoration:none;font-size:11px">📋 ${p.leadCount} lead${p.leadCount === 1 ? '' : 's'}</a>` : ''}
-            <span style="flex:1"></span>
-            <button class="btn btn-sm btn-ghost" onclick="duplicate('${p.id}', event)">⎘ Duplicate</button>
-          </div>
-        </div>
-      `).join('');
+      renderCategoryBar();
+      await loadGrid();
     } catch (e) {
       toast(e.message, 'error');
     }
   }
+
+  function renderCategoryBar() {
+    const pills = [`<button class="btn btn-sm ${activeCategoryId === null ? 'btn-primary' : 'btn-ghost'}" data-cat="">All</button>`];
+    for (const c of categories) {
+      const active = activeCategoryId === c.id;
+      pills.push(`<button class="btn btn-sm ${active ? 'btn-primary' : 'btn-ghost'}" data-cat="${c.id}" style="${!active && c.color ? `border-color:${escape(c.color)}` : ''}">${escape(c.name)} (${c.chatbots.length})</button>`);
+    }
+    pills.push('<button class="btn btn-sm btn-ghost" id="new-category-btn">+ Category</button>');
+    categoryBar.innerHTML = pills.join('');
+    categoryBar.querySelectorAll('button[data-cat]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeCategoryId = btn.dataset.cat || null;
+        renderCategoryBar();
+        loadGrid();
+      });
+    });
+    document.getElementById('new-category-btn').addEventListener('click', openCategoryModal);
+  }
+
+  async function loadGrid() {
+    const { projects } = await API.listProjects(activeCategoryId);
+    if (projects.length === 0) {
+      emptyEl.hidden = false;
+      grid.hidden = true;
+      return;
+    }
+    emptyEl.hidden = true;
+    grid.hidden = false;
+
+    const categoryOptions = ['<option value="">Uncategorized</option>']
+      .concat(categories.map(c => `<option value="${c.id}">${escape(c.name)}</option>`))
+      .join('');
+
+    grid.innerHTML = projects.map((p) => `
+      <div class="card" style="position:relative;transition:border-color .15s" onmouseover="this.style.borderColor='var(--border-strong)'" onmouseout="this.style.borderColor='var(--border)'">
+        <a href="/project?id=${p.id}" style="text-decoration:none;color:inherit;display:block">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px">
+            <div>
+              <div style="font-weight:600;font-size:15px">${escape(p.name)}</div>
+              <div class="muted text-sm mt-sm">${charName(p.characterId)} · /e/${p.publicId}</div>
+            </div>
+            <span class="pill pill-info">${p.widgetPosition || 'bottom-right'}</span>
+          </div>
+        </a>
+        <div style="margin-top:12px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${p.leadCount > 0 ? `<a href="/project?id=${p.id}#leads" class="pill pill-success" style="text-decoration:none;font-size:11px">📋 ${p.leadCount} lead${p.leadCount === 1 ? '' : 's'}</a>` : ''}
+          <span style="flex:1"></span>
+          <select class="select" style="font-size:12px;padding:4px 8px;width:auto" onchange="assignCategory('${p.id}', this.value)">
+            ${categoryOptions}
+          </select>
+          <button class="btn btn-sm btn-ghost" onclick="duplicate('${p.id}', event)">⎘ Duplicate</button>
+        </div>
+      </div>
+    `).join('');
+
+    // Preselect each card's current category — done after innerHTML so the
+    // <select> exists, avoiding an escaping headache building `selected` into
+    // the template string above.
+    grid.querySelectorAll('.card').forEach((card, i) => {
+      const sel = card.querySelector('select');
+      if (sel) sel.value = projects[i].categoryId || '';
+    });
+  }
+
+  window.assignCategory = async (projectId, categoryId) => {
+    try {
+      await API.updateProject(projectId, { categoryId: categoryId || null });
+      const { categories: cats } = await API.listCategories();
+      categories = cats;
+      renderCategoryBar();
+      await loadGrid();
+      toast('Chatbot moved', 'success');
+    } catch (err) { toast(err.message, 'error'); }
+  };
 
   function charName(id) {
     const c = characters.find(c => c.id === id);
@@ -195,6 +281,46 @@
         document.getElementById('verify-banner').hidden = false;
         document.getElementById('verify-banner').scrollIntoView({ behavior: 'smooth' });
       }
+    }
+  });
+
+  // Category modal
+  const categoryModal = document.getElementById('category-modal');
+  function openCategoryModal() {
+    categoryModal.hidden = false;
+    document.getElementById('new-category-name').focus();
+  }
+  function closeCategoryModal() {
+    categoryModal.hidden = true;
+    document.getElementById('category-form').reset();
+    document.getElementById('category-error').style.display = 'none';
+    document.getElementById('category-submit').disabled = false;
+  }
+  document.getElementById('category-cancel').addEventListener('click', closeCategoryModal);
+  categoryModal.addEventListener('click', e => { if (e.target === categoryModal) closeCategoryModal(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && !categoryModal.hidden) closeCategoryModal(); });
+
+  document.getElementById('category-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('category-submit');
+    const err = document.getElementById('category-error');
+    err.style.display = 'none';
+    btn.disabled = true;
+    try {
+      const { category } = await API.createCategory({
+        name: document.getElementById('new-category-name').value.trim(),
+        color: document.getElementById('new-category-color').value,
+      });
+      categories.push(category);
+      activeCategoryId = category.id;
+      closeCategoryModal();
+      renderCategoryBar();
+      await loadGrid();
+      toast('Category created', 'success');
+    } catch (e2) {
+      err.textContent = e2.message;
+      err.style.display = 'block';
+      btn.disabled = false;
     }
   });
 

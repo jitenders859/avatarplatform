@@ -47,15 +47,24 @@ router.get('/characters', optionalAuth, async (req, res) => {
 // leadCount folded in here (one grouped query) rather than the dashboard
 // firing one GET /:id/leads?limit=1 per project just to read its total —
 // see improvement-prompts.md Prompt P1-1 item 4.
+// ?categoryId= narrows the list to one chatbot category (see routes/categories.js).
 router.get('/', authRequired, async (req, res) => {
+  const { categoryId } = req.query;
+  const params = [req.user.id];
+  let categoryClause = '';
+  if (categoryId) {
+    params.push(categoryId);
+    categoryClause = `AND p.category_id = $${params.length}`;
+  }
   const projects = await db.query(
-    `SELECT p.*, COUNT(l.id)::int AS lead_count
+    `SELECT p.*, cc.name AS category_name, COUNT(l.id)::int AS lead_count
        FROM projects p
        LEFT JOIN leads l ON l.project_id = p.id
-      WHERE p.user_id = $1
-      GROUP BY p.id
+       LEFT JOIN chatbot_categories cc ON cc.id = p.category_id
+      WHERE p.user_id = $1 ${categoryClause}
+      GROUP BY p.id, cc.name
       ORDER BY p.created_at DESC`,
-    [req.user.id]
+    params
   );
   res.json({ projects });
 });
@@ -75,7 +84,7 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
     });
   }
 
-  const { name, characterId, systemPrompt, voice } = req.body;
+  const { name, characterId, systemPrompt, voice, categoryId } = req.body;
 
   const { checkLimit } = require('../services/usage');
   const limitCheck = await checkLimit(req.user.id, 'project', 1);
@@ -84,11 +93,19 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
   const available = await listAvailableCharacters(req.user.id);
   const ch = available.find(c => c.id === characterId) || available[0];
   if (!ch) return res.status(500).json({ error: 'No characters are currently available' });
+
+  let category = null;
+  if (categoryId) {
+    category = await db.findOne('chatbotCategories', { id: categoryId, userId: req.user.id });
+    if (!category) return res.status(400).json({ error: 'Unknown category' });
+  }
+
   const project = await db.insert('projects', {
     id: uuid(),
     userId: req.user.id,
     name: name.trim(),
     characterId: ch.id,
+    categoryId: category ? category.id : null,
     systemPrompt: systemPrompt || 'You are a friendly, helpful AI assistant. Speak naturally and conversationally.',
     voice: voice || 'Puck',
     welcomeMessage: 'Hi! Ask me anything.',
@@ -225,6 +242,13 @@ router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, r
     if (!available.find(c => c.id === patch.characterId)) {
       return res.status(400).json({ error: 'Unknown character' });
     }
+  }
+  // patch.categoryId === null is a deliberate "unassign" and skips this
+  // ownership check — only a truthy id needs to be verified as this
+  // user's own category.
+  if (patch.categoryId) {
+    const category = await db.findOne('chatbotCategories', { id: patch.categoryId, userId: req.user.id });
+    if (!category) return res.status(400).json({ error: 'Unknown category' });
   }
   if (patch.webhookUrl) {
     try {

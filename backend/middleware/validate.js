@@ -71,6 +71,23 @@ const schemas = {
     characterId: z.string().optional(),
     systemPrompt,
     voice,
+    categoryId: z.string().optional(),
+  }),
+
+  categoryCreate: z.object({
+    name: z.string().trim().min(1, 'name is required').max(80, 'name too long'),
+    color: z.string().regex(HEX_COLOR_RE, 'color must be a 6-digit hex color').optional(),
+    description: z.string().trim().max(300, 'description too long').optional(),
+  }),
+
+  categoryPatch: z.object({
+    name: z.string().trim().min(1, 'name is required').max(80, 'name too long').optional(),
+    color: z.string().regex(HEX_COLOR_RE, 'color must be a 6-digit hex color').nullable().optional(),
+    description: z.string().trim().max(300, 'description too long').nullable().optional(),
+  }).refine(d => Object.keys(d).length > 0, { message: 'Nothing to update' }),
+
+  categoryAssignChatbots: z.object({
+    projectIds: z.array(z.string().min(1)).min(1, 'projectIds is required').max(100, 'Max 100 chatbots per request'),
   }),
 
   inviteMember: z.object({
@@ -119,6 +136,9 @@ const schemas = {
     customDomain: z.string().trim().max(253).regex(/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$/i, 'customDomain must be a bare hostname, e.g. chat.example.com').nullable().optional(),
     whatsappPhoneNumberId: z.string().trim().max(64).nullable().optional(),
     whatsappAccessToken: z.string().trim().max(1024).nullable().optional(),
+    // Ownership check (does this category belong to req.user.id?) stays in
+    // routes/projects.js, same as characterId above — null unassigns.
+    categoryId: z.string().nullable().optional(),
     // Owner-editable overrides for widget copy that's otherwise hardcoded
     // English — see improvement-prompts.md Prompt F4 item 4. Both keys
     // optional/independent; an unset key falls back to the widget default.

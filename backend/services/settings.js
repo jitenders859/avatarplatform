@@ -69,7 +69,7 @@ async function setSetting(key, value, adminId) {
       `INSERT INTO admin_settings (key, value, updated_at, updated_by)
        VALUES ($1, $2, $3, $4)
        ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = $3, updated_by = $4`,
-      [key, value, Date.now(), adminId]
+      [key, value, Date.now(), adminId || null]
     );
   } else {
     await db.remove('admin_settings', { key }).catch(() => {});

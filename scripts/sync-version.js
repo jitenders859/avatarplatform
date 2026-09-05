@@ -14,11 +14,22 @@
  * (via `npm run sync-version`, or automatically as part of `npm run
  * build:sdk`) after bumping it, and it propagates to:
  *   - packages/{js,react,react-native,vue}/package.json's "version"
+ *   - react/react-native/vue's "dependencies"["@avatar-platform/js"] range
  *   - public/lipsync-sdk.js's banner comment
  *
  * This intentionally retires lipsync-sdk.js's separate v2.x numbering —
  * that's exactly the drift this script exists to close, not a second
  * version scheme to keep in parallel.
+ *
+ * The dependency-range step exists because npm workspaces still enforces
+ * semver on inter-package edges: bumping packages/js's own version without
+ * also bumping the `^0.1.0` range that react/react-native/vue depend on it
+ * through leaves that range unsatisfied by the new version the moment the
+ * bump crosses a caret boundary (e.g. 0.x -> 1.x). npm then refuses to
+ * link the local workspace for that edge and instead tries to fetch
+ * "@avatar-platform/js" from the public registry — a 404, since it's never
+ * published there — breaking `npm ci`/`npm install` repo-wide until the
+ * range is fixed by hand. Keeping both in lockstep here closes that gap.
  */
 const fs = require('fs');
 const path = require('path');
@@ -32,11 +43,22 @@ if (!/^\d+\.\d+\.\d+/.test(version)) {
 }
 
 const PACKAGES = ['js', 'react', 'react-native', 'vue'];
+const JS_DEP_RANGE = `^${version}`;
 for (const pkg of PACKAGES) {
   const pkgPath = path.join(ROOT, 'packages', pkg, 'package.json');
   const json = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-  if (json.version === version) continue;
-  json.version = version;
+  let changed = false;
+
+  if (json.version !== version) {
+    json.version = version;
+    changed = true;
+  }
+  if (json.dependencies && json.dependencies['@avatar-platform/js'] && json.dependencies['@avatar-platform/js'] !== JS_DEP_RANGE) {
+    json.dependencies['@avatar-platform/js'] = JS_DEP_RANGE;
+    changed = true;
+  }
+
+  if (!changed) continue;
   fs.writeFileSync(pkgPath, JSON.stringify(json, null, 2) + '\n');
   console.log(`sync-version: packages/${pkg} -> ${version}`);
 }
