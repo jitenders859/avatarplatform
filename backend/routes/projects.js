@@ -120,6 +120,7 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
     showBranding: true,
     showSourceCards: true,
     showQuickReplies: false,
+    webSearchEnabled: false,
     allowDragDropUpload: false,
     fullScreenOnDesktop: false,
     fullScreenOnMobile: false,
@@ -264,6 +265,15 @@ router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, r
     const planId = await userPlanId(req.user.id);
     if (planId !== 'business') {
       return res.status(402).json({ error: 'Custom domains require the Business plan.', code: 'PLAN_UPGRADE_REQUIRED' });
+    }
+  }
+  // Web search is a cost-bearing capability — hard-block on the free plan
+  // (not just a disabled UI control), same style as the customDomain gate
+  // above.
+  if (patch.webSearchEnabled) {
+    const planId = await userPlanId(req.user.id);
+    if (planId === 'free') {
+      return res.status(402).json({ error: 'Live web search requires a paid plan.', code: 'PLAN_UPGRADE_REQUIRED' });
     }
   }
 
