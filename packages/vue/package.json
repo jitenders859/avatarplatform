@@ -1,6 +1,6 @@
 {
   "name": "@avatar-platform/vue",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "description": "Vue SDK for AvatarPlatform — embed a live AI talking character in any Vue 3 app with one component.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -13,13 +13,15 @@
       "require": "./dist/index.cjs"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch"
   },
   "dependencies": {
-    "@avatar-platform/js": "^0.1.0"
+    "@avatar-platform/js": "^1.1.0"
   },
   "peerDependencies": {
     "vue": "^3.0.0"
@@ -35,5 +37,11 @@
     "url": "https://github.com/jitenders859/avatarplatform.git",
     "directory": "packages/vue"
   },
-  "keywords": ["avatarplatform", "vue", "chatbot", "widget", "embed"]
+  "keywords": [
+    "avatarplatform",
+    "vue",
+    "chatbot",
+    "widget",
+    "embed"
+  ]
 }

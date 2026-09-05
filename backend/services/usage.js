@@ -111,7 +111,7 @@ async function checkLimit(userId, kind, delta = 1) {
       if (c.projects + delta > l.projects) return fail('chatbot', l.projects, c.projects);
       break;
     case 'file':
-      if (c.files + delta > l.filesPerProject) return fail('file', l.filesPerProject, c.files);
+      if (c.files + delta > l.maxFiles) return fail('file', l.maxFiles, c.files);
       break;
     case 'storageMb':
       if (c.storageMb + delta > l.storageMb) return fail('storage', l.storageMb + ' MB', c.storageMb + ' MB');

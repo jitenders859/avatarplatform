@@ -53,6 +53,8 @@
   let pendingOpen = false;           // user clicked placeholder before iframe was ready
   let placeholder = null;            // FAB shown while iframe loads
   let preFullscreenStyle = null;     // snapshot of inline styles before entering full-screen
+  let wholePanelFullscreen = false;  // whole-panel fullscreen toggle (header button) is active
+  let characterFullscreenOn = false; // character-only fullscreen (click avatar) is active
 
   // localStorage key for persisting drag position
   const POS_KEY = `ap-pos-${publicId}`;
@@ -155,13 +157,7 @@
     btn.setAttribute('aria-label', 'Open chat');
     placeholder.appendChild(btn);
 
-    placeholder.addEventListener('click', () => {
-      if (iframeReady) {
-        sendToIframe({ type: 'open' });
-      } else {
-        pendingOpen = true;
-      }
-    });
+    placeholder.addEventListener('click', requestOpen);
 
     document.body.appendChild(placeholder);
   }
@@ -266,6 +262,48 @@
     }
   }
 
+  // ── Programmatic control (public/docs/prefetching.html "Controlling the
+  // widget" section) — a host page dispatches ap:open/ap:close/ap:hide/
+  // ap:show on document instead of needing a reference to this closure.
+  // requestOpen is also the placeholder FAB's own click handler, so both
+  // paths share the same "replay once ready" behavior.
+  function requestOpen() {
+    if (iframeReady) sendToIframe({ type: 'open' });
+    else pendingOpen = true;
+  }
+  function requestClose() {
+    if (iframeReady) sendToIframe({ type: 'close' });
+    else pendingOpen = false;
+  }
+
+  // Snapshot of the iframe/placeholder inline `display` before ap:hide, so
+  // ap:show restores exactly rather than guessing a value — same pattern
+  // preFullscreenStyle uses for fullscreen toggling above.
+  let hiddenDisplay = null;
+  function setWidgetVisible(visible) {
+    if (visible) {
+      if (!hiddenDisplay) return;
+      if (iframe) iframe.style.display = hiddenDisplay.iframe;
+      if (placeholder) placeholder.style.display = hiddenDisplay.placeholder;
+      hiddenDisplay = null;
+    } else if (!hiddenDisplay) {
+      hiddenDisplay = {
+        iframe: iframe ? iframe.style.display : '',
+        placeholder: placeholder ? placeholder.style.display : '',
+      };
+      if (iframe) iframe.style.display = 'none';
+      if (placeholder) placeholder.style.display = 'none';
+    }
+  }
+
+  function matchesThisBot(e) {
+    return !e.detail || e.detail.botId == null || e.detail.botId === publicId;
+  }
+  document.addEventListener('ap:open',  (e) => { if (matchesThisBot(e)) requestOpen(); });
+  document.addEventListener('ap:close', (e) => { if (matchesThisBot(e)) requestClose(); });
+  document.addEventListener('ap:hide',  (e) => { if (matchesThisBot(e)) setWidgetVisible(false); });
+  document.addEventListener('ap:show',  (e) => { if (matchesThisBot(e)) setWidgetVisible(true); });
+
   function loadSavedPosition(pos) {
     try {
       const data = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
@@ -305,25 +343,85 @@
       return;
     }
 
+    // ── Chat event relay (public/docs/prefetching.html "Listening for
+    // events") — forwarded regardless of layout mode, unlike the
+    // open/close resize logic below which only applies in floating mode.
+    if (data.type === 'message') {
+      document.dispatchEvent(new CustomEvent('ap:message', {
+        detail: { botId: publicId, sessionId: data.sessionId, role: data.role, text: data.text },
+      }));
+      return;
+    }
+    if (data.type === 'response') {
+      document.dispatchEvent(new CustomEvent('ap:response', {
+        detail: { botId: publicId, sessionId: data.sessionId, answer: data.answer, sources: data.sources || [] },
+      }));
+      return;
+    }
+
     // ── Open / close resize ──────────────────────────────────────
     if (iframe.style.position !== 'fixed') return; // inline mode
 
     if (data.type === 'open') {
       panelOpen = true;
-      if (data.fullscreen) {
+      wholePanelFullscreen = !!data.fullscreen;
+      if (wholePanelFullscreen) {
         setFullscreenIframe(true);
       } else {
         iframe.style.width  = `min(${OPEN_W}px, calc(100vw - ${OFFSET_X * 2 + 8}px))`;
         iframe.style.height = `min(${OPEN_H}px, calc(100vh - ${OFFSET_Y + 8}px))`;
       }
+      document.dispatchEvent(new CustomEvent('ap:opened', { detail: { botId: publicId } }));
     } else if (data.type === 'close') {
       panelOpen = false;
+      wholePanelFullscreen = false;
+      characterFullscreenOn = false;
       setFullscreenIframe(false);
       iframe.style.width  = CLOSED_W + 'px';
       iframe.style.height = CLOSED_H + 'px';
     } else if (data.type === 'fullscreen') {
       if (!panelOpen) return;
-      setFullscreenIframe(!!data.enabled);
+      wholePanelFullscreen = !!data.enabled;
+      setFullscreenIframe(wholePanelFullscreen || characterFullscreenOn);
+    } else if (data.type === 'character-fullscreen') {
+      if (!panelOpen) return;
+      // Two independent triggers can each want the iframe expanded — the
+      // header maximize/restore button (wholePanelFullscreen) and clicking
+      // the avatar (characterFullscreenOn). The iframe should only shrink
+      // back down once BOTH are off, so it's driven by the OR of both
+      // flags rather than this message's `enabled` value alone.
+      characterFullscreenOn = !!data.enabled;
+      setFullscreenIframe(wholePanelFullscreen || characterFullscreenOn);
     }
   });
+
+  // ── window.AvatarPlatform (public/docs/prefetching.html) ───────────
+  // A page-level namespace, not scoped to this one <script data-bot> tag,
+  // so it's guarded against redefinition if more than one embed-loader
+  // script tag is present (multiple bots on one page). Whichever tag loads
+  // first wins — ORIGIN is the same for all of them on a real deployment,
+  // since they all point at the same AvatarPlatform host.
+  if (!window.AvatarPlatform) {
+    const preloadCache = new Map();
+    window.AvatarPlatform = {
+      preload(botId) {
+        if (!preloadCache.has(botId)) {
+          preloadCache.set(botId, fetch(`${ORIGIN}/embed/${encodeURIComponent(botId)}/config`)
+            .then(r => { if (!r.ok) throw new Error('Could not load bot config'); return r.json(); })
+            .catch(err => { preloadCache.delete(botId); throw err; }));
+        }
+        return preloadCache.get(botId);
+      },
+      async ask(botId, question, sessionId) {
+        const res = await fetch(`${ORIGIN}/embed/${encodeURIComponent(botId)}/ask`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question, sessionId }),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(body.error || 'Ask failed');
+        return body;
+      },
+    };
+  }
 })();

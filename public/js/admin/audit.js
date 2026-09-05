@@ -77,11 +77,11 @@ async function renderAuditTable() {
 
   const rows = entries.map(e => `
     <tr>
-      <td class="text-sm">${new Date(e.createdAt).toLocaleString()}</td>
+      <td class="text-sm muted" style="white-space:nowrap">${new Date(e.createdAt).toLocaleString()}</td>
       <td class="text-sm">${escapeHtml(e.adminEmail || e.adminId)}</td>
       <td><span class="pill pill-info">${escapeHtml(e.action)}</span></td>
       <td class="text-sm">${escapeHtml(e.targetEmail || '')}</td>
-      <td class="muted text-sm">${e.meta ? escapeHtml(JSON.stringify(e.meta)) : ''}</td>
+      <td class="muted text-sm">${e.meta ? `<code class="adm-code">${escapeHtml(JSON.stringify(e.meta))}</code>` : ''}</td>
     </tr>`).join('');
   tableWrap.innerHTML = `
     <div class="table-scroll">
@@ -91,10 +91,7 @@ async function renderAuditTable() {
     </table>
     </div>`;
 
-  renderPagination(document.getElementById('audit-pagination'), {
-    page, pageSize, total,
-    onPage: (p) => { auditPage = p; renderAuditTable(); },
-  });
+  renderPagination(document.getElementById('audit-pagination'), { page, pageSize, total }, (p) => { auditPage = p; renderAuditTable(); });
 }
 
 TABS.audit = loadAuditTab;

@@ -490,7 +490,6 @@ router.get('/system-status', adminAuthRequired, async (req, res) => {
 router.get('/audit-log', adminAuthRequired, async (req, res) => {
   const page = Math.min(100000, Math.max(1, parseInt(req.query.page) || 1));
   const pageSize = 50;
-
   const conds = [];
   const params = [];
   const addCond = (sql, val) => { params.push(val); conds.push(sql.replace('?', `$${params.length}`)); };

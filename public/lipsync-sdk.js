@@ -1,8 +1,11 @@
 /*!
- * LipsyncAvatar SDK  v2.3.0
+ * LipsyncAvatar SDK  v1.1.0
  * Gemini Live · Rive · Multilingual Lip Sync · Knowledge Base
  * - 23 Rive mouth inputs (100-122), video-matched to Azure visemes
- * - Timed ramp logic: active mouth value moves 1→100 across the spoken viseme
+ * - Speed-driven mouth ('rive-transition' mode, default): an input's value is the
+ *   Rive transition speed into that mouth pose (10 = ease in slowly, 100 = snap),
+ *   chosen per viseme from how long the viseme is spoken
+ * - Legacy 'timed-ramp' mode (value ramps 1→100 across the viseme) still available
  * - Owner-provided knowledge base support
  *
  * Usage:
@@ -54,17 +57,33 @@
 
   // Video-matched Rive input map.
   // Index = Azure-style viseme id (0-22), value = Rive number input name.
-  // Important recording note:
-  //   - Rive input value 0 means inactive / no mouth pose.
-  //   - Values 1-99 move/open the target mouth progressively.
-  //   - Value 100 completes/snaps the target mouth pose.
-  // v2.2 drives the active mouth as a timed ramp from 1→100 based on
-  // the scheduled speech timing, so visemes no longer switch instantly.
+  // How the character's number inputs actually behave (as observed driving
+  // the production character by hand in the Rive editor):
+  //   - Value 0 means inactive / no pull toward that mouth pose.
+  //   - Any value 1-100 makes the mouth move INTO that pose; the value is the
+  //     TRANSITION SPEED, not how far the mouth opens. 10 eases into the pose
+  //     slowly, 100 changes to it instantaneously. The in-between frames of a
+  //     switch from one pose to the next are produced by Rive itself.
+  // So the SDK must NOT ramp a value 1→100 over a viseme (that reads as
+  // "crawl, then snap right at the end"). The default 'rive-transition' mode
+  // instead writes ONE speed value per viseme, sized so the pose is reached in
+  // roughly the time the viseme is spoken: short consonants get a high value,
+  // long vowels and pauses a low one. See _riveTransitionValue().
   // The recording shows both input 100 and input 107 as closed/silent shapes.
   // 100 is used for silence/pauses; 107 is used for p/b/m lip closures.
   const RIVE_INACTIVE_VALUE   = 0;
   const RIVE_ACTIVE_MIN_VALUE = 1;
   const RIVE_ACTIVE_MAX_VALUE = 100;
+  // 'rive-transition' auto speed: value = RIVE_TRANSITION_GAIN / durationMs
+  // (× visemeTransitionScale), clamped to [visemeTransitionMinValue,
+  // visemeTransitionMaxValue]. 4800 puts a typical 120ms viseme at 40, a 60ms
+  // consonant at 80, and a 300ms word gap at 16.
+  const RIVE_TRANSITION_GAIN      = 4800;
+  // Duration the auto formula assumes for a rest/closing move that has no
+  // scheduled length (end of speech, silence hold) — a soft, unhurried close.
+  const RIVE_TRANSITION_REST_MS   = 260;
+  // ...and for a direct non-silence pose with no scheduled length.
+  const RIVE_TRANSITION_DIRECT_MS = 120;
   const RIVE_INPUT_BY_AZ = [
     100, // 0  sil      -> closed / silent
     101, // 1  aa       -> wide open vowel
@@ -111,6 +130,14 @@
 
   function clamp01(v) {
     return Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0));
+  }
+
+  // Numeric option with a default: unlike `Number(v) || def`, an explicit 0
+  // stays 0 (e.g. visemeOverlapMs: 0 really means no overlap).
+  function optNum(v, def) {
+    if (v == null || v === '') return def;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : def;
   }
 
   function easeOutCubic(t) {
@@ -1170,16 +1197,31 @@
      * @param {string}             [opts.artboard]   - Rive artboard name (default: 'Character')
      * @param {string}             [opts.stateMachine] - Rive state machine (default: 'InLesson')
      * @param {object}             [opts.riveInputMap] - Optional override: { azVisemeId: riveInputNumber }
-     * @param {string}             [opts.visemeSpeedMode] - 'timed-ramp' | 'instant' (default: 'timed-ramp')
-     * @param {number}             [opts.visemeMinValue] - Minimum active mouth value, default 1
-     * @param {number}             [opts.visemeMaxValue] - Maximum active mouth value, default 100
-     * @param {number}             [opts.visemePeakRatio] - 0-1 point in each viseme where value reaches max, default 0.88
-     * @param {number}             [opts.visemeOverlapMs] - Start the next viseme slightly early for smoother switching, default 35
-     * @param {number}             [opts.visemeSmoothingMs] - Per-frame glide time constant: how long a mouth input takes to
-     *   ease toward its target instead of snapping (default 90). Applies to every Rive input every frame, so an outgoing
-     *   viseme decays while the incoming one rises instead of hard-cutting — this is what produces an in-between mouth
-     *   shape when two inputs (e.g. 110 and 122) are transitioning at once. Raise it if the mouth still looks too snappy;
-     *   lower it (or set visemeSpeedMode:'instant') if lip movement starts trailing noticeably behind the audio.
+     * @param {string}             [opts.visemeSpeedMode] - How the active Rive input is driven (default: 'rive-transition'):
+     *   'rive-transition' — the input value is the character's own transition SPEED into the mouth pose (10 = ease in
+     *     slowly, 100 = instant). One value is written per viseme, picked from the viseme's spoken duration so the pose
+     *     lands about when the sound does, and Rive animates the in-between frames itself. Use this for characters whose
+     *     inputs behave that way (the platform's stock characters do).
+     *   'timed-ramp' — legacy: the value ramps 1→100 across the viseme with the SDK gliding it per frame, for characters
+     *     whose input value means "how far open" rather than "how fast".
+     *   'instant' — snap the input straight to visemeMaxValue.
+     * @param {'auto'|number}      [opts.visemeTransitionValue] - 'rive-transition' only. 'auto' (default) sizes the speed from
+     *   each viseme's duration; a number 1-100 writes that fixed speed for every viseme instead (e.g. 30 for one uniform ease).
+     * @param {number}             [opts.visemeTransitionMinValue] - 'rive-transition' auto: slowest speed ever written, used for
+     *   long vowels and pauses (default 8). Raise it if long sounds look sluggish.
+     * @param {number}             [opts.visemeTransitionMaxValue] - 'rive-transition' auto: fastest speed, used for very short
+     *   consonants (default 100 = snap). Lower it (e.g. 70) if quick consonants look too abrupt.
+     * @param {number}             [opts.visemeTransitionScale] - 'rive-transition' auto: multiplies every auto speed (default 1).
+     *   The single knob to turn first: >1 if the mouth trails the audio, <1 if it looks too snappy.
+     * @param {number}             [opts.visemeMinValue] - 'timed-ramp': minimum active mouth value, default 1
+     * @param {number}             [opts.visemeMaxValue] - 'timed-ramp'/'instant': maximum active mouth value, default 100
+     * @param {number}             [opts.visemePeakRatio] - 'timed-ramp': 0-1 point in each viseme where value reaches max, default 0.88
+     * @param {number}             [opts.visemeOverlapMs] - 'timed-ramp': start the next viseme slightly early for smoother
+     *   switching, default 18. Ignored in 'rive-transition' (Rive's own transition already crosses the two poses over).
+     * @param {number}             [opts.visemeSmoothingMs] - 'timed-ramp': per-frame glide time constant, how long a mouth input
+     *   takes to ease toward its target instead of snapping (default 45). Applies to every Rive input every frame, so an
+     *   outgoing viseme decays while the incoming one rises instead of hard-cutting. Ignored in 'rive-transition' — there
+     *   the value is a speed and must be written as-is; gliding it would only delay the mouth.
      * @param {Function}           [opts.onConnected]
      * @param {Function}           [opts.onDisconnected]
      * @param {Function}           [opts.onSpeaking]
@@ -1230,14 +1272,18 @@
         artboard: 'Character',
         stateMachine: 'InLesson',
         riveInputMap: null,
-        visemeSpeedMode: 'timed-ramp',
+        visemeSpeedMode: 'rive-transition',
+        visemeTransitionValue: 'auto',
+        visemeTransitionMinValue: 8,
+        visemeTransitionMaxValue: RIVE_ACTIVE_MAX_VALUE,
+        visemeTransitionScale: 1.0,
         visemeMinValue: RIVE_ACTIVE_MIN_VALUE,
         visemeMaxValue: RIVE_ACTIVE_MAX_VALUE,
         visemePeakRatio: 0.88,
-        visemeOverlapMs: 35,
-        visemeSmoothingMs: 90,
+        visemeOverlapMs: 18,
+        visemeSmoothingMs: 45,
         // Hybrid lip-sync params
-        anticipationMs: 40,      // pre-roll mouth N ms before phoneme starts
+        anticipationMs: 20,      // pre-roll mouth N ms before phoneme starts
         minVisemeMs: 50,         // minimum hold per viseme (prevents flutter on fast consonants)
         smoothingMs: 70,         // not used by timed-ramp but exposed for downstream controllers
         mouthDelayMs: 0,         // positive = delay anchor (audio arrives late); negative = advance
@@ -1262,11 +1308,19 @@
         tools: [],
       }, opts);
 
-      this._opts.visemeMinValue = Math.max(1, Math.min(99, Number(this._opts.visemeMinValue) || RIVE_ACTIVE_MIN_VALUE));
-      this._opts.visemeMaxValue = Math.max(this._opts.visemeMinValue, Math.min(100, Number(this._opts.visemeMaxValue) || RIVE_ACTIVE_MAX_VALUE));
-      this._opts.visemePeakRatio = Math.max(0.1, Math.min(1, Number(this._opts.visemePeakRatio) || 0.88));
-      this._opts.visemeOverlapMs = Math.max(0, Math.min(140, Number(this._opts.visemeOverlapMs) || 35));
-      this._opts.visemeSmoothingMs = Math.max(0, Math.min(200, Number(this._opts.visemeSmoothingMs) ?? 90));
+      const o = this._opts;
+      if (!['rive-transition', 'timed-ramp', 'instant'].includes(o.visemeSpeedMode)) o.visemeSpeedMode = 'rive-transition';
+      o.visemeMinValue   = Math.max(1, Math.min(99, optNum(o.visemeMinValue, RIVE_ACTIVE_MIN_VALUE)));
+      o.visemeMaxValue   = Math.max(o.visemeMinValue, Math.min(100, optNum(o.visemeMaxValue, RIVE_ACTIVE_MAX_VALUE)));
+      o.visemePeakRatio  = Math.max(0.1, Math.min(1, optNum(o.visemePeakRatio, 0.88)));
+      o.visemeOverlapMs  = Math.max(0, Math.min(140, optNum(o.visemeOverlapMs, 18)));
+      o.visemeSmoothingMs = Math.max(0, Math.min(200, optNum(o.visemeSmoothingMs, 45)));
+      o.visemeTransitionMinValue = Math.max(1, Math.min(100, optNum(o.visemeTransitionMinValue, 8)));
+      o.visemeTransitionMaxValue = Math.max(o.visemeTransitionMinValue, Math.min(100, optNum(o.visemeTransitionMaxValue, RIVE_ACTIVE_MAX_VALUE)));
+      o.visemeTransitionScale    = Math.max(0.05, Math.min(20, optNum(o.visemeTransitionScale, 1)));
+      o.visemeTransitionValue    = (o.visemeTransitionValue === 'auto' || o.visemeTransitionValue == null)
+        ? 'auto'
+        : Math.max(1, Math.min(100, Math.round(optNum(o.visemeTransitionValue, 0)))) || 'auto';
 
       this._tools = (this._opts.tools || []).filter(t => t && t.name && typeof t.handler === 'function');
       this._toolsByName = Object.fromEntries(this._tools.map(t => [t.name, t]));
@@ -1298,6 +1352,7 @@
       this._riveReady    = false;
       this._wTarget      = new Float32Array(VISEME_COUNT).fill(0);
       this._wCurrent     = new Float32Array(VISEME_COUNT).fill(0);
+      this._riveWritten  = Object.create(null); // last value pushed to each Rive input
       this._lerpRaf      = null;
       this._lastLerpMs   = 0;
       this._currentAzId  = 0;
@@ -1710,6 +1765,7 @@ When answering, speak naturally and conversationally — do not read the knowled
                 found++;
               }
             }
+            this._riveWritten = Object.create(null);
             const requiredInputs = [...new Set(this._riveInputByAz.map(String))];
             const missingInputs = requiredInputs.filter(name => !this._riveInputs[name]);
             this._riveReady = found > 0;
@@ -1752,9 +1808,9 @@ When answering, speak naturally and conversationally — do not read the knowled
     _startLerpLoop() {
       if (this._lerpRaf) return;
       // Keep easing _wCurrent toward _wTarget every frame. _wTarget is set by
-      // the scheduler (a time-based 1→100 ramp aligned to the spoken audio);
-      // _wCurrent is what's actually written to the Rive inputs, and glides
-      // toward that target rather than snapping to it — see _applyVisemeTargets.
+      // the scheduler (per-viseme speed in 'rive-transition', a time-based
+      // 1→100 ramp in 'timed-ramp'); _wCurrent is what's actually written to
+      // the Rive inputs — see _applyVisemeTargets for how each mode gets there.
       this._lastLerpMs = performance.now();
       const tick = (now) => {
         if (this._destroyed) return;
@@ -1778,8 +1834,13 @@ When answering, speak naturally and conversationally — do not read the knowled
       // producing a genuine in-between mouth shape during the crossover
       // instead of a hard cut (same idea as manually holding e.g. input 110
       // at 50 and input 122 at 10 at the same time).
+      //
+      // In 'rive-transition' mode the value IS a speed, so it is written as-is
+      // (alpha = 1): gliding a speed from 0 up to its target would just make
+      // the incoming pose start slowly and keep the outgoing pose pulling for
+      // a few frames — Rive's own transition already handles the crossover.
       const tau = this._opts.visemeSmoothingMs;
-      const alpha = tau > 0 ? 1 - Math.exp(-dtMs / tau) : 1;
+      const alpha = (tau > 0 && !this._isRiveTransition()) ? 1 - Math.exp(-dtMs / tau) : 1;
 
       const written = Object.create(null);
 
@@ -1793,15 +1854,50 @@ When answering, speak naturally and conversationally — do not read the knowled
         // Two azIds can share one Rive input (custom riveInputMap) — keep the louder one.
         if (written[inputName] !== undefined && written[inputName] >= cur) continue;
         written[inputName] = cur;
+      }
+
+      // Push to Rive only when an input's (integer) value actually changes.
+      // The state machine treats a number input as an event of sorts — a
+      // speed value re-set every frame is at best wasted WASM calls and at
+      // worst restarts the transition it's driving.
+      for (const inputName in written) {
         const inp = this._riveInputs[inputName];
-        if (inp) inp.value = Math.max(0, Math.min(100, cur));
+        if (!inp) continue;
+        const v = Math.round(Math.max(0, Math.min(100, written[inputName])));
+        if (this._riveWritten[inputName] === v) continue;
+        this._riveWritten[inputName] = v;
+        inp.value = v;
       }
     }
 
-    _timedMouthValue(progress) {
+    _isRiveTransition() {
+      return this._opts.visemeSpeedMode === 'rive-transition';
+    }
+
+    /**
+     * 'rive-transition' mode: the speed value to write for a mouth pose that
+     * should be reached in about `durationMs`. Short = fast (high value),
+     * long = slow (low value); 100 is Rive's "instant".
+     */
+    _riveTransitionValue(durationMs) {
+      const o = this._opts;
+      if (o.visemeTransitionValue !== 'auto') return o.visemeTransitionValue;
+      const ms = Math.max(1, Number(durationMs) || RIVE_TRANSITION_DIRECT_MS);
+      const raw = (RIVE_TRANSITION_GAIN / ms) * o.visemeTransitionScale;
+      return Math.round(Math.max(o.visemeTransitionMinValue, Math.min(o.visemeTransitionMaxValue, raw)));
+    }
+
+    /** Value written to the silence input when the mouth is told to rest (not a scheduled pause). */
+    _restValue() {
+      return this._isRiveTransition() ? this._riveTransitionValue(RIVE_TRANSITION_REST_MS) : this._opts.visemeMinValue;
+    }
+
+    _timedMouthValue(progress, durationMs) {
       const minValue = this._opts.visemeMinValue;
       const maxValue = this._opts.visemeMaxValue;
       if (this._opts.visemeSpeedMode === 'instant') return maxValue;
+      // One constant speed for the whole viseme; Rive does the movement.
+      if (this._isRiveTransition()) return this._riveTransitionValue(durationMs);
 
       // Progress is normalized to the spoken viseme duration. The mouth starts
       // at 1 and reaches 100 close to the end of the viseme instead of jumping.
@@ -1840,7 +1936,7 @@ When answering, speak naturally and conversationally — do not read the knowled
 
       if (domW === -Infinity) {
         domId = 0;
-        const v = opts.immediate ? this._opts.visemeMaxValue : this._opts.visemeMinValue;
+        const v = opts.immediate ? this._opts.visemeMaxValue : this._restValue();
         this._wTarget[0] = v;
         if (opts.immediate) this._wCurrent[0] = v;
       }
@@ -1864,11 +1960,16 @@ When answering, speak naturally and conversationally — do not read the knowled
     }
 
     _setAzureViseme(id, opts = {}) {
-      // Direct rest/silence calls close the mouth fully. Scheduled silence still
-      // ramps 1→100 inside _driveSchedule when a pause is part of speech timing.
-      const value = (opts.immediate || id === 0)
-        ? this._opts.visemeMaxValue
-        : this._opts.visemeMinValue;
+      // Direct (unscheduled) pose calls. Scheduled visemes — pauses included —
+      // get their value from _driveSchedule based on their spoken duration.
+      //   immediate  → 100 (snap; rest pose on connect/interrupt/stop)
+      //   rive mode  → a soft close for silence, a normal-speed move otherwise
+      //   timed-ramp → silence closes fully, other poses start at the ramp floor
+      let value;
+      if (opts.immediate) value = this._opts.visemeMaxValue;
+      else if (this._isRiveTransition()) {
+        value = this._riveTransitionValue(id === 0 ? RIVE_TRANSITION_REST_MS : RIVE_TRANSITION_DIRECT_MS);
+      } else value = id === 0 ? this._opts.visemeMaxValue : this._opts.visemeMinValue;
       this._setVisemeWeights({ [id]: value }, opts);
     }
 
@@ -1994,11 +2095,14 @@ When answering, speak naturally and conversationally — do not read the knowled
 
         if (nowMs >= curr.startMs) {
           const currProgress = clamp01((nowMs - curr.startMs) / Math.max(1, curr.durationMs));
-          values[curr.azId] = this._timedMouthValue(currProgress);
+          values[curr.azId] = this._timedMouthValue(currProgress, curr.durationMs);
 
           // Start the next viseme a little early at a small value. This removes
           // the hard cut between mouth shapes without forcing every input to 100.
-          if (next && this._opts.visemeSpeedMode !== 'instant') {
+          // Not needed in 'rive-transition': the switch itself is animated by
+          // Rive at the incoming viseme's speed, and holding two speed inputs
+          // at once would have both poses pulling against each other.
+          if (next && this._opts.visemeSpeedMode === 'timed-ramp') {
             const overlapMs = Math.min(this._opts.visemeOverlapMs, Math.max(0, curr.durationMs * 0.45));
             const overlapStart = curr.endMs - overlapMs;
             if (overlapMs > 0 && nowMs >= overlapStart && next.azId !== curr.azId) {
@@ -2021,14 +2125,25 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._audioCtx && this._audioCtx.currentTime < this._nextPlayAt + 0.1;
         if (vol > 0.0002 && audioIsPlaying) {
           const jawAmp = clamp01(vol / 0.014 * ampSens);
-          const jawValue = Math.round(
-            this._opts.visemeMinValue +
-            (this._opts.visemeMaxValue - this._opts.visemeMinValue) * jawAmp
-          );
-          if (jawValue > this._opts.visemeMinValue) {
-            this._setVisemeWeights({ 1: jawValue }); // az viseme 1 = aa (wide open)
+          if (this._isRiveTransition()) {
+            // Value is a speed here, so loudness sets how briskly the jaw
+            // opens; quiet audio rests the mouth instead of half-opening it.
+            if (jawAmp > 0.12) {
+              const lo = this._opts.visemeTransitionMinValue, hi = this._opts.visemeTransitionMaxValue;
+              this._setVisemeWeights({ 1: Math.round(lo + (hi - lo) * jawAmp) }); // az viseme 1 = aa (wide open)
+            } else {
+              this._setAzureViseme(0);
+            }
           } else {
-            this._setAzureViseme(0);
+            const jawValue = Math.round(
+              this._opts.visemeMinValue +
+              (this._opts.visemeMaxValue - this._opts.visemeMinValue) * jawAmp
+            );
+            if (jawValue > this._opts.visemeMinValue) {
+              this._setVisemeWeights({ 1: jawValue }); // az viseme 1 = aa (wide open)
+            } else {
+              this._setAzureViseme(0);
+            }
           }
         } else {
           this._setAzureViseme(0);

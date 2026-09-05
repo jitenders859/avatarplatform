@@ -6,6 +6,8 @@ const { authRequired, optionalAuth } = require('../middleware/auth');
 const { invalidateProjectCache } = require('../cache');
 const { safeFetch, assertSafeUrl } = require('../services/safeFetch');
 const { validate, schemas } = require('../middleware/validate');
+const { userPlanId } = require('../services/usage');
+const { sendTeamInviteEmail } = require('../services/email');
 const storage = require('../services/storage');
 const { synthesizeSpeech, TtsError } = require('../services/tts');
 const { rateLimit } = require('express-rate-limit');
@@ -66,12 +68,37 @@ router.get('/characters', optionalAuth, async (req, res) => {
   res.json({ characters: await listAvailableCharacters(req.user?.id) });
 });
 
+// leadCount folded in here (one grouped query) rather than the dashboard
+// firing one GET /:id/leads?limit=1 per project just to read its total —
+// see improvement-prompts.md Prompt P1-1 item 4.
 router.get('/', authRequired, async (req, res) => {
-  const projects = await db.findAll('projects', { userId: req.user.id }, { orderBy: 'createdAt', order: 'desc' });
-  res.json({ projects: projects.map(strip) });
+  const projects = await db.query(
+    `SELECT p.*, COUNT(l.id)::int AS lead_count
+       FROM projects p
+       LEFT JOIN leads l ON l.project_id = p.id
+      WHERE p.user_id = $1
+      GROUP BY p.id
+      ORDER BY p.created_at DESC`,
+    [req.user.id]
+  );
+  res.json({ projects });
 });
 
+// Email-verification soft gate — time-based rather than an outright block
+// on unverified accounts, so a new signup can still create their first
+// chatbot immediately (blocking that would cost more signups than an
+// unverified email costs in abuse risk). After the grace window, an
+// unverified account can't create MORE projects until they verify.
+const VERIFY_GRACE_MS = 72 * 3600000;
+
 router.post('/', authRequired, validate(schemas.createProject), async (req, res) => {
+  if (!req.user.emailVerifiedAt && Date.now() - req.user.createdAt > VERIFY_GRACE_MS) {
+    return res.status(403).json({
+      error: 'Please verify your email to create more chatbots.',
+      code: 'EMAIL_NOT_VERIFIED',
+    });
+  }
+
   const { name, characterId, systemPrompt, voice, voiceEngine } = req.body;
 
   const { checkLimit } = require('../services/usage');
@@ -105,6 +132,7 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
     fullScreenOnDesktop: false,
     fullScreenOnMobile: false,
     showFullScreenToggle: false,
+    showCharacterFullscreen: false,
     widgetOffsetX: 0,
     widgetOffsetY: 0,
     // Avatar placement
@@ -120,13 +148,90 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
     webhookSecret: crypto.randomBytes(32).toString('hex'),
     createdAt: Date.now(),
   });
-  res.json({ project: strip(project) });
+  res.json({ project });
 });
 
+// Team members (project_members) get read-only access to a project's
+// Conversations + Analytics data — see improvement-prompts.md Prompt F4
+// item 3. Deliberately scoped narrow (read-only, two tabs) rather than
+// full co-editing, so this is the only place that needs to know about
+// membership: everything else (settings, knowledge, leads, billing-ish
+// actions) stays owner-only via the existing `userId: req.user.id` filter.
+async function findProjectForRead(id, userId) {
+  const owned = await db.findOne('projects', { id, userId });
+  if (owned) return { project: owned, isOwner: true };
+  const project = await db.findOne('projects', { id });
+  if (!project) return null;
+  const member = await db.findOne('projectMembers', { projectId: id, userId });
+  if (!member) return null;
+  return { project, isOwner: false };
+}
+
 router.get('/:id', authRequired, async (req, res) => {
+  const result = await findProjectForRead(req.params.id, req.user.id);
+  if (!result) return res.status(404).json({ error: 'Project not found' });
+  if (result.isOwner) return res.json({ project: result.project, isOwner: true });
+  // Members never see the webhook secret — they can't manage the webhook,
+  // so there's no reason for it to leave the server for their session.
+  const { webhookSecret: _ws, ...readOnlyProject } = result.project;
+  res.json({ project: readOnlyProject, isOwner: false });
+});
+
+router.get('/:id/members', authRequired, async (req, res) => {
   const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
   if (!project) return res.status(404).json({ error: 'Project not found' });
-  res.json({ project: strip(project) });
+  const members = await db.query(
+    `SELECT pm.id, pm.user_id, pm.created_at, u.email, u.name
+       FROM project_members pm JOIN users u ON u.id = pm.user_id
+      WHERE pm.project_id = $1
+      ORDER BY pm.created_at ASC`,
+    [project.id]
+  );
+  res.json({ members });
+});
+
+// Team members are a Business-plan feature (see plans.js) — the invite
+// itself is gated here rather than hiding the whole endpoint, so an
+// existing member list still loads (and can be pruned) if an owner
+// downgrades off Business.
+router.post('/:id/members', authRequired, validate(schemas.inviteMember), async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const planId = await userPlanId(req.user.id);
+  if (planId !== 'business') {
+    return res.status(403).json({ error: 'Team members require the Business plan.', code: 'BUSINESS_PLAN_REQUIRED' });
+  }
+
+  const { email } = req.body;
+  const invitee = await db.findOne('users', { email });
+  if (!invitee) {
+    return res.status(404).json({ error: "No AvatarPlatform account found for that email — ask them to sign up first, then invite them." });
+  }
+  if (invitee.id === req.user.id) {
+    return res.status(400).json({ error: "You can't invite yourself." });
+  }
+
+  const existing = await db.findOne('projectMembers', { projectId: project.id, userId: invitee.id });
+  if (existing) return res.status(409).json({ error: 'Already a member of this chatbot.' });
+
+  const member = await db.insert('projectMembers', {
+    id: uuid(),
+    projectId: project.id,
+    userId: invitee.id,
+    invitedBy: req.user.id,
+    createdAt: Date.now(),
+  });
+  setImmediate(() => sendTeamInviteEmail(invitee.email, project.name, req.user.email).catch(() => {}));
+  res.json({ member: { ...member, email: invitee.email, name: invitee.name } });
+});
+
+router.delete('/:id/members/:memberId', authRequired, async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const removed = await db.remove('projectMembers', { id: req.params.memberId, projectId: project.id });
+  if (!removed) return res.status(404).json({ error: 'Member not found' });
+  res.json({ ok: true });
 });
 
 router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, res) => {
@@ -162,7 +267,7 @@ router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, r
 
   const updated = await db.update('projects', project.id, patch);
   invalidateProjectCache(project.publicId);
-  res.json({ project: strip(updated) });
+  res.json({ project: updated });
 });
 
 router.delete('/:id', authRequired, async (req, res) => {
@@ -175,8 +280,9 @@ router.delete('/:id', authRequired, async (req, res) => {
 });
 
 router.get('/:id/sessions', authRequired, async (req, res) => {
-  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
-  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const result = await findProjectForRead(req.params.id, req.user.id);
+  if (!result) return res.status(404).json({ error: 'Project not found' });
+  const { project } = result;
 
   // Use SQL to avoid N+1 message-count queries
   const sessions = await db.query(
@@ -198,8 +304,9 @@ router.get('/:id/sessions', authRequired, async (req, res) => {
 });
 
 router.get('/:id/sessions/:sessionId', authRequired, async (req, res) => {
-  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
-  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const result = await findProjectForRead(req.params.id, req.user.id);
+  if (!result) return res.status(404).json({ error: 'Project not found' });
+  const { project } = result;
 
   const session = await db.findOne('sessions', { id: req.params.sessionId, projectId: project.id });
   if (!session) return res.status(404).json({ error: 'Session not found' });
@@ -323,6 +430,39 @@ router.post('/:id/voice-preview', authRequired, voicePreviewLimiter, validate(sc
   }
 });
 
+// Recent attempts logged by services/webhookDelivery.js — see
+// improvement-prompts.md Prompt F4 item 6. Most-recent-first, capped so a
+// chatty webhook (one row per user message) can't return an unbounded page.
+router.get('/:id/webhook/deliveries', authRequired, async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const deliveries = await db.query(
+    `SELECT id, event_type, status, attempt, response_status, error, created_at, delivered_at
+       FROM webhook_deliveries
+      WHERE project_id = $1
+      ORDER BY created_at DESC
+      LIMIT 50`,
+    [project.id]
+  );
+  res.json({ deliveries });
+});
+
+// Rotating invalidates the old secret immediately — any in-flight
+// signature verification on the receiving end using the old value will
+// fail until the owner updates it there too. Deliberately synchronous
+// (not soft-expired) since there's no way to signal "old secret still
+// valid for N minutes" to a receiver that doesn't know this API.
+router.post('/:id/webhook/rotate-secret', authRequired, async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const webhookSecret = crypto.randomBytes(32).toString('hex');
+  const updated = await db.update('projects', project.id, { webhookSecret });
+  invalidateProjectCache(project.publicId);
+  res.json({ webhookSecret: updated.webhookSecret });
+});
+
 router.post('/:id/duplicate', authRequired, async (req, res) => {
   const source = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
   if (!source) return res.status(404).json({ error: 'Project not found' });
@@ -341,13 +481,11 @@ router.post('/:id/duplicate', authRequired, async (req, res) => {
     webhookSecret: crypto.randomBytes(32).toString('hex'),
     createdAt: Date.now(),
   });
-  res.json({ project: strip(project) });
+  res.json({ project });
 });
 
-function strip(p) {
-  if (!p) return p;
-  const { ...rest } = p;
-  return rest;
-}
-
+// Project GETs return the full row, webhookSecret included — the owner
+// needs it to verify webhook signatures in their own receiving endpoint
+// (see project.html's Webhook settings, which displays it), so it's
+// intentionally not stripped.
 module.exports = { router };

@@ -12,7 +12,7 @@ test('tierUpsert rejects a whitespace-only name (regression: .trim() must run be
     name: '   ',
     limits: {
       projects: 1,
-      filesPerProject: 1,
+      maxFiles: 1,
       storageMb: 1,
       monthlyMessages: 1,
       monthlyEmbeddingChars: 1,
@@ -27,7 +27,7 @@ test('tierUpsert accepts a valid payload and trims the name', () => {
     name: '  Enterprise  ',
     limits: {
       projects: 10,
-      filesPerProject: 50,
+      maxFiles: 50,
       storageMb: 1024,
       monthlyMessages: 5000,
       monthlyEmbeddingChars: 1000000,
@@ -43,7 +43,7 @@ test('tierUpsert rejects a payload missing a limits key', () => {
     name: 'Enterprise',
     limits: {
       projects: 10,
-      filesPerProject: 50,
+      maxFiles: 50,
       storageMb: 1024,
       monthlyMessages: 5000,
       // monthlyEmbeddingChars missing
@@ -58,7 +58,7 @@ test('tierUpsert rejects a non-integer limit value', () => {
     name: 'Enterprise',
     limits: {
       projects: 10.5,
-      filesPerProject: 50,
+      maxFiles: 50,
       storageMb: 1024,
       monthlyMessages: 5000,
       monthlyEmbeddingChars: 1000000,
@@ -73,7 +73,7 @@ test('tierUpsert rejects a negative limit value', () => {
     name: 'Enterprise',
     limits: {
       projects: 10,
-      filesPerProject: 50,
+      maxFiles: 50,
       storageMb: 1024,
       monthlyMessages: 5000,
       monthlyEmbeddingChars: 1000000,
@@ -91,7 +91,7 @@ test('tierUpsert rejects an unknown extra key inside limits (regression: .strict
     name: 'Enterprise',
     limits: {
       projects: 10,
-      filesPerProject: 50,
+      maxFiles: 50,
       storageMb: 1024,
       monthlyMessages: 5000,
       monthlyEmbeddingChars: 1000000,

@@ -7,7 +7,7 @@ async function loadTiersTab() {
       <form id="tier-form" class="col gap-sm">
         <input type="text" id="tier-name" placeholder="Tier name (e.g. Acme Corp bump)" required class="input" />
         <div class="row gap-sm" style="flex-wrap:wrap">
-          ${['projects', 'filesPerProject', 'storageMb', 'monthlyMessages', 'monthlyEmbeddingChars', 'urlSources']
+          ${['projects', 'maxFiles', 'storageMb', 'monthlyMessages', 'monthlyEmbeddingChars', 'urlSources']
             .map(f => `<input type="number" min="1" name="${f}" placeholder="${f}" required class="input" style="max-width:180px" />`).join('')}
         </div>
         <button type="submit" class="btn btn-primary" style="align-self:flex-start">Create tier</button>
@@ -19,7 +19,7 @@ async function loadTiersTab() {
     e.preventDefault();
     const fd = new FormData(e.target);
     const limits = {};
-    for (const f of ['projects', 'filesPerProject', 'storageMb', 'monthlyMessages', 'monthlyEmbeddingChars', 'urlSources']) {
+    for (const f of ['projects', 'maxFiles', 'storageMb', 'monthlyMessages', 'monthlyEmbeddingChars', 'urlSources']) {
       limits[f] = parseInt(fd.get(f), 10);
     }
     try {
@@ -44,10 +44,14 @@ async function renderTiersTable() {
   }
   const rows = tiers.map(t => `
     <tr>
-      <td>${escapeHtml(t.name)}</td>
-      <td class="muted text-sm">${escapeHtml(t.id)}</td>
-      <td class="text-sm">${Object.entries(t.limits).map(([k, v]) => `${escapeHtml(k)}: ${formatNum(v)}`).join(', ')}</td>
-      <td><button class="btn btn-ghost text-sm" data-delete-tier="${escapeHtml(t.id)}" style="color:var(--danger)">Delete</button></td>
+      <td style="font-weight:500">${escapeHtml(t.name)}</td>
+      <td class="muted text-sm"><code class="adm-code">${escapeHtml(t.id)}</code></td>
+      <td>
+        <div class="row gap-sm" style="flex-wrap:wrap">
+          ${Object.entries(t.limits).map(([k, v]) => `<span class="pill" title="${escapeHtml(k)}">${escapeHtml(k)}: ${formatNum(v)}</span>`).join('')}
+        </div>
+      </td>
+      <td class="adm-table-actions"><button class="btn btn-danger btn-sm" data-delete-tier="${escapeHtml(t.id)}">Delete</button></td>
     </tr>`).join('');
   wrap.innerHTML = `
     <div class="table-scroll">

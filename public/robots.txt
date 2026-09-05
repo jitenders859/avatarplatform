@@ -1,0 +1,15 @@
+User-agent: *
+Allow: /
+Allow: /docs
+Allow: /docs/
+Disallow: /dashboard
+Disallow: /project
+Disallow: /billing
+Disallow: /analytics
+Disallow: /account
+Disallow: /admin
+Disallow: /embed
+Disallow: /e/
+Disallow: /api/
+
+Sitemap: https://avatarplatform.ai/sitemap.xml

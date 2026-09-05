@@ -25,7 +25,17 @@ const logger = require('../logger').child({ module: 'embed' });
 const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { getRateLimitStore } = require('../services/rateLimitStore');
 const { safeFetch } = require('../services/safeFetch');
+const { queueWebhookDelivery } = require('../services/webhookDelivery');
+const settings = require('../services/settings');
 const router = express.Router();
+
+// Owners can override the default "usage limit reached" copy per project
+// (project.widgetMessages.limitReachedMessage — see project.html's Widget
+// tab) — see improvement-prompts.md Prompt F4 item 4. Falls back to
+// checkLimit's generic reason when unset.
+function limitMessageFor(project, limitCheck) {
+  return (project.widgetMessages && project.widgetMessages.limitReachedMessage) || limitCheck.reason;
+}
 
 // Per-(visitor, project) cap for the three Gemini-paying endpoints (/ask,
 // /study, and the embedding-heavy /retrieve), IN ADDITION to the generic
@@ -48,7 +58,6 @@ const aiCostLimiter = rateLimit({
   store: getRateLimitStore('ai'),
 });
 
-const STUDY_MODEL = process.env.STUDY_MODEL || 'gemini-2.5-flash';
 const MAX_TOOL_ITERATIONS = 5;
 
 // Browser-facing key for the Gemini Live WebSocket (browser → Gemini direct,
@@ -58,14 +67,16 @@ const MAX_TOOL_ITERATIONS = 5;
 // embeddings, /ask, /study, and file processing, and shipping it to every
 // visitor's browser would let anyone burn the platform's own Gemini quota.
 // If someone sets PUBLIC_GEMINI_API_KEY to the SAME value as GEMINI_API_KEY
-// we treat it as unset too (same leak), relying on /ask regardless.
-// When effectively unset, voice is disabled and the widget degrades to
-// text-only mode (server-side /ask) — see voiceEnabled below. server.js
-// warns at boot in both cases.
-const PUBLIC_API_KEY = (() => {
-  const raw = process.env.PUBLIC_GEMINI_API_KEY || '';
-  return raw && raw !== process.env.GEMINI_API_KEY ? raw : '';
-})();
+// we treat it as unset too (same leak), relying on /ask regardless. Reads
+// through services/settings.js so an admin-panel override (or a cleared
+// one) takes effect without a redeploy.
+async function getPublicApiKey() {
+  const [raw, serverKey] = await Promise.all([
+    settings.getSetting('PUBLIC_GEMINI_API_KEY'),
+    settings.getSetting('GEMINI_API_KEY'),
+  ]);
+  return raw && raw !== serverKey ? raw : '';
+}
 
 async function findByPublicId(publicId) {
   if (projectCache.has(publicId)) return projectCache.get(publicId);
@@ -152,6 +163,7 @@ router.get('/:publicId/config', async (req, res) => {
     // for Free-plan owners as a UX hint, but this is the enforcement point.
     const planId = await userPlanId(project.userId);
     const messageLimitCheck = await checkLimit(project.userId, 'message', 1);
+    const publicApiKey = await getPublicApiKey();
 
     res.json({
       project: {
@@ -176,6 +188,7 @@ router.get('/:publicId/config', async (req, res) => {
         fullScreenOnDesktop:   project.fullScreenOnDesktop   === true,
         fullScreenOnMobile:    project.fullScreenOnMobile    === true,
         showFullScreenToggle:  project.showFullScreenToggle  === true,
+        showCharacterFullscreen: project.showCharacterFullscreen === true,
         widgetOffsetX:         project.widgetOffsetX         || 0,
         widgetOffsetY:         project.widgetOffsetY         || 0,
         // Avatar placement
@@ -219,10 +232,13 @@ router.get('/:publicId/config', async (req, res) => {
       // key is omitted entirely (never falls back to the server key) and
       // voiceEnabled=false tells the widget to run in text-only mode via
       // the server-side /ask path.
-      apiKey: messageLimitCheck.ok && PUBLIC_API_KEY ? PUBLIC_API_KEY : null,
-      voiceEnabled: messageLimitCheck.ok && !!PUBLIC_API_KEY,
+      apiKey: messageLimitCheck.ok && publicApiKey ? publicApiKey : null,
+      voiceEnabled: messageLimitCheck.ok && !!publicApiKey,
       limitReached: !messageLimitCheck.ok,
-      limitMessage: messageLimitCheck.ok ? null : messageLimitCheck.reason,
+      limitMessage: messageLimitCheck.ok ? null : limitMessageFor(project, messageLimitCheck),
+      widgetMessages: {
+        inputPlaceholder: (project.widgetMessages && project.widgetMessages.inputPlaceholder) || null,
+      },
       model: 'gemini-3.1-flash-live-preview',
     });
   } catch (e) {
@@ -346,7 +362,7 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
     if (rejectIfSuspended(project, res)) return;
 
     const limitCheck = await checkLimit(project.userId, 'message', 1);
-    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason });
+    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason, limitReached: true, limitMessage: limitMessageFor(project, limitCheck) });
 
     const ip = req.ip || 'unknown';
     const { question, sessionId: incomingSessionId } = req.body;
@@ -395,7 +411,7 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
     } else {
       const prompt = `${systemPrompt}\n\n${contextText}\n\nUser question: ${String(question).slice(0, 1000)}\n\nAnswer:`;
       try {
-        const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+        const genai = new GoogleGenerativeAI(await settings.getSetting('GEMINI_API_KEY'));
         const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
         const result = await model.generateContent(prompt);
         answer = result.response.text();
@@ -510,7 +526,7 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
     }
 
     const limitCheck = await checkLimit(project.userId, 'message', 1);
-    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason });
+    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason, limitReached: true, limitMessage: limitMessageFor(project, limitCheck) });
 
     const ip = req.ip || 'unknown';
     const { message, sessionId: incomingSessionId } = req.body;
@@ -562,9 +578,13 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
     const toolCalls = [];
     let answer = '';
     try {
-      const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+      const [geminiApiKey, studyModel] = await Promise.all([
+        settings.getSetting('GEMINI_API_KEY'),
+        settings.getSetting('STUDY_MODEL'),
+      ]);
+      const genai = new GoogleGenerativeAI(geminiApiKey);
       const model = genai.getGenerativeModel({
-        model: STUDY_MODEL,
+        model: studyModel || 'gemini-2.5-flash',
         systemInstruction,
         tools: declarations.length ? [{ functionDeclarations: declarations }] : undefined,
       });
@@ -820,7 +840,7 @@ router.post('/:publicId/log', validate(schemas.log), async (req, res) => {
       return res.status(402).json({
         error: limitCheck.reason,
         limitReached: true,
-        limitMessage: limitCheck.reason,
+        limitMessage: limitMessageFor(project, limitCheck),
         sessionId: sessionId || null,
       });
     }
@@ -847,26 +867,15 @@ router.post('/:publicId/log', validate(schemas.log), async (req, res) => {
     } catch (_) { /* best effort */ }
 
     if (project.webhookUrl) {
-      setImmediate(async () => {
-        try {
-          const payload = JSON.stringify({
-            event: 'message',
-            publicId: project.publicId,
-            sessionId: sid,
-            role,
-            text: String(text).slice(0, 2000),
-            timestamp: Date.now(),
-          });
-          const sig = 'sha256=' + crypto.createHmac('sha256', project.webhookSecret || '').update(payload).digest('hex');
-          await safeFetch(project.webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'X-Avatar-Signature': sig },
-            body: payload,
-            timeout: 5000,
-          });
-        } catch (e) {
-          logger.warn({ err: e.message }, 'webhook delivery failed');
-        }
+      setImmediate(() => {
+        queueWebhookDelivery(project, 'message', {
+          event: 'message',
+          publicId: project.publicId,
+          sessionId: sid,
+          role,
+          text: String(text).slice(0, 2000),
+          timestamp: Date.now(),
+        }).catch((e) => logger.warn({ err: e.message }, 'webhook delivery failed to queue'));
       });
     }
   }

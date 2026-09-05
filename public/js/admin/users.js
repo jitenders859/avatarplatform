@@ -1,7 +1,6 @@
 // ── Users tab ─────────────────────────────────────────────────
 let usersSearchTimer = null;
-let usersPage = 1;
-let usersSearch = '';
+let usersCurrentPage = 1;
 
 async function loadUsersTab() {
   const section = document.getElementById('tab-users');
@@ -16,56 +15,62 @@ async function loadUsersTab() {
   `;
   document.getElementById('users-search').addEventListener('input', (e) => {
     clearTimeout(usersSearchTimer);
-    usersSearchTimer = setTimeout(() => { usersSearch = e.target.value; usersPage = 1; renderUsersTable(); }, 300);
+    usersSearchTimer = setTimeout(() => { usersCurrentPage = 1; renderUsersTable(e.target.value); }, 300);
   });
   document.getElementById('users-export-btn').addEventListener('click', async () => {
     try {
-      const { users } = await AdminAPI.exportUsers(usersSearch);
+      const { users } = await AdminAPI.exportUsers(document.getElementById('users-search').value);
       if (!users.length) return adminToast('No users to export', 'error');
       const rows = [['id', 'email', 'name', 'plan', 'plan_source', 'suspended', 'joined']];
       for (const u of users) rows.push([u.id, u.email, u.name || '', u.planId, u.planSource, u.suspended ? 'yes' : 'no', new Date(u.createdAt).toISOString()]);
       downloadCsv('users.csv', rows);
     } catch (err) { adminToast(err.message, 'error'); }
   });
-  usersPage = 1;
-  usersSearch = '';
-  await renderUsersTable();
+  usersCurrentPage = 1;
+  await renderUsersTable('');
 }
 
-async function renderUsersTable() {
+async function renderUsersTable(search, page = 1) {
+  usersCurrentPage = page;
   const tableWrap = document.getElementById('users-table');
   tableWrap.innerHTML = '<div class="adm-skeleton-row"></div><div class="adm-skeleton-row"></div><div class="adm-skeleton-row"></div>';
-  let users, page, pageSize, total;
+  document.getElementById('users-pagination').innerHTML = '';
+  let users, total, pageSize;
   try {
-    ({ users, page, pageSize, total } = await AdminAPI.listUsers(usersSearch, usersPage));
+    ({ users, total, pageSize } = await AdminAPI.listUsers(search, page));
   } catch (err) {
     tableWrap.innerHTML = `<div class="adm-error-state">Could not load users: ${escapeHtml(err.message)}</div>`;
     return;
   }
   const rows = users.map(u => `
-    <tr class="user-row" data-id="${u.id}" style="cursor:pointer" tabindex="0" role="button">
-      <td>${escapeHtml(u.email)}</td>
-      <td>${escapeHtml(u.name || '')}</td>
-      <td><span class="pill ${u.planSource === 'admin' ? 'pill-warn' : 'pill-info'}">${escapeHtml(u.planId)} (${u.planSource})</span></td>
-      <td>${u.suspended ? '<span class="pill pill-danger">Suspended</span>' : ''}</td>
-      <td>${new Date(u.createdAt).toLocaleDateString()}</td>
+    <tr class="user-row" data-id="${u.id}" tabindex="0" role="button">
+      <td>
+        <div class="row gap-sm" style="align-items:center">
+          ${initialsAvatar(u.name || u.email)}
+          <div class="col" style="gap:1px">
+            <span style="font-weight:500">${escapeHtml(u.email)}</span>
+            ${u.name ? `<span class="text-sm muted">${escapeHtml(u.name)}</span>` : ''}
+          </div>
+        </div>
+      </td>
+      <td><span class="pill ${u.planSource === 'admin' ? 'pill-warn' : 'pill-info'}">${escapeHtml(u.planId)} · ${escapeHtml(u.planSource)}</span></td>
+      <td>${u.suspended ? '<span class="pill pill-danger">Suspended</span>' : '<span class="pill pill-success">Active</span>'}</td>
+      <td class="text-sm muted">${new Date(u.createdAt).toLocaleDateString()}</td>
+      <td class="adm-table-actions"><span class="adm-row-chevron" aria-hidden="true">›</span></td>
     </tr>`).join('');
   tableWrap.innerHTML = `
     <div class="table-scroll">
     <table class="table">
-      <thead><tr><th>Email</th><th>Name</th><th>Plan</th><th>Status</th><th>Joined</th></tr></thead>
+      <thead><tr><th>User</th><th>Plan</th><th>Status</th><th>Joined</th><th></th></tr></thead>
       <tbody>${rows || '<tr><td colspan="5" class="muted">No users found</td></tr>'}</tbody>
     </table>
     </div>`;
+  renderPagination(document.getElementById('users-pagination'), { page, pageSize, total }, (p) => renderUsersTable(search, p));
   for (const row of document.querySelectorAll('.user-row')) {
     const open = () => renderUserDetail(row.dataset.id);
     row.addEventListener('click', open);
     row.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
   }
-  renderPagination(document.getElementById('users-pagination'), {
-    page, pageSize, total,
-    onPage: (p) => { usersPage = p; renderUsersTable(); },
-  });
 }
 
 async function renderUserDetail(userId) {
@@ -74,7 +79,7 @@ async function renderUserDetail(userId) {
   const c = usage.counters, l = usage.limits;
   const items = [
     { label: 'Chatbots', current: c.projects, limit: l.projects, unit: '' },
-    { label: 'Files (across all)', current: c.files, limit: l.filesPerProject, unit: '' },
+    { label: 'Files (across all)', current: c.files, limit: l.maxFiles, unit: '' },
     { label: 'Storage', current: c.storageMb, limit: l.storageMb, unit: ' MB' },
     { label: 'URL sources', current: c.urlSources, limit: l.urlSources, unit: '' },
     { label: 'Messages this month', current: c.messages, limit: l.monthlyMessages, unit: '' },
@@ -122,7 +127,8 @@ async function renderUserDetail(userId) {
       ${override ? '<button class="btn btn-ghost" id="clear-override-btn">Clear override</button>' : ''}
       <button class="btn btn-ghost" id="suspend-toggle-btn">${user.suspended ? 'Unsuspend' : 'Suspend'}</button>
       <button class="btn btn-ghost" id="impersonate-btn">View as user</button>
-      <button class="btn btn-ghost" id="delete-user-btn" style="color:var(--danger)">Delete account</button>
+      <span class="spacer"></span>
+      <button class="btn btn-danger" id="delete-user-btn">Delete account</button>
     </div>
     <h3 style="font-size:15px;margin:20px 0 10px">Projects</h3>
     <div class="table-scroll">
@@ -162,7 +168,7 @@ async function renderUserDetail(userId) {
         await AdminAPI.patchUser(userId, { adminPlanId: null });
         adminToast('Override cleared', 'success');
         renderUserDetail(userId);
-        renderUsersTable();
+        renderUsersTable(document.getElementById('users-search').value, usersCurrentPage);
       } catch (err) { adminToast(err.message, 'error'); }
     });
   }
@@ -172,7 +178,7 @@ async function renderUserDetail(userId) {
       await AdminAPI.patchUser(userId, { suspended: !user.suspended });
       adminToast(user.suspended ? 'User unsuspended' : 'User suspended', 'success');
       renderUserDetail(userId);
-      renderUsersTable();
+      renderUsersTable(document.getElementById('users-search').value, usersCurrentPage);
     } catch (err) { adminToast(err.message, 'error'); }
   });
 
@@ -191,7 +197,7 @@ async function renderUserDetail(userId) {
       await AdminAPI.deleteUser(userId, typed);
       adminToast('User deleted', 'success');
       detail.hidden = true;
-      renderUsersTable();
+      renderUsersTable(document.getElementById('users-search').value, usersCurrentPage);
     } catch (err) { adminToast(err.message, 'error'); }
   });
 }
@@ -241,7 +247,7 @@ function openSetOverrideModal(userId, tiers, currentAdminPlanId) {
       adminToast('Tier override set', 'success');
       closeModal();
       renderUserDetail(userId);
-      renderUsersTable();
+      renderUsersTable(document.getElementById('users-search').value, usersCurrentPage);
     } catch (err) { adminToast(err.message, 'error'); }
   });
 }

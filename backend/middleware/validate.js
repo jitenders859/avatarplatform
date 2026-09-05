@@ -91,6 +91,12 @@ const schemas = {
     password: z.string().min(1, 'Password is required'),
   }),
 
+  contactMessage: z.object({
+    name: z.string().min(1, 'Name is required').max(120, 'Name too long').trim(),
+    email,
+    message: z.string().min(1, 'Message is required').max(5000, 'Message too long').trim(),
+  }),
+
   forgotPassword: z.object({
     email,
   }),
@@ -100,6 +106,10 @@ const schemas = {
     newPassword: password,
   }),
 
+  verifyEmail: z.object({
+    token: z.string().min(1, 'Verification token is required'),
+  }),
+
   createProject: z.object({
     name: z.string().min(1, 'Name is required').max(120, 'Name too long').trim(),
     characterId: z.string().optional(),
@@ -107,6 +117,10 @@ const schemas = {
     voice,
     voiceEngine,
   }).superRefine(checkVoiceForEngine),
+
+  inviteMember: z.object({
+    email: z.string().trim().toLowerCase().email('A valid email is required'),
+  }),
 
   // All fields optional — this backs a PATCH where any subset may be sent.
   // Cross-field checks that need DB state (characterId existence,
@@ -133,6 +147,7 @@ const schemas = {
     fullScreenOnDesktop: z.boolean().optional(),
     fullScreenOnMobile: z.boolean().optional(),
     showFullScreenToggle: z.boolean().optional(),
+    showCharacterFullscreen: z.boolean().optional(),
     avatarPosition: z.enum(['left', 'right'], { error: 'Invalid avatarPosition' }).optional(),
     avatarSize: z.enum(['small', 'medium', 'large', 'xlarge'], { error: 'Invalid avatarSize' }).optional(),
     showAvatarInLauncher: z.boolean().optional(),
@@ -149,6 +164,13 @@ const schemas = {
     awayMessage,
     conversationStarters,
     fallbackMessage,
+    // Owner-editable overrides for widget copy that's otherwise hardcoded
+    // English — see improvement-prompts.md Prompt F4 item 4. Both keys
+    // optional/independent; an unset key falls back to the widget default.
+    widgetMessages: z.object({
+      inputPlaceholder: z.string().max(100, 'inputPlaceholder too long').optional(),
+      limitReachedMessage: z.string().max(300, 'limitReachedMessage too long').optional(),
+    }).optional(),
   }).superRefine(checkVoiceForEngine),
 
   voicePreview: z.object({
@@ -237,6 +259,41 @@ const schemas = {
     expiresAt: z.number().int().positive().nullable().optional(),
   }).refine(d => d.suspended !== undefined || d.adminPlanId !== undefined, {
     message: 'Nothing to update',
+  }),
+
+  // Empty string clears the override (falls back to .env) — see
+  // services/settings.js setSetting.
+  adminSettingUpdate: z.object({
+    value: z.string().trim().max(500, 'value too long'),
+  }),
+
+  // Email templates (Prompt 5f) — subject/body only; see
+  // services/emailTemplates.js. `body` is the HTML template, so no length
+  // cap tight enough to matter here — generous ceiling just guards against
+  // an accidental multi-MB paste.
+  adminEmailTemplateUpdate: z.object({
+    subject: z.string().trim().min(1, 'subject is required').max(500, 'subject too long'),
+    body: z.string().min(1, 'body is required').max(50000, 'body too long'),
+  }),
+
+  // Feature-flag infra (admin-panel plan 5e) — flags are admin-defined, so
+  // unlike adminSettingUpdate's fixed key list, key is part of the create
+  // body and validated as an identifier here.
+  featureFlagCreate: z.object({
+    key: z.string().trim().min(1, 'key is required').max(80, 'key too long')
+      .regex(/^[a-z][a-z0-9_]*$/, 'key must match /^[a-z][a-z0-9_]*$/'),
+    description: z.string().trim().max(500, 'description too long').optional(),
+  }),
+
+  featureFlagUpdate: z.object({
+    enabled: z.boolean({ error: 'enabled must be a boolean' }),
+    description: z.string().trim().max(500, 'description too long').optional(),
+  }),
+
+  // Only a clear/moderation action today (Prompt 5c) — no admin full-replace
+  // of widget copy, so `clear` must be explicitly true.
+  adminClearWidgetMessages: z.object({
+    clear: z.literal(true, { error: 'clear must be true' }),
   }),
 
   adminDeleteUser: z.object({
@@ -393,7 +450,7 @@ const schemas = {
     name: z.string().trim().min(1, 'Name is required').max(80, 'Name too long'),
     limits: z.object({
       projects: z.number().int().positive(),
-      filesPerProject: z.number().int().positive(),
+      maxFiles: z.number().int().positive(),
       storageMb: z.number().int().positive(),
       monthlyMessages: z.number().int().positive(),
       monthlyEmbeddingChars: z.number().int().positive(),

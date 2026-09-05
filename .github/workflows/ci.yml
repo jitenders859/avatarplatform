@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: avatarplatform_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 22, not 20: "npm test" (below) passes node --test a glob string
+      # ('backend/**/*.test.js') — Node 20.x's test runner has no glob
+      # support at all for positional file args (even a single '*' fails
+      # with "Could not find ..."), so every run on Node 20 failed here
+      # before even reaching a single test. Glob support landed by 22.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      # Runs postinstall (npm run build -> terser lipsync-sdk.js), same as
+      # a real deploy — catches a broken build here instead of in
+      # production (see backend/server.js's boot-time check for the
+      # lipsync-sdk.min.js-missing case this would otherwise cause).
+      - name: Install dependencies
+        run: npm ci
+
+      # schema.sql is this project's single idempotent source of truth (no
+      # migration runner — see its own header comment and project.md's
+      # Database Setup section). Applying it to a throwaway Postgres here
+      # catches a syntax error or a statement that silently fails before
+      # it ever reaches a real deployment.
+      - name: Apply schema.sql to a scratch database
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d avatarplatform_ci -v ON_ERROR_STOP=1 -f supabase/schema.sql
+
+      - name: Run test suite
+        run: npm test

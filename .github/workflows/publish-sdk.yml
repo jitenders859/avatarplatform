@@ -1,0 +1,82 @@
+name: Publish SDK packages
+
+# Manually triggered rather than tag-push-triggered: bumping the version
+# (npm run sync-version, root package.json) and publishing are separate,
+# deliberate steps — this workflow only does the second one, so a bad
+# version bump can be caught and fixed before anything actually publishes.
+#
+# One-time setup this repo needs before this workflow can run:
+#   1. An npm access token with publish rights to the @avatar-platform
+#      scope, added as the NPM_TOKEN repository secret. If @avatar-platform
+#      isn't already an npm org/scope this account owns, create it (or
+#      pick a different scope and rename it consistently across all four
+#      packages/*/package.json "name" fields plus every docs/index.html
+#      npm-install snippet, plus this repo's README) before the first
+#      publish attempt — npm will otherwise reject the publish outright.
+#   2. npm provenance (--provenance below) requires the workflow run to
+#      have OIDC id-token write permission (granted below) and the
+#      package to be public.
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # for --provenance
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - run: npm ci
+
+      # Fails the run (rather than silently publishing stale versions) if
+      # someone forgot to run `npm run sync-version` after bumping root
+      # package.json's version before triggering this workflow.
+      - name: Verify package versions match root package.json
+        run: |
+          ROOT_VERSION=$(node -p "require('./package.json').version")
+          for pkg in js react react-native vue; do
+            PKG_VERSION=$(node -p "require('./packages/$pkg/package.json').version")
+            if [ "$ROOT_VERSION" != "$PKG_VERSION" ]; then
+              echo "packages/$pkg is at $PKG_VERSION, expected $ROOT_VERSION — run 'npm run sync-version' and commit the result first."
+              exit 1
+            fi
+          done
+
+      - name: Build packages
+        run: npm run build:sdk
+
+      - name: Run tests
+        run: npm test
+
+      - name: Publish @avatar-platform/js
+        working-directory: packages/js
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @avatar-platform/react
+        working-directory: packages/react
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @avatar-platform/vue
+        working-directory: packages/vue
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Publish @avatar-platform/react-native
+        working-directory: packages/react-native
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

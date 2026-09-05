@@ -223,6 +223,88 @@ test('public key equal to the server key is treated as unset', async (t) => {
   assert.equal(res.body.voiceEnabled, false);
 });
 
+// ── Case D: owner-customized widgetMessages (Prompt F4 item 4) ──────────
+test('widgetMessages overrides the default limit-reached copy and exposes an input placeholder', async (t) => {
+  checkLimitResult = { ok: true };
+  process.env.GEMINI_API_KEY = SERVER_KEY;
+  delete process.env.PUBLIC_GEMINI_API_KEY;
+  delete require.cache[require.resolve('./embed')];
+
+  // A distinct publicId, not just a distinct db stub — routes/embed.js
+  // caches project lookups in the shared, module-level projectCache (see
+  // cache.js) for 60s, so reusing 'test-public-id' here would silently
+  // serve the stale PROJECT object cached by the earlier cases above.
+  const CUSTOM_PROJECT = {
+    ...PROJECT,
+    publicId: 'test-public-id-custom-msgs',
+    widgetMessages: { inputPlaceholder: 'Ask away…', limitReachedMessage: "We're out of chat credits this month — email us!" },
+  };
+  const resolved = require.resolve('../db');
+  require.cache[resolved] = {
+    id: resolved, filename: resolved, loaded: true, children: [], paths: [],
+    exports: {
+      findOne: async (table) => (table === 'projects' ? { ...CUSTOM_PROJECT } : null),
+      findAll: async () => [], insert: async (t, r) => r, insertMany: async () => [],
+      update: async () => null, remove: async () => 0, query: async () => [], queryOne: async () => null,
+      pool: { end: async () => {} },
+    },
+  };
+
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/embed', require('./embed'));
+  const agent = require('supertest')(app);
+
+  await t.test('config exposes the custom input placeholder', async () => {
+    const res = await agent.get('/embed/test-public-id-custom-msgs/config');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.widgetMessages.inputPlaceholder, 'Ask away…');
+  });
+
+  await t.test('config uses the custom message once over quota', async () => {
+    checkLimitResult = { ok: false, reason: 'Plan monthly message limit reached (100 / 100). Upgrade to add more.' };
+    const res = await agent.get('/embed/test-public-id-custom-msgs/config');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.limitMessage, "We're out of chat credits this month — email us!");
+  });
+
+  await t.test('/log uses the same custom message', async () => {
+    const res = await agent.post('/embed/test-public-id-custom-msgs/log').send({ role: 'user', text: 'hi' });
+    assert.equal(res.status, 402);
+    assert.equal(res.body.limitMessage, "We're out of chat credits this month — email us!");
+    checkLimitResult = { ok: true };
+  });
+});
+
+test('config exposes showCharacterFullscreen', async (t) => {
+  process.env.GEMINI_API_KEY = SERVER_KEY;
+  delete process.env.PUBLIC_GEMINI_API_KEY;
+  delete require.cache[require.resolve('./embed')];
+
+  const CHARFS_PROJECT = { ...PROJECT, publicId: 'test-public-id-charfs', showCharacterFullscreen: true };
+  const resolved = require.resolve('../db');
+  require.cache[resolved] = {
+    id: resolved, filename: resolved, loaded: true, children: [], paths: [],
+    exports: {
+      findOne: async (table) => (table === 'projects' ? { ...CHARFS_PROJECT } : null),
+      findAll: async () => [], insert: async (t, r) => r, insertMany: async () => [],
+      update: async () => null, remove: async () => 0, query: async () => [], queryOne: async () => null,
+      pool: { end: async () => {} },
+    },
+  };
+
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/embed', require('./embed'));
+  const agent = require('supertest')(app);
+
+  const res = await agent.get('/embed/test-public-id-charfs/config');
+  assert.equal(res.status, 200);
+  assert.equal(res.body.project.showCharacterFullscreen, true);
+});
+
 test.after(() => {
   delete process.env.PUBLIC_GEMINI_API_KEY;
 });

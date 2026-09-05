@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS projects (
   full_screen_on_desktop   BOOLEAN DEFAULT false,
   full_screen_on_mobile    BOOLEAN DEFAULT false,
   show_full_screen_toggle  BOOLEAN DEFAULT false,
+  show_character_fullscreen BOOLEAN DEFAULT false,
   widget_offset_x          INTEGER DEFAULT 0,
   widget_offset_y          INTEGER DEFAULT 0,
   -- Avatar placement
@@ -461,7 +462,7 @@ CREATE TABLE IF NOT EXISTS admin_users (
 CREATE TABLE IF NOT EXISTS plan_tiers (
   id          TEXT        PRIMARY KEY,   -- slug, e.g. "custom-acme-corp-a1b2c3"
   name        TEXT        NOT NULL,
-  limits      JSONB       NOT NULL,      -- { projects, filesPerProject, storageMb, monthlyMessages, monthlyEmbeddingChars, urlSources }
+  limits      JSONB       NOT NULL,      -- { projects, maxFiles, storageMb, monthlyMessages, monthlyEmbeddingChars, urlSources }
   created_by  UUID        REFERENCES admin_users(id),
   created_at  BIGINT      NOT NULL,
   updated_at  BIGINT
@@ -692,3 +693,112 @@ CREATE TABLE IF NOT EXISTS coupon_redemptions (
 );
 CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_coupon_id ON coupon_redemptions(coupon_id);
 CREATE INDEX IF NOT EXISTS idx_coupon_redemptions_user_id   ON coupon_redemptions(user_id);
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Schema evolution: product gaps from improvement-prompts.md Prompt F4
+-- (email verification, teams/multi-seat, widget i18n, webhook reliability)
+-- ═══════════════════════════════════════════════════════════════════
+
+-- Email verification — signup already worked without it; this adds a
+-- soft gate (see routes/auth.js's POST /api/projects check) rather than
+-- blocking login, to avoid losing signups to a broken verification email.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at    BIGINT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_token         TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS verify_token_expiry  BIGINT;
+CREATE INDEX IF NOT EXISTS idx_users_verify_token
+  ON users(verify_token)
+  WHERE verify_token IS NOT NULL;
+
+-- Widget i18n — owner-editable locale strings for the parts of the widget
+-- that were hardcoded English (input placeholder, limit-reached message).
+-- welcomeMessage was already a per-project column; this covers the rest
+-- without a full translation-framework rewrite. Keyed by BCP-47 locale
+-- code (e.g. "es", "fr"); { "es": { "placeholder": "...", "limitReached": "..." } }.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS widget_messages JSONB DEFAULT '{}';
+
+-- Teams / multi-seat (Business-tier feature) — a project's owner
+-- (projects.user_id) can invite other existing AvatarPlatform accounts by
+-- email. Deliberately minimal for this pass: members are read-only
+-- (Conversations + Analytics tabs only, enforced in routes/projects.js
+-- and routes/analytics.js) rather than full co-editors, since granting
+-- write access would mean auditing every project-scoped route's ownership
+-- check for correctness, not just adding a table.
+CREATE TABLE IF NOT EXISTS project_members (
+  id           UUID    PRIMARY KEY,
+  project_id   UUID    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id      UUID    NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
+  invited_by   UUID    REFERENCES users(id) ON DELETE SET NULL,
+  created_at   BIGINT  NOT NULL,
+  UNIQUE (project_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_project_members_project ON project_members(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_members_user    ON project_members(user_id);
+
+-- Webhook reliability — each attempt to deliver a project's webhook (see
+-- routes/embed.js's /log handler) is now logged here instead of being
+-- fire-and-forget with only a server-side log line on failure. Retried
+-- with backoff via Inngest (backend/inngest/functions.js).
+-- updated_at exists purely because db.js's update() unconditionally stamps
+-- it on every UPDATE regardless of table — every table ever passed to
+-- db.update() needs this column or the query 500s (caught by trying this
+-- live against a real Postgres instance, not by the mocked-db test suite).
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+  id                UUID    PRIMARY KEY,
+  project_id        UUID    NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  event_type        TEXT    NOT NULL,
+  payload           JSONB   NOT NULL,
+  status            TEXT    NOT NULL DEFAULT 'pending', -- 'pending' | 'success' | 'failed'
+  attempt           INTEGER NOT NULL DEFAULT 0,
+  response_status   INTEGER,
+  error             TEXT,
+  created_at        BIGINT  NOT NULL,
+  delivered_at      BIGINT,
+  updated_at        BIGINT
+);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_project ON webhook_deliveries(project_id, created_at DESC);
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Admin-configurable model settings — see
+-- supabase/migrations/2026-08-28_add_admin_settings.sql and
+-- backend/services/settings.js. A present row overrides the env var of
+-- the same key; deleting it reverts to .env, no redeploy either way.
+-- ═══════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS admin_settings (
+  key         TEXT    PRIMARY KEY,
+  value       TEXT    NOT NULL,
+  updated_at  BIGINT  NOT NULL,
+  updated_by  UUID    REFERENCES admin_users(id) ON DELETE SET NULL
+);
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Admin-editable email templates — see
+-- supabase/migrations/2026-08-28_add_email_templates.sql and
+-- backend/services/emailTemplates.js. A present row's subject/body is used
+-- verbatim for that key; a missing row (or an unreachable DB) falls back to
+-- the identical hardcoded string in emailTemplates.js. `body` holds the
+-- HTML template only — see emailTemplates.js for why the plain-text part
+-- of each email stays hardcoded rather than living in this table.
+-- ═══════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS email_templates (
+  key         TEXT    PRIMARY KEY,
+  subject     TEXT    NOT NULL,
+  body        TEXT    NOT NULL,
+  updated_at  BIGINT  NOT NULL,
+  updated_by  UUID    REFERENCES admin_users(id) ON DELETE SET NULL
+);
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Feature-flag infrastructure — see
+-- supabase/migrations/2026-08-28_add_feature_flags.sql and
+-- backend/services/featureFlags.js. Infra only (admin-panel plan 5e): no
+-- feature in the codebase is gated behind a flag yet; an empty list here
+-- is correct and expected. Flags are admin-defined (created ad hoc from
+-- the panel), unlike admin_settings' fixed env-var keys.
+-- ═══════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS feature_flags (
+  key         TEXT    PRIMARY KEY,
+  enabled     BOOLEAN NOT NULL DEFAULT false,
+  description TEXT,
+  updated_at  BIGINT  NOT NULL,
+  updated_by  UUID    REFERENCES admin_users(id) ON DELETE SET NULL
+);

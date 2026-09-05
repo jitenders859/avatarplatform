@@ -4,6 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Project — AvatarPlatform</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <meta name="robots" content="noindex" />
   <script>document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';</script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -283,8 +286,9 @@
             <div class="row" style="gap:8px">
               <input class="input" id="f-webhook-secret" readonly style="font-family:monospace;font-size:12px;flex:1" />
               <button class="btn btn-ghost btn-sm" id="copy-secret-btn">Copy</button>
+              <button class="btn btn-ghost btn-sm" id="rotate-secret-btn">Rotate</button>
             </div>
-            <span class="help">Verify requests with HMAC-SHA256 using this secret and the <code>X-Avatar-Signature</code> header.</span>
+            <span class="help">Verify requests with HMAC-SHA256 using this secret and the <code>X-Avatar-Signature</code> header. Rotating immediately invalidates the old one.</span>
           </div>
           <div class="row" style="gap:8px">
             <button class="btn btn-ghost" id="test-webhook-btn" hidden>Send test event</button>
@@ -303,6 +307,32 @@
         <div class="row" style="gap:8px">
           <button class="btn btn-ghost btn-sm" id="settings-discard-btn">Discard</button>
           <button class="btn btn-primary btn-sm" id="save-settings">Save changes</button>
+        </div>
+      </div>
+
+      <div class="card mt-md" id="webhook-deliveries-card" hidden>
+        <div class="card-header">
+          <h3 class="card-title">Recent webhook deliveries</h3>
+          <button class="btn btn-ghost btn-sm" id="refresh-deliveries-btn">Refresh</button>
+        </div>
+        <div id="webhook-deliveries-list" class="col gap-sm"></div>
+      </div>
+
+      <div class="card mt-md" id="team-card" hidden>
+        <div class="card-header">
+          <h3 class="card-title">Team members</h3>
+          <span class="muted text-sm">Business plan</span>
+        </div>
+        <p class="muted text-sm mb-md">Give teammates read-only access to this chatbot's conversations and analytics.</p>
+        <div id="team-upgrade-note" style="display:none">
+          <p class="text-sm">Team members are a Business-plan feature. <a href="/billing">Upgrade to Business →</a></p>
+        </div>
+        <div id="team-body">
+          <form id="invite-form" class="row" style="gap:8px;margin-bottom:16px">
+            <input class="input" id="invite-email" type="email" placeholder="teammate@example.com" style="flex:1" required />
+            <button type="submit" class="btn btn-primary btn-sm">Invite</button>
+          </form>
+          <div id="team-list" class="col gap-sm"></div>
         </div>
       </div>
     </section>
@@ -472,6 +502,29 @@
                 </select>
                 <span class="help">Adds a header button so visitors can toggle full screen regardless of the defaults above.</span>
               </div>
+              <div class="field">
+                <label>Character full screen (click avatar)</label>
+                <select class="select" id="f-character-fullscreen">
+                  <option value="false">No</option>
+                  <option value="true">Yes — visitors can click the avatar to fill the screen with just the character</option>
+                </select>
+                <span class="help">Distinct from the full-screen settings above: this hides the whole chat window (header, messages, composer) and shows only the talking character. Exit is by clicking the character again — no close button is shown.</span>
+              </div>
+            </div>
+          </details>
+
+          <details class="settings-group">
+            <summary>Widget text</summary>
+            <div class="settings-group-body grid grid-2">
+              <div class="field">
+                <label>Input placeholder</label>
+                <input class="input" id="f-msg-placeholder" maxlength="100" placeholder="Type a message…" />
+              </div>
+              <div class="field">
+                <label>Usage-limit-reached message</label>
+                <input class="input" id="f-msg-limit" maxlength="300" placeholder="This assistant has reached its usage limit for this month. Please check back later." />
+                <span class="help">Shown when the monthly message quota runs out.</span>
+              </div>
             </div>
           </details>
 
@@ -568,6 +621,13 @@
     <!-- ── Analytics tab ────────────────────────────────────── -->
     <section class="tab-panel" id="panel-analytics" hidden>
       <div class="grid grid-4 mb-md" id="pa-totals"></div>
+      <div class="card mb-md">
+        <div class="card-header">
+          <h3 class="card-title">Conversion funnel</h3>
+          <span class="muted text-sm" id="pa-funnel-note"></span>
+        </div>
+        <div id="pa-funnel" class="col gap-sm"></div>
+      </div>
       <div class="card mb-md">
         <div class="card-header">
           <h3 class="card-title">Messages — last 30 days</h3>
@@ -907,6 +967,7 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
   <script src="/js/theme.js"></script>
+  <script src="/js/toast.js"></script>
   <script src="/js/api.js"></script>
   <script>
   Auth.requireLogin();
@@ -922,24 +983,57 @@
   // 30 Gemini Live voices
   const VOICES = ['Puck','Charon','Kore','Fenrir','Aoede','Leda','Orus','Zephyr','Achernar','Achird','Algenib','Algieba','Alnilam','Autonoe','Callirrhoe','Despina','Enceladus','Erinome','Gacrux','Iapetus','Laomedeia','Pulcherrima','Rasalgethi','Sadachbia','Sadaltager','Schedar','Sulafat','Umbriel','Vindemiatrix','Zubenelgenubi'];
 
-  // Tab switching
-  document.querySelectorAll('.tab').forEach(t => {
-    t.addEventListener('click', () => {
-      if (t.hidden) return;
-      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-      t.classList.add('active');
-      document.querySelectorAll('.tab-panel').forEach(p => p.hidden = true);
-      document.getElementById('panel-' + t.dataset.tab).hidden = false;
-      if (t.dataset.tab === 'widget') refreshPreview();
-      if (t.dataset.tab === 'knowledge') loadFiles();
-      if (t.dataset.tab === 'analytics') loadProjectAnalytics();
-      if (t.dataset.tab === 'conversations') loadSessions();
-      if (t.dataset.tab === 'capture') loadCaptureFields();
-      if (t.dataset.tab === 'quiz') loadQuizQuestions();
-      if (t.dataset.tab === 'flashcards') loadFlashcards();
-      if (t.dataset.tab === 'videos') loadVideos();
-      if (t.dataset.tab === 'leads') loadLeads();
+  // Tab switching — WAI-ARIA "tabs" pattern: role=tab/tabpanel, aria-selected,
+  // a single tab in the Tab-key sequence at a time (roving tabindex), and
+  // Left/Right/Home/End moving + activating focus between tabs.
+  const allTabs = [...document.querySelectorAll('.tab')];
+  allTabs.forEach(t => {
+    const panel = document.getElementById('panel-' + t.dataset.tab);
+    t.id = 'tab-' + t.dataset.tab;
+    t.setAttribute('role', 'tab');
+    t.setAttribute('aria-controls', panel.id);
+    t.setAttribute('aria-selected', t.classList.contains('active') ? 'true' : 'false');
+    t.setAttribute('tabindex', t.classList.contains('active') ? '0' : '-1');
+    panel.setAttribute('role', 'tabpanel');
+    panel.setAttribute('aria-labelledby', t.id);
+  });
+
+  function activateTab(t) {
+    if (!t || t.hidden) return;
+    allTabs.forEach(x => {
+      const isActive = x === t;
+      x.classList.toggle('active', isActive);
+      x.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      x.setAttribute('tabindex', isActive ? '0' : '-1');
     });
+    document.querySelectorAll('.tab-panel').forEach(p => p.hidden = true);
+    document.getElementById('panel-' + t.dataset.tab).hidden = false;
+    if (t.dataset.tab === 'widget') refreshPreview();
+    if (t.dataset.tab === 'knowledge') loadFiles();
+    if (t.dataset.tab === 'analytics') loadProjectAnalytics();
+    if (t.dataset.tab === 'conversations') loadSessions();
+    if (t.dataset.tab === 'capture') loadCaptureFields();
+    if (t.dataset.tab === 'quiz') loadQuizQuestions();
+    if (t.dataset.tab === 'flashcards') loadFlashcards();
+    if (t.dataset.tab === 'videos') loadVideos();
+    if (t.dataset.tab === 'leads') loadLeads();
+  }
+
+  allTabs.forEach(t => t.addEventListener('click', () => activateTab(t)));
+
+  document.querySelector('.settings-nav').addEventListener('keydown', (e) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+    const visible = allTabs.filter(t => !t.hidden);
+    const from = visible.indexOf(document.activeElement);
+    if (from === -1) return;
+    e.preventDefault();
+    let to;
+    if (e.key === 'Home') to = 0;
+    else if (e.key === 'End') to = visible.length - 1;
+    else if (e.key === 'ArrowLeft') to = (from - 1 + visible.length) % visible.length;
+    else to = (from + 1) % visible.length;
+    visible[to].focus();
+    activateTab(visible[to]);
   });
 
   // Quiz/Flashcards need 'advanced'; Videos need 'medium' or 'advanced' (see tiers.js).
@@ -1142,10 +1236,22 @@
 
   async function load() {
     try {
-      const [{ project: p }, { characters: chars }, sub] = await Promise.all([
+      const [{ project: p, isOwner }, { characters: chars }, sub] = await Promise.all([
         API.getProject(projectId), API.characters(), API.subscription().catch(() => null),
       ]);
       project = p; characters = chars;
+
+      // Team members get a read-only view scoped to Conversations +
+      // Analytics — everything else (settings, delete, embed snippets,
+      // webhook secrets, capture/quiz/etc. config) stays owner-only.
+      if (isOwner === false) {
+        document.getElementById('delete-btn').hidden = true;
+        const allowedTabs = new Set(['analytics', 'conversations']);
+        allTabs.forEach(t => { if (!allowedTabs.has(t.dataset.tab)) t.hidden = true; });
+        activateTab(document.querySelector('.tab[data-tab="analytics"]'));
+      } else {
+        document.getElementById('team-card').hidden = false;
+      }
 
       document.getElementById('title').textContent = p.name;
       document.getElementById('public-id').textContent = `Public ID: ${p.publicId}`;
@@ -1181,6 +1287,7 @@
       document.getElementById('f-fullscreen-desktop').value = String(p.fullScreenOnDesktop === true);
       document.getElementById('f-fullscreen-mobile').value  = String(p.fullScreenOnMobile === true);
       document.getElementById('f-fullscreen-toggle').value  = String(p.showFullScreenToggle === true);
+      document.getElementById('f-character-fullscreen').value = String(p.showCharacterFullscreen === true);
       document.getElementById('f-branding').value  = String(p.showBranding !== false);
 
       // Removing the "Powered by" badge is a paid-plan feature (see
@@ -1213,6 +1320,10 @@
       document.getElementById('f-avatar-offset-x').value = p.avatarOffsetX ?? 0;
       document.getElementById('f-avatar-offset-y').value = p.avatarOffsetY ?? 0;
 
+      const widgetMessages = p.widgetMessages || {};
+      document.getElementById('f-msg-placeholder').value = widgetMessages.inputPlaceholder || '';
+      document.getElementById('f-msg-limit').value = widgetMessages.limitReachedMessage || '';
+
       // Settings tab: webhook
       document.getElementById('f-webhook-url').value = p.webhookUrl || '';
       if (p.webhookSecret) {
@@ -1239,6 +1350,9 @@
       populateTimezones(bh.timezone);
       document.getElementById('f-away').value = p.awayMessage || '';
 
+      document.getElementById('webhook-deliveries-card').hidden = !p.webhookUrl;
+      if (p.webhookUrl && isOwner !== false) loadWebhookDeliveries();
+
       // Embed snippets
       const origin = location.origin;
       const link = `${origin}/e/${p.publicId}`;
@@ -1248,10 +1362,67 @@
         `<iframe src="${link}" allow="microphone" style="width:100%;height:600px;border:0"></iframe>`;
       document.getElementById('snippet-link').textContent = link;
       [...document.querySelectorAll('.code')].forEach(addCopyButton);
+
+      if (isOwner !== false) loadTeam(sub);
     } catch (e) {
       toast(e.message, 'error');
     }
   }
+
+  async function loadTeam(sub) {
+    const isBusiness = !!sub && sub.plan.id === 'business';
+    document.getElementById('team-upgrade-note').style.display = isBusiness ? 'none' : 'block';
+    document.getElementById('team-body').style.display = isBusiness ? '' : 'none';
+    if (!isBusiness) return;
+    try {
+      const { members } = await API.listMembers(projectId);
+      renderTeam(members);
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  function renderTeam(members) {
+    const list = document.getElementById('team-list');
+    if (members.length === 0) {
+      list.innerHTML = '<p class="muted text-sm">No team members yet — invite a teammate above.</p>';
+      return;
+    }
+    list.innerHTML = members.map(m => `
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+        <div style="min-width:0">
+          <div style="font-size:13px">${escape(m.name || m.email)}</div>
+          <div class="muted text-sm">${escape(m.email)}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" data-member-id="${m.id}">Remove</button>
+      </div>`).join('');
+    list.querySelectorAll('button[data-member-id]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remove this team member? They will lose access to this chatbot.')) return;
+        try {
+          await API.removeMember(projectId, btn.dataset.memberId);
+          toast('Team member removed', 'success');
+          const { members: fresh } = await API.listMembers(projectId);
+          renderTeam(fresh);
+        } catch (e) { toast(e.message, 'error'); }
+      });
+    });
+  }
+
+  document.getElementById('invite-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const input = document.getElementById('invite-email');
+    const btn = e.target.querySelector('button[type="submit"]');
+    btn.disabled = true;
+    try {
+      await API.inviteMember(projectId, input.value.trim());
+      input.value = '';
+      toast('Team member added', 'success');
+      const { members } = await API.listMembers(projectId);
+      renderTeam(members);
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+    btn.disabled = false;
+  });
 
   function addCopyButton(el) {
     const btn = document.createElement('button');
@@ -1328,6 +1499,38 @@
     finally { btn.disabled = false; btn.textContent = 'Send test event'; }
   });
 
+  document.getElementById('rotate-secret-btn').addEventListener('click', async () => {
+    if (!confirm('Rotate the webhook secret? The old secret stops working immediately — update it on your receiving endpoint right after.')) return;
+    try {
+      const { webhookSecret } = await API.rotateWebhookSecret(projectId);
+      document.getElementById('f-webhook-secret').value = webhookSecret;
+      project.webhookSecret = webhookSecret;
+      toast('Webhook secret rotated', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+  });
+
+  const DELIVERY_STATUS_LABEL = { success: '✓ Delivered', failed: '✗ Failed', pending: '⏳ Retrying' };
+  async function loadWebhookDeliveries() {
+    try {
+      const { deliveries } = await API.webhookDeliveries(projectId);
+      const list = document.getElementById('webhook-deliveries-list');
+      if (deliveries.length === 0) {
+        list.innerHTML = '<p class="muted text-sm">No deliveries yet — they\'ll show up here after the first visitor message.</p>';
+        return;
+      }
+      list.innerHTML = deliveries.map(d => `
+        <div style="display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)">
+          <span class="pill ${d.status === 'success' ? 'pill-success' : d.status === 'failed' ? 'pill-danger' : 'pill-info'}" style="flex-shrink:0">${DELIVERY_STATUS_LABEL[d.status] || d.status}</span>
+          <div style="flex:1;min-width:0">
+            <div class="text-sm">${escape(d.eventType)} · attempt ${d.attempt}${d.responseStatus ? ` · HTTP ${d.responseStatus}` : ''}</div>
+            ${d.error ? `<div class="muted text-sm" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(d.error)}</div>` : ''}
+          </div>
+          <div class="muted text-sm" style="white-space:nowrap;flex-shrink:0">${new Date(d.createdAt).toLocaleString()}</div>
+        </div>`).join('');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+  document.getElementById('refresh-deliveries-btn').addEventListener('click', loadWebhookDeliveries);
+
   // ── Save widget ──
   document.getElementById('save-widget').addEventListener('click', async () => {
     try {
@@ -1343,6 +1546,7 @@
         fullScreenOnDesktop:  document.getElementById('f-fullscreen-desktop').value === 'true',
         fullScreenOnMobile:   document.getElementById('f-fullscreen-mobile').value === 'true',
         showFullScreenToggle: document.getElementById('f-fullscreen-toggle').value === 'true',
+        showCharacterFullscreen: document.getElementById('f-character-fullscreen').value === 'true',
         showBranding:         document.getElementById('f-branding').value === 'true',
         widgetOffsetX:        parseInt(document.getElementById('f-offset-x').value, 10) || 0,
         widgetOffsetY:        parseInt(document.getElementById('f-offset-y').value, 10) || 0,
@@ -1354,6 +1558,10 @@
         avatarCompactOnMobile:document.getElementById('f-avatar-compact').value === 'true',
         avatarOffsetX:        parseInt(document.getElementById('f-avatar-offset-x').value, 10) || 0,
         avatarOffsetY:        parseInt(document.getElementById('f-avatar-offset-y').value, 10) || 0,
+        widgetMessages: {
+          inputPlaceholder: document.getElementById('f-msg-placeholder').value.trim() || undefined,
+          limitReachedMessage: document.getElementById('f-msg-limit').value.trim() || undefined,
+        },
       };
       const { project: p } = await API.updateProject(projectId, patch);
       project = p;
@@ -1446,6 +1654,7 @@
           </div>
           <span class="status-badge">${statusBadge(f.status, f.chunkCount, f.error, f.stage, f.pct)}</span>
           ${f.status === 'ready' ? `<button class="btn btn-sm btn-ghost" onclick="viewChunks('${f.id}',${JSON.stringify(escape(name))})">Chunks</button>` : ''}
+          ${f.kind !== 'url' ? `<button class="btn btn-sm btn-ghost" onclick="downloadOriginal('${f.id}',${JSON.stringify(escape(name))})" title="Download original">⬇</button>` : ''}
           <button class="btn btn-sm btn-ghost" onclick="reproc('${f.id}')">↻</button>
           <button class="btn btn-sm btn-danger" onclick="del('${f.id}')">×</button>
         </div>`;
@@ -1454,6 +1663,28 @@
 
   window.reproc = async (id) => { stopPoller(id); await API.reprocessFile(projectId, id); loadFiles(); };
   window.del    = async (id) => { if (!confirm('Delete this source?')) return; stopPoller(id); await API.deleteFile(projectId, id); loadFiles(); };
+
+  // The /blob endpoint requires our own Bearer auth (authRequired) and
+  // then 302s to a signed Supabase Storage URL, so a plain <a href> can't
+  // be used directly — this app's auth is a header-carried JWT, not a
+  // cookie, and a bare navigation wouldn't send it. fetch() carries the
+  // header, follows the redirect itself, and hands back the real file
+  // bytes to save via the same Blob+object-URL pattern used for CSV
+  // exports elsewhere on this page.
+  window.downloadOriginal = async (id, name) => {
+    try {
+      const res = await fetch(`/api/projects/${projectId}/files/${id}/blob`, {
+        headers: { Authorization: `Bearer ${Auth.token}` },
+      });
+      if (!res.ok) throw new Error(res.status === 410 ? 'Original file is no longer available' : 'Download failed');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name || 'download';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { toast(e.message, 'error'); }
+  };
 
   // ── Chunks viewer ──────────────────────────────────────────────
   let chunksFileId = null;
@@ -1475,34 +1706,38 @@
     allChunks = [];
   };
 
+  let chunksSearchTimer = null;
   document.getElementById('chunks-search').addEventListener('input', () => {
-    renderChunks(allChunks);
+    clearTimeout(chunksSearchTimer);
+    chunksSearchTimer = setTimeout(reloadChunks, 300);
   });
 
+  // Server-side search (?search= on GET .../chunks) rather than loading
+  // every chunk into the page and filtering in-memory — large knowledge
+  // bases can have thousands of chunks per file.
   async function reloadChunks() {
     if (!chunksFileId) return;
+    const search = document.getElementById('chunks-search').value.trim();
     try {
-      const data = await API.listChunks(projectId, chunksFileId);
+      const data = await API.listChunks(projectId, chunksFileId, search);
       allChunks = data.chunks || [];
       renderChunks(allChunks);
     } catch (e) { toast(e.message, 'error'); }
   }
 
   function renderChunks(chunks) {
-    const search = document.getElementById('chunks-search').value.toLowerCase().trim();
-    const filtered = search ? chunks.filter(c => c.text.toLowerCase().includes(search)) : chunks;
     const listEl = document.getElementById('chunks-list');
     const emptyEl = document.getElementById('chunks-empty');
-    document.getElementById('chunks-count').textContent = `${filtered.length} of ${chunks.length} chunks`;
+    document.getElementById('chunks-count').textContent = `${chunks.length} chunk${chunks.length === 1 ? '' : 's'}`;
 
-    if (filtered.length === 0) {
+    if (chunks.length === 0) {
       listEl.innerHTML = '';
       emptyEl.style.display = 'block';
       return;
     }
     emptyEl.style.display = 'none';
 
-    listEl.innerHTML = filtered.map(c => {
+    listEl.innerHTML = chunks.map(c => {
       const headingBadge = c.heading ? `<span class="pill pill-info" style="font-size:10px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(c.heading)}</span>` : '';
       const pageBadge = c.pageHint ? `<span class="pill" style="font-size:10px">p.${c.pageHint}</span>` : '';
       const embBadge = c.hasEmbedding
@@ -1666,14 +1901,19 @@
   async function loadProjectAnalytics() {
     document.getElementById('pa-totals').innerHTML = '<div class="muted text-sm" style="grid-column:1/-1;padding:8px 0">Loading…</div>';
     try {
-      const { totals, daily, topQuestions } = await API.projectAnalytics(projectId);
+      const { totals, funnel, avgSessionDurationSec, daily, topQuestions } = await API.projectAnalytics(projectId);
 
+      const durationLabel = avgSessionDurationSec >= 60
+        ? `${Math.floor(avgSessionDurationSec / 60)}m ${avgSessionDurationSec % 60}s`
+        : `${avgSessionDurationSec}s`;
       document.getElementById('pa-totals').innerHTML = [
         { label: 'Sessions', value: totals.sessions },
         { label: 'Messages', value: totals.messages },
         { label: 'Sources',  value: totals.files },
-        { label: 'Avg turns / session', value: totals.avgSessionLength },
+        { label: 'Avg session duration', value: durationLabel },
       ].map(i => `<div class="card"><div class="muted text-sm">${i.label}</div><div style="font-size:28px;font-weight:700;letter-spacing:-0.02em;margin-top:4px">${i.value}</div></div>`).join('');
+
+      renderFunnel(funnel);
 
       const max = Math.max(1, ...daily.map(d => d.messages));
       document.getElementById('pa-chart-total').textContent = `${daily.reduce((s, d) => s + d.messages, 0)} messages`;
@@ -1730,6 +1970,39 @@
           <div class="muted text-sm">${t.quizAccuracy === null ? '—' : t.quizAccuracy + '% correct'} (${t.quizTotal})</div>
         </div>`).join('');
     } catch (e) { /* progress tracking is optional — don't block the rest of the tab on it */ }
+  }
+
+  function renderFunnel(funnel) {
+    const el = document.getElementById('pa-funnel');
+    const note = document.getElementById('pa-funnel-note');
+    if (!funnel || !funnel.sessions) {
+      note.textContent = '';
+      el.innerHTML = '<p class="muted text-sm">No sessions yet.</p>';
+      return;
+    }
+    const stages = [
+      { label: 'Sessions started',   value: funnel.sessions },
+      { label: 'Engaged (sent a message)', value: funnel.engagedSessions },
+      { label: 'Leads captured',     value: funnel.leadsCaptured },
+      { label: 'Leads completed',    value: funnel.leadsCompleted },
+    ];
+    note.textContent = `${funnel.sessions} session${funnel.sessions === 1 ? '' : 's'} total`;
+    const max = stages[0].value || 1;
+    el.innerHTML = stages.map((s, i) => {
+      const pct = Math.round((s.value / max) * 100);
+      const prev = i > 0 ? stages[i - 1].value : null;
+      const ofPrev = prev ? ` <span class="muted">(${prev === 0 ? 0 : Math.round((s.value / prev) * 100)}% of previous)</span>` : '';
+      return `
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <span class="text-sm">${s.label}</span>
+            <span class="text-sm" style="font-weight:600">${s.value}${ofPrev}</span>
+          </div>
+          <div style="height:8px;border-radius:4px;background:var(--bg-3)">
+            <div style="height:100%;width:${pct}%;min-width:${s.value > 0 ? '2px' : '0'};border-radius:4px;background:linear-gradient(90deg,var(--accent-2),var(--accent));transition:width .2s"></div>
+          </div>
+        </div>`;
+    }).join('');
   }
 
   function escape(s) {
@@ -1940,7 +2213,10 @@
             </div>
             ${q.topicTag ? `<div class="muted text-sm mt-sm">Topic: <code style="font-size:11px">${escape(q.topicTag)}</code></div>` : ''}
           </div>
-          <button class="btn btn-sm btn-danger" onclick="deleteQuizQuestion('${q.id}')">×</button>
+          <div class="row gap-sm" style="flex-shrink:0">
+            <button class="btn btn-sm btn-ghost" onclick="editQuizQuestion('${q.id}')">Edit</button>
+            <button class="btn btn-sm btn-danger" onclick="deleteQuizQuestion('${q.id}')">×</button>
+          </div>
         </div>
       </div>`).join('');
   }
@@ -1954,13 +2230,35 @@
     } catch (e) { toast(e.message, 'error'); }
   };
 
+  let editingQuizId = null;
+
   window.openQuizForm = () => {
+    editingQuizId = null;
     document.getElementById('qz-question').value = '';
     document.getElementById('qz-topic').value = '';
     const optionsEl = document.getElementById('qz-options');
     optionsEl.innerHTML = '';
     for (let i = 0; i < 4; i++) addQuizOptionRow();
     document.getElementById('quiz-form-error').style.display = 'none';
+    document.getElementById('qz-save-btn').textContent = 'Save question';
+    const formCard = document.getElementById('quiz-form-card');
+    formCard.hidden = false;
+    formCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('qz-question').focus();
+  };
+
+  window.editQuizQuestion = (qid) => {
+    const q = quizQuestions.find(x => x.id === qid);
+    if (!q) return;
+    editingQuizId = qid;
+    document.getElementById('qz-question').value = q.question;
+    document.getElementById('qz-topic').value = q.topicTag || '';
+    const optionsEl = document.getElementById('qz-options');
+    optionsEl.innerHTML = '';
+    q.options.forEach(o => addQuizOptionRow(o));
+    [...optionsEl.querySelectorAll('input[type="radio"]')][q.correctIndex].checked = true;
+    document.getElementById('quiz-form-error').style.display = 'none';
+    document.getElementById('qz-save-btn').textContent = 'Save changes';
     const formCard = document.getElementById('quiz-form-card');
     formCard.hidden = false;
     formCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -1969,6 +2267,7 @@
 
   window.closeQuizForm = () => {
     document.getElementById('quiz-form-card').hidden = true;
+    editingQuizId = null;
   };
 
   function addQuizOptionRow(value) {
@@ -2021,10 +2320,15 @@
     const btn = document.getElementById('qz-save-btn');
     btn.disabled = true;
     try {
-      await API.createQuizQuestion(projectId, { question, options, correctIndex, topicTag: topicTag || undefined });
+      if (editingQuizId) {
+        await API.updateQuizQuestion(projectId, editingQuizId, { question, options, correctIndex, topicTag: topicTag || null });
+        toast('Question updated', 'success');
+      } else {
+        await API.createQuizQuestion(projectId, { question, options, correctIndex, topicTag: topicTag || undefined });
+        toast('Question added', 'success');
+      }
       closeQuizForm();
       await loadQuizQuestions();
-      toast('Question added', 'success');
     } catch (e) {
       errEl.textContent = e.message;
       errEl.style.display = 'block';

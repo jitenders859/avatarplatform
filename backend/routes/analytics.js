@@ -8,6 +8,18 @@ const { authRequired } = require('../middleware/auth');
 
 const router = express.Router();
 
+// Team members (project_members) get read-only access to a project's
+// analytics — see improvement-prompts.md Prompt F4 item 3 and the same
+// helper in routes/projects.js.
+async function findProjectForRead(id, userId) {
+  const owned = await db.findOne('projects', { id, userId });
+  if (owned) return owned;
+  const project = await db.findOne('projects', { id });
+  if (!project) return null;
+  const member = await db.findOne('projectMembers', { projectId: id, userId });
+  return member ? project : null;
+}
+
 function buildDailyBuckets(msgRows, sessRows) {
   const now = Date.now();
   const DAY = 24 * 60 * 60 * 1000;
@@ -122,12 +134,12 @@ router.get('/overview', authRequired, async (req, res) => {
 });
 
 router.get('/project/:id', authRequired, async (req, res) => {
-  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  const project = await findProjectForRead(req.params.id, req.user.id);
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   const since = Date.now() - 30 * 24 * 60 * 60 * 1000;
 
-  const [totals, avgRow, msgDaily, sessDaily, topQ] = await Promise.all([
+  const [totals, avgRow, funnelRow, durationRow, msgDaily, sessDaily, topQ] = await Promise.all([
     db.queryOne(
       `SELECT
          (SELECT COUNT(*) FROM sessions WHERE project_id = $1)                   AS sessions,
@@ -140,6 +152,27 @@ router.get('/project/:id', authRequired, async (req, res) => {
     db.queryOne(
       `SELECT COALESCE(AVG(msg_count), 0) AS avg
        FROM (SELECT session_id, COUNT(*) AS msg_count FROM messages WHERE project_id = $1 GROUP BY session_id) sub`,
+      [project.id]
+    ),
+    // Conversion funnel: every session a visitor starts, how many actually
+    // sent a message (vs. opening the widget and leaving), how many of
+    // those left lead-capture info, and how many completed every capture
+    // field. Each stage is a strict subset of the one before it.
+    db.queryOne(
+      `SELECT
+         (SELECT COUNT(DISTINCT session_id) FROM messages WHERE project_id = $1) AS engaged_sessions,
+         (SELECT COUNT(DISTINCT session_id) FROM leads    WHERE project_id = $1) AS sessions_with_lead`,
+      [project.id]
+    ),
+    // Session duration = time between a session's first and last message.
+    // A single-message session has a duration of 0, which is correct (not
+    // missing data) — there's nothing to measure a span across yet.
+    db.queryOne(
+      `SELECT COALESCE(AVG(span_ms), 0) AS avg_ms
+       FROM (
+         SELECT session_id, MAX(created_at) - MIN(created_at) AS span_ms
+         FROM messages WHERE project_id = $1 GROUP BY session_id
+       ) sub`,
       [project.id]
     ),
     db.query(
@@ -173,6 +206,13 @@ router.get('/project/:id', authRequired, async (req, res) => {
       leads:         Number(totals.leads),
       leadsComplete: Number(totals.leadsComplete),
     },
+    funnel: {
+      sessions:         Number(totals.sessions),
+      engagedSessions:  Number(funnelRow.engagedSessions),
+      leadsCaptured:    Number(funnelRow.sessionsWithLead),
+      leadsCompleted:   Number(totals.leadsComplete),
+    },
+    avgSessionDurationSec: Math.round((Number(durationRow.avgMs) || 0) / 1000),
     daily: buildDailyBuckets(msgDaily, sessDaily),
     topQuestions: topQ.map(r => ({ text: r.text, createdAt: r.createdAt })),
   });
@@ -186,7 +226,7 @@ router.get('/project/:id', authRequired, async (req, res) => {
  * includes anonymous (session-only) activity too.
  */
 router.get('/project/:id/progress', authRequired, async (req, res) => {
-  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  const project = await findProjectForRead(req.params.id, req.user.id);
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   const [learnerRows, anonCounts, topicRows] = await Promise.all([

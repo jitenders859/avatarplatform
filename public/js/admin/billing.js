@@ -72,10 +72,7 @@ async function renderBillingTable() {
     });
   }
 
-  renderPagination(document.getElementById('billing-pagination'), {
-    page, pageSize, total,
-    onPage: (p) => { billingPage = p; renderBillingTable(); },
-  });
+  renderPagination(document.getElementById('billing-pagination'), { page, pageSize, total }, (p) => { billingPage = p; renderBillingTable(); });
 }
 
 TABS.billing = loadBillingTab;

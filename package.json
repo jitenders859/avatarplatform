@@ -2,6 +2,7 @@
   "name": "avatar-platform",
   "version": "1.1.0",
   "description": "SaaS platform to build embeddable AI talking-character chatbots with Rive + Gemini Live + RAG",
+  "license": "MIT",
   "main": "backend/server.js",
   "workspaces": [
     "packages/*"
@@ -11,7 +12,8 @@
     "dev": "node --watch backend/server.js",
     "test": "node --test 'backend/**/*.test.js'",
     "build": "terser public/lipsync-sdk.js -c -m -o public/lipsync-sdk.min.js --source-map",
-    "build:sdk": "npm run build --workspaces --if-present",
+    "sync-version": "node scripts/sync-version.js",
+    "build:sdk": "npm run sync-version && npm run build --workspaces --if-present",
     "postinstall": "npm run build"
   },
   "dependencies": {
