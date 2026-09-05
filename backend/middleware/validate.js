@@ -112,6 +112,7 @@ const schemas = {
     showBranding: z.boolean().optional(),
     showSourceCards: z.boolean().optional(),
     showQuickReplies: z.boolean().optional(),
+    webSearchEnabled: z.boolean().optional(),
     allowDragDropUpload: z.boolean().optional(),
     widgetOffsetX: z.number().int().min(0).max(100).optional(),
     widgetOffsetY: z.number().int().min(0).max(100).optional(),
@@ -318,6 +319,11 @@ const schemas = {
   embedRetrieve: z.object({
     query: z.string().trim().min(1, 'Query required').max(2000, 'Query too long'),
     k: z.number().int().min(1).max(10).optional(),
+  }),
+
+  searchWeb: z.object({
+    query: z.string().trim().min(1, 'Query required').max(300, 'Query too long'),
+    language: z.string().trim().max(10).optional(),
   }),
 
   ask: z.object({
