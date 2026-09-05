@@ -772,3 +772,30 @@ CREATE TABLE IF NOT EXISTS feature_flags (
   updated_at  BIGINT  NOT NULL,
   updated_by  UUID    REFERENCES admin_users(id) ON DELETE SET NULL
 );
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Chatbot categories (see supabase/migrations/2026-09-02_add_chatbot_categories.sql)
+-- — user-defined groupings for chatbots (projects). Also backs the
+-- read-only "export" API (backend/routes/apiData.js, mounted at
+-- /api/data) so an owner can pull all their categories, chatbots,
+-- messages, URL sources, and leads across their whole account via the
+-- same Bearer-token auth as the rest of /api/*, for syncing into
+-- another platform.
+-- ═══════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS chatbot_categories (
+  id          UUID    PRIMARY KEY,
+  user_id     UUID    NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name        TEXT    NOT NULL,
+  color       TEXT,
+  description TEXT,
+  created_at  BIGINT  NOT NULL,
+  updated_at  BIGINT,
+  UNIQUE (user_id, name)
+);
+CREATE INDEX IF NOT EXISTS idx_chatbot_categories_user ON chatbot_categories(user_id);
+
+-- Nullable: an uncategorized chatbot is the normal default state, not an
+-- error. ON DELETE SET NULL — deleting a category un-categorizes its
+-- chatbots instead of deleting them.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES chatbot_categories(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_projects_category_id ON projects(category_id);

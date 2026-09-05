@@ -82,6 +82,7 @@
         </button>
         <input type="file" id="image-input" accept="image/jpeg,image/png,image/webp" style="display:none" />
         <button class="icon-btn" id="quiz-btn" title="Quiz me on this" aria-label="Quiz me" style="display:none">📝</button>
+        <button class="icon-btn" id="whiteboard-btn" title="Explain visually" aria-label="Explain visually" style="display:none">🖍️</button>
         <button class="icon-btn" id="progress-btn" title="Your progress" aria-label="Your progress" style="display:none">📊</button>
         <textarea id="text-input" rows="1" placeholder="Type a message…" aria-label="Message"></textarea>
         <button class="send-btn" id="send-btn" title="Send" aria-label="Send" type="button">
@@ -169,6 +170,7 @@
   const lightboxImg        = document.getElementById('lightbox-img');
   const lightboxClose      = document.getElementById('lightbox-close');
   const quizBtn           = document.getElementById('quiz-btn');
+  const whiteboardBtn     = document.getElementById('whiteboard-btn');
   const progressBtn       = document.getElementById('progress-btn');
   const textInput         = document.getElementById('text-input');
   const minimizeBtn       = document.getElementById('minimize-btn');
@@ -207,6 +209,12 @@
     if (config.project.capabilityTier === 'advanced') {
       quizBtn.style.display = '';
       progressBtn.style.display = '';
+    }
+    // explain_visually (the whiteboard tool) is unlocked at the medium tier
+    // already — see backend/services/tools.js — one tier lower than quiz/
+    // flashcards/progress, which need the fuller advanced tier.
+    if (config.project.capabilityTier === 'medium' || config.project.capabilityTier === 'advanced') {
+      whiteboardBtn.style.display = '';
     }
 
     // Full-screen mode: desktop/mobile decided by pointer type, not
@@ -926,9 +934,20 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     sendStudyMessage(topic ? `Quiz me on: ${topic}` : 'Quiz me on a topic from what you know, your choice.');
   });
 
+  // ── Study mode: explain visually (the "explanation board") ──────
+  whiteboardBtn.addEventListener('click', () => {
+    const topic = textInput.value.trim();
+    textInput.value = '';
+    textInput.style.height = 'auto';
+    sendStudyMessage(topic
+      ? `Explain "${topic}" visually — break it down into a simple diagram, like you'd draw on a whiteboard.`
+      : "Pick the most complex or important topic from what we've covered and explain it visually — break it down into a simple diagram, like you'd draw on a whiteboard.");
+  });
+
   async function sendStudyMessage(message) {
     addMessage('user', message);
     quizBtn.disabled = true;
+    whiteboardBtn.disabled = true;
     sendBtn.disabled = true;
     statusText.textContent = 'Thinking…';
     try {
@@ -959,14 +978,81 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         if (call.name === 'generate_flashcards' && call.result && call.result.cards) {
           for (const c of call.result.cards) renderFlashcard(c, topic, data.sources || []);
         }
+        if (call.name === 'explain_visually' && call.result && call.result.board) {
+          renderWhiteboardCard(call.result.board);
+        }
       }
     } catch (e) {
       addMessage('bot', 'Something went wrong loading your study material.');
     } finally {
       quizBtn.disabled = false;
+      whiteboardBtn.disabled = false;
       sendBtn.disabled = false;
       statusText.textContent = statusDot.classList.contains('connected') ? 'Connected' : 'Disconnected';
     }
+  }
+
+  // Renders the model's explain_visually result as a connected series of
+  // boxes — a numbered, arrow-connected sequence for layout:'flow', or a
+  // starred central concept with "↳" branches for layout:'map' (its
+  // center is always board.nodes[0] — see the tool description in
+  // backend/services/tools.js). All model-supplied text goes through
+  // textContent, never innerHTML, since it's untrusted-ish model output.
+  function renderWhiteboardCard(board) {
+    const card = document.createElement('div');
+    card.className = 'quiz-card board-card';
+
+    const tag = document.createElement('div');
+    tag.className = 'quiz-origin';
+    tag.textContent = '🖍️ Explanation board';
+    card.appendChild(tag);
+
+    const title = document.createElement('div');
+    title.className = 'quiz-question';
+    title.textContent = board.title;
+    card.appendChild(title);
+
+    const list = document.createElement('div');
+    list.className = 'board-list';
+    const isMap = board.layout === 'map';
+
+    board.nodes.forEach((n, i) => {
+      const isCenter = isMap && i === 0;
+      const item = document.createElement('div');
+      item.className = 'board-node' + (isCenter ? ' board-center' : '');
+
+      const num = document.createElement('div');
+      num.className = 'board-node-num';
+      num.textContent = isCenter ? '★' : (isMap ? '↳' : String(i + 1));
+      item.appendChild(num);
+
+      const body = document.createElement('div');
+      body.className = 'board-node-body';
+      const label = document.createElement('div');
+      label.className = 'board-node-label';
+      label.textContent = n.label;
+      body.appendChild(label);
+      if (n.detail) {
+        const detail = document.createElement('div');
+        detail.className = 'board-node-detail';
+        detail.textContent = n.detail;
+        body.appendChild(detail);
+      }
+      item.appendChild(body);
+      list.appendChild(item);
+
+      if (!isMap && i < board.nodes.length - 1) {
+        const arrow = document.createElement('div');
+        arrow.className = 'board-arrow';
+        arrow.textContent = '↓';
+        list.appendChild(arrow);
+      }
+    });
+    card.appendChild(list);
+
+    messagesEl.appendChild(card);
+    requestAnimationFrame(() => card.classList.add('visible'));
+    scrollToBottom();
   }
 
   function renderQuizCard(q, topic, turnSources) {

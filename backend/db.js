@@ -74,6 +74,7 @@ const TABLE_MAP = {
   pageImages: 'page_images',
   projectMembers: 'project_members',
   webhookDeliveries: 'webhook_deliveries',
+  chatbotCategories: 'chatbot_categories',
   adminSettings: 'admin_settings',
 };
 const tbl = name => TABLE_MAP[name] || name;

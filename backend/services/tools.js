@@ -206,6 +206,47 @@ async function handleRecommendVideo(args, ctx) {
   return { found: true, title: match.title, youtubeUrl: match.youtubeUrl };
 }
 
+/**
+ * Turns the model's own function-call arguments into a renderable "board"
+ * — unlike quiz/flashcard generation, there's no separate grounding call
+ * here: the model is just visually structuring what it's already
+ * explaining (grounded by the same knowledge-base context already in the
+ * turn's systemInstruction), so the handler's job is validating/capping
+ * shape, not generating content.
+ */
+function handleExplainVisually(args) {
+  const title = String(args?.title || 'Explanation').trim().slice(0, 100) || 'Explanation';
+  const layout = args?.layout === 'map' ? 'map' : 'flow';
+
+  const seenIds = new Set();
+  const nodes = [];
+  for (const raw of Array.isArray(args?.nodes) ? args.nodes : []) {
+    if (nodes.length >= 8) break;
+    const label = String(raw?.label || '').trim().slice(0, 60);
+    if (!label) continue;
+    let id = String(raw?.id || '').trim().slice(0, 40) || `n${nodes.length + 1}`;
+    if (seenIds.has(id)) id = `${id}-${nodes.length + 1}`;
+    seenIds.add(id);
+    nodes.push({ id, label, detail: String(raw?.detail || '').trim().slice(0, 200) });
+  }
+  if (!nodes.length) return { error: 'At least one node with a label is required.' };
+
+  const validIds = new Set(nodes.map(n => n.id));
+  let edges = (Array.isArray(args?.edges) ? args.edges : [])
+    .filter(e => validIds.has(e?.from) && validIds.has(e?.to) && e.from !== e.to)
+    .slice(0, 12)
+    .map(e => ({ from: e.from, to: e.to, label: String(e?.label || '').trim().slice(0, 30) || null }));
+
+  // 'flow' with no edges given falls back to connecting the nodes in the
+  // order the model listed them — the common case, since a step-by-step
+  // sequence rarely needs explicit edges spelled out.
+  if (!edges.length && layout === 'flow' && nodes.length > 1) {
+    edges = nodes.slice(1).map((n, i) => ({ from: nodes[i].id, to: n.id, label: null }));
+  }
+
+  return { board: { title, layout, nodes, edges } };
+}
+
 const TOOL_DEFS = [
   {
     minTier: 'medium',
@@ -281,6 +322,65 @@ const TOOL_DEFS = [
       },
     },
     handler: handleRecommendVideo,
+  },
+  {
+    minTier: 'medium',
+    declaration: {
+      name: 'explain_visually',
+      description:
+        "Create a visual explanation board — like a whiteboard diagram — for a concept that's " +
+        "complex, multi-step, or that the user seems confused or stuck on (e.g. they said " +
+        "\"I don't get it\", \"can you explain that differently\", \"I'm lost\", or asked for a " +
+        'visual, diagram, or picture). Call this proactively whenever a visual breakdown would ' +
+        "help more than more text — don't wait to be asked. Break the explanation into short, " +
+        'connected pieces (2-8 of them) rather than one big paragraph: keep each label to a few ' +
+        'words and each detail to one short sentence.',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: { type: 'string', description: 'Short title for the board, e.g. "How Photosynthesis Works".' },
+          layout: {
+            type: 'string',
+            enum: ['flow', 'map'],
+            description:
+              "'flow' for a step-by-step sequence, connected in the order listed — use for a " +
+              "process, procedure, or cause-and-effect chain. 'map' for a central concept with " +
+              'related ideas branching off it — use for a topic with several parts or a term ' +
+              'with related sub-concepts. For "map", list the central concept as the FIRST node.',
+          },
+          nodes: {
+            type: 'array',
+            description: 'One box per idea/step, 2-8 of them.',
+            items: {
+              type: 'object',
+              properties: {
+                id: { type: 'string', description: 'Short unique id, e.g. "n1".' },
+                label: { type: 'string', description: 'A few words — the name of this step/idea.' },
+                detail: { type: 'string', description: 'One short sentence explaining it.' },
+              },
+              required: ['id', 'label'],
+            },
+          },
+          edges: {
+            type: 'array',
+            description:
+              'How nodes connect. For "flow" this can be omitted (nodes connect in the order ' +
+              'listed). For "map", connect each branch node back to the central node.',
+            items: {
+              type: 'object',
+              properties: {
+                from: { type: 'string' },
+                to: { type: 'string' },
+                label: { type: 'string', description: 'Optional short label on the connector.' },
+              },
+              required: ['from', 'to'],
+            },
+          },
+        },
+        required: ['title', 'layout', 'nodes'],
+      },
+    },
+    handler: handleExplainVisually,
   },
 ];
 

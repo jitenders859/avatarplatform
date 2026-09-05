@@ -9,6 +9,8 @@
  *   /api/projects/*           project CRUD + character list
  *   /api/projects/:id/files   file uploads
  *   /api/projects/:id/sources/url   URL ingestion
+ *   /api/categories/*         chatbot categories (create + assign chatbots)
+ *   /api/data/*               read-only export API (categories/chatbots/messages/urls/leads)
  *   /api/billing/*            plans, checkout, portal, webhook
  *   /api/analytics/*          usage charts
  *   /api/admin/*              admin panel (separate auth, see routes/admin.js)
@@ -47,6 +49,8 @@ const captureFieldsRoutes = require('./routes/captureFields');
 const quizQuestionsRoutes = require('./routes/quizQuestions');
 const flashcardsRoutes = require('./routes/flashcards');
 const videoResourcesRoutes = require('./routes/videoResources');
+const categoriesRoutes = require('./routes/categories');
+const apiDataRoutes = require('./routes/apiData');
 const adminRoutes = require('./routes/admin');
 const adminCharactersRoutes = require('./routes/adminCharacters');
 const adminCouponsRoutes = require('./routes/adminCoupons');
@@ -178,6 +182,8 @@ app.use('/api/projects', apiLimiter, quizQuestionsRoutes);
 app.use('/api/projects', apiLimiter, flashcardsRoutes);
 app.use('/api/projects', apiLimiter, videoResourcesRoutes);
 app.use('/api', apiLimiter, filesRoutes); // files routes are project-nested
+app.use('/api/categories', apiLimiter, categoriesRoutes);
+app.use('/api/data', apiLimiter, apiDataRoutes);
 app.use('/api/billing', apiLimiter, billingRoutes);
 app.use('/api/analytics', apiLimiter, analyticsRoutes);
 app.use('/api/contact', apiLimiter, contactRoutes);
