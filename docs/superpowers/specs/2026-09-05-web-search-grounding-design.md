@@ -41,7 +41,7 @@ function searchWebTool() {
         const res = await fetch(`/embed/${publicId}/search-web`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: String(query || '').slice(0, 300), language: conversationLanguage() }),
+          body: JSON.stringify({ query: String(query || '').slice(0, 300), language: (navigator.language || 'en').slice(0, 2) }),
         });
         const data = await res.json();
         if (!res.ok) return { error: data.error || `Search failed (HTTP ${res.status})` };
@@ -56,7 +56,7 @@ function searchWebTool() {
 }
 ```
 
-`conversationLanguage()` is a small new helper returning the widget's configured/detected language code (reuses the existing `detectDirection`/`detectScriptLang` heuristics already in the file where available, otherwise `navigator.language.slice(0,2)`), passed through so results come back in the visitor's language via Serper's `hl` param.
+There's no existing per-project language setting to read (only `textDirection`, which is RTL/LTR only) — `navigator.language` is the visitor's browser locale, a reasonable proxy passed straight through to Serper's `hl` param.
 
 **Wiring (`initSDK()`, `embed.html:363`):**
 ```js
@@ -75,10 +75,29 @@ about current/time-sensitive information, or the user explicitly asks for a link
 Give a concise spoken answer — never read a URL or list of links aloud.
 ```
 
-**"Searching the web…" status indicator:** `lipsync-sdk.js`'s tool-call handler (`_handleToolCall`, `lipsync-sdk.js:2198`) gets one addition: before dispatching, if the call name is `search_web`, call `this._setStatus('Searching the web…', 'searching')` (same mechanism already used for `'Connecting…'`/`'Listening…'`) so the widget's status pill and CSS state class reflect it distinctly from the normal thinking/speaking states. No new state machine — one more status string plus a `.lsa-searching` CSS class mirroring `.lsa-speaking`/`.lsa-listening`.
+**"Searching the web…" status indicator:** `embed.html` manages its *own* status pill (`#status-dot`/`#status-text`, `embed.html:168-169`) independently of the SDK's internal (unused-by-embed.html) status bar — e.g. the `/ask` text-only path already sets `statusText.textContent = 'Thinking…'` while a request is in flight (`embed.html:440`). The Live path has no equivalent hook today because `_handleToolCall` (`lipsync-sdk.js:2198`) has no way to notify the host page a call is happening. Add one:
+- **`lipsync-sdk.js`:** in `_handleToolCall`, fire a new event right before dispatching each call: `this._fire('onToolCall', call.name);` (uses the existing generic `_fire(event, ...args)` dispatcher, `lipsync-sdk.js:2380` — same mechanism as `onSpeaking`/`onConnected`). Documented in the constructor's JSDoc alongside the other `onXxx` callbacks.
+- **`embed.html`:** in `initSDK()`'s `LipsyncAvatar` options, add:
+  ```js
+  onToolCall: (name) => {
+    if (name === 'search_web') statusText.textContent = 'Searching the web…';
+  },
+  ```
+  and revert it in the existing `onTranscript` callback, the earliest point a spoken answer starts streaming back after any tool round-trip completes:
+  ```js
+  onTranscript: (role, text) => {
+    if (role === 'model') { statusText.textContent = 'Online'; handleBotChunk(text); }
+    else handleUserChunk(text);
+  },
+  ```
+No new state machine or CSS — reuses the exact status element and revert-on-response pattern the `/ask` path already established.
 
-**Rendering results — reuses `attachSources()` (`embed.html:843`), doesn't replace it:**
-On `turnComplete`, if `pendingWebSources` is non-empty, call `attachSources(currentBotMsgEl, pendingWebSources)` the same way `pendingSources`/`pendingFigures` are consumed today, with a `fromWeb: true` flag on each entry so `attachSources()` can render a small "web" badge/icon distinguishing these cards from knowledge-base citations (exact badge treatment is a small CSS/markup detail left to the implementation step, not a new component). `pendingWebSources` resets to `null` after each turn, same lifecycle as `pendingSources`.
+**Rendering results — reuses `attachSources()` (`embed.html:843`) completely unchanged, no new markup/CSS:**
+`attachSources()` already accepts `{ fileName, url, kind, previewUrl }` and, for `kind: 'url'` with no `previewUrl`, renders a 🔗 icon card linking to `url` (`embed.html:867`, `public/css/embed.css:373-401`) — exactly the shape a web result needs. The tool handler maps Serper's `{title, url, snippet, source}` into that shape before assigning `pendingWebSources`:
+```js
+pendingWebSources = (data.results || []).map(r => ({ fileName: r.title, url: r.url, kind: 'url' }));
+```
+On `turnComplete`, if `pendingWebSources` is non-empty, call `attachSources(currentBotMsgEl, pendingWebSources)` — same consumption site and lifecycle as `pendingSources`/`pendingFigures` (`embed.html:743-750`), just one more `if` block reading a third pending variable, reset to `null` after use. KB citations and web sources appear as adjacent cards in the same strip; a visual distinction beyond the existing per-kind icon isn't needed for phase 1.
 
 ## Part 2 — `/ask` fallback: server-side heuristic gate
 
@@ -101,9 +120,10 @@ This is intentionally a different trigger mechanism than the Live path (heuristi
 
 ## Part 3 — Backend: search route, service, cache, rate limit, quota
 
-**New service — `backend/services/searchWeb.js`:**
+**New service — `backend/services/searchWeb.js`.** Serper is a fixed, trusted host (not caller-supplied), so this uses plain `node-fetch` — same convention as `services/embed.js`'s Gemini calls and `services/elevenlabsVoice.js` — not `safeFetch` (that wrapper's SSRF guard is for owner/caller-supplied URLs like webhook actions or URL-source ingestion, which doesn't apply here). Errors carry an `err.status` the route reads directly, same idiom as `elevenlabsVoice.js#cloneVoice`.
+
 ```js
-const { safeFetch } = require('./safeFetch');
+const fetch = require('node-fetch');
 const settings = require('./settings');
 const { webSearchCache } = require('../cache');
 const { checkLimit, trackWebSearch } = require('./usage');
@@ -121,13 +141,18 @@ async function searchWeb(query, { language = 'en' } = {}) {
   const apiKey = await settings.getSetting('SERPER_API_KEY');
   if (!apiKey) { logger.warn('SERPER_API_KEY not configured'); return []; }
 
-  const res = await safeFetch('https://google.serper.dev/search', {
+  const res = await fetch('https://google.serper.dev/search', {
     method: 'POST',
     headers: { 'X-API-KEY': apiKey, 'Content-Type': 'application/json' },
     body: JSON.stringify({ q, hl: language, num: 5 }),
     timeout: 8000,
   });
-  if (!res.ok) throw new Error(`Serper HTTP ${res.status}`);
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    const err = new Error(`Serper search failed: HTTP ${res.status} ${text.slice(0, 200)}`);
+    err.status = 502;
+    throw err;
+  }
   const data = await res.json();
   const results = (data.organic || []).slice(0, 5).map(r => ({
     title: r.title, url: r.link, snippet: (r.snippet || '').slice(0, 220),
@@ -142,7 +167,12 @@ async function searchWeb(query, { language = 'en' } = {}) {
 /** Quota-checked entry point shared by the /search-web route and the /ask fallback. */
 async function searchWebForProject(project, query, { language } = {}) {
   const limitCheck = await checkLimit(project.userId, 'webSearch', 1);
-  if (!limitCheck.ok) { const e = new Error(limitCheck.reason); e.quotaExceeded = true; throw e; }
+  if (!limitCheck.ok) {
+    const err = new Error(limitCheck.reason);
+    err.status = 402;
+    err.quotaExceeded = true;
+    throw err;
+  }
   const results = await searchWeb(query, { language });
   await trackWebSearch(project.userId).catch(() => {});
   return results;
@@ -172,7 +202,7 @@ router.post('/:publicId/search-web', webSearchLimiter, validate(schemas.searchWe
   } catch (e) {
     if (e.quotaExceeded) return res.status(402).json({ error: e.message, quotaExceeded: true });
     logger.error({ err: e.message }, 'search-web failed');
-    res.status(502).json({ error: 'Search service unavailable' });
+    res.status(e.status || 502).json({ error: 'Search service unavailable' });
   }
 });
 ```
@@ -188,7 +218,16 @@ router.post('/:publicId/search-web', webSearchLimiter, validate(schemas.searchWe
 - `webSearchEnabled` (boolean, default `false`) — same shape as `showSourceCards`/`showQuickReplies`.
 - `backend/middleware/validate.js`: `webSearchEnabled: z.boolean().optional()` added to the project-update schema.
 - `backend/routes/projects.js`: added to project-creation defaults (`false`) and the `PATCH /:id` allowed-fields list.
-- `backend/routes/embed.js` `GET /:publicId/config`: `webSearchEnabled: project.webSearchEnabled === true` exposed alongside the other widget flags.
+- `backend/routes/projects.js` `PATCH /:id`: server-side plan gate, same style as the existing `customDomain` check (`routes/projects.js:263-268`) — a cost-bearing capability gets a hard block, not just a disabled UI control:
+  ```js
+  if (patch.webSearchEnabled) {
+    const planId = await userPlanId(req.user.id);
+    if (planId === 'free') {
+      return res.status(402).json({ error: 'Live web search requires a paid plan.', code: 'PLAN_UPGRADE_REQUIRED' });
+    }
+  }
+  ```
+- `backend/routes/embed.js` `GET /:publicId/config`: `webSearchEnabled: planId === 'free' ? false : project.webSearchEnabled === true` — same defense-in-depth pattern already used for `showBranding` (`routes/embed.js:167`), so a project that enabled the toggle on a paid plan and later downgraded doesn't keep declaring the tool.
 - `public/project.html`: new `<select id="f-websearch">` next to the existing Sources/Quick-replies fields, same load/save wiring. Since free-plan quota is 0, gate it exactly like the existing `f-branding` field (`project.html:929-940`) — `disabled = true` plus an inline `.help` note with an upgrade link when `sub.plan.id === 'free'`:
   ```js
   const webSearchField = document.getElementById('f-websearch');
