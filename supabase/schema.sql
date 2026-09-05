@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS projects (
   show_character_fullscreen BOOLEAN DEFAULT false,
   widget_offset_x          INTEGER DEFAULT 0,
   widget_offset_y          INTEGER DEFAULT 0,
+  -- Web search grounding (see backend/services/searchWeb.js) — off by
+  -- default, and blocked server-side on the free plan regardless of this
+  -- value (see routes/projects.js PATCH and routes/embed.js /config).
+  web_search_enabled       BOOLEAN DEFAULT false,
   -- Avatar placement
   avatar_position          TEXT    DEFAULT 'right',
   avatar_size              TEXT    DEFAULT 'large',
@@ -190,6 +194,7 @@ CREATE TABLE IF NOT EXISTS usage (
   period           TEXT   NOT NULL,     -- format: YYYY-MM
   messages         INTEGER DEFAULT 0,
   embedding_chars  BIGINT  DEFAULT 0,
+  web_searches     INTEGER DEFAULT 0,
   created_at       BIGINT  NOT NULL,
   updated_at       BIGINT,
   UNIQUE (user_id, period)
