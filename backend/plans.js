@@ -27,6 +27,7 @@ const PLANS = [
       monthlyMessages: 100,
       monthlyEmbeddingChars: 100_000,
       urlSources: 3,
+      monthlyWebSearches: 0,
     },
     // 3a — informational only (see docs/competitor-feature-implementation-plan.md
     // 3a): what an overage message would notionally cost, surfaced as a
@@ -51,6 +52,7 @@ const PLANS = [
       monthlyMessages: 2_000,
       monthlyEmbeddingChars: 2_000_000,
       urlSources: 25,
+      monthlyWebSearches: 50,
     },
     overageRate: 0.01,
     features: ['3 chatbots', '25 files total', '2,000 messages / month', 'No watermark', 'Email support'],
@@ -68,6 +70,7 @@ const PLANS = [
       monthlyMessages: 10_000,
       monthlyEmbeddingChars: 10_000_000,
       urlSources: 200,
+      monthlyWebSearches: 300,
     },
     overageRate: 0.006,
     features: ['10 chatbots', '100 files total', '10,000 messages / month', 'Custom themes', 'Priority support'],
@@ -86,6 +89,7 @@ const PLANS = [
       monthlyMessages: 100_000,
       monthlyEmbeddingChars: 100_000_000,
       urlSources: 2_000,
+      monthlyWebSearches: 1_500,
     },
     overageRate: 0.004,
     features: ['50 chatbots', '500 files total', '100,000 messages / month', 'Analytics export', 'Slack/email support'],
