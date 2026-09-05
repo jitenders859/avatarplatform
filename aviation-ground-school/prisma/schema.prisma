@@ -1,0 +1,340 @@
+// Aviation Ground School — data model
+//
+// Core flow this schema supports:
+//   1. A student picks a country + license type -> routed to that Chatbot.
+//   2. They chat for free up to FREE_CHAT_MESSAGE_LIMIT messages (ChatSession.freeMessagesUsed),
+//      then need an active Subscription to keep going.
+//   3. The chatbot can recommend instructors who teach that country/license combo
+//      (Instructor <-> Country/LicenseType join tables).
+//   4. Instructors don't open one-off slots — they set recurring weekly availability
+//      (InstructorAvailability: day-of-week + a time-of-day window, in their own timezone).
+//      Students see that expanded into a calendar of free windows (src/lib/availability.ts)
+//      and book any start time + duration (30 min increments, e.g. "1 hour", "90 min") that
+//      fits inside one, so billing is driven by however much time they actually book.
+//   5. A student's *first* booking with a given instructor is free (up to
+//      FREE_INSTRUCTOR_SESSION_MINUTES) — see Booking.isFreeSession. Every booking after that
+//      with that instructor is paid: instructor's hourly rate + platform commission on top,
+//      collected via a single Stripe PaymentIntent on the student's card and split via
+//      Stripe Connect (application_fee_amount goes to the platform, the rest transfers to the
+//      instructor's connected account).
+//   6. Every CONFIRMED booking gets its own time-boxed Daily.co video room (src/lib/video.ts)
+//      that only opens up around the booked window.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  STUDENT
+  INSTRUCTOR
+  ADMIN
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  INCOMPLETE
+}
+
+enum SubscriptionPlan {
+  MONTHLY
+  ANNUAL
+}
+
+enum ChatRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  COMPLETED
+  CANCELED
+  NO_SHOW
+}
+
+model Country {
+  id   String @id @default(cuid())
+  code String @unique // ISO 3166-1 alpha-2, e.g. "US", "CA"
+  name String
+
+  chatbots           Chatbot[]
+  users              User[]
+  instructorCountries InstructorCountry[]
+
+  createdAt DateTime @default(now())
+}
+
+model LicenseType {
+  id          String @id @default(cuid())
+  code        String @unique // e.g. "PPL", "CPL", "ATPL", "MULTI_ENGINE", "INSTRUMENT", "CFI"
+  name        String
+  description String?
+
+  chatbots              Chatbot[]
+  instructorLicenseTypes InstructorLicenseType[]
+
+  createdAt DateTime @default(now())
+}
+
+/// One chatbot per (country, licenseType) combination, e.g. "US CPL", "Canada PPL".
+model Chatbot {
+  id            String @id @default(cuid())
+  slug          String @unique // e.g. "us-cpl", "ca-ppl"
+  title         String
+  systemPrompt  String @db.Text
+  isActive      Boolean @default(true)
+
+  countryId String
+  country   Country @relation(fields: [countryId], references: [id])
+
+  licenseTypeId String
+  licenseType   LicenseType @relation(fields: [licenseTypeId], references: [id])
+
+  chatSessions ChatSession[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([countryId, licenseTypeId])
+  @@index([countryId])
+  @@index([licenseTypeId])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole @default(STUDENT)
+
+  /// Soft signal only — verifying an email doesn't gate any feature, it's just trust info
+  /// (e.g. could inform future fraud checks or a "verified" badge).
+  emailVerified Boolean @default(false)
+
+  emailVerificationToken   String?   @unique
+  emailVerificationExpires DateTime?
+
+  passwordResetToken   String?   @unique
+  passwordResetExpires DateTime?
+
+  countryId String?
+  country   Country? @relation(fields: [countryId], references: [id])
+
+  chatSessions ChatSession[]
+  subscription Subscription?
+  instructor   Instructor?
+  bookings     Booking[] @relation("StudentBookings")
+  reviews      Review[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ChatSession {
+  id                String @id @default(cuid())
+  freeMessagesUsed  Int    @default(0)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  chatbotId String
+  chatbot   Chatbot @relation(fields: [chatbotId], references: [id])
+
+  messages ChatMessage[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([chatbotId])
+}
+
+model ChatMessage {
+  id      String   @id @default(cuid())
+  role    ChatRole
+  content String   @db.Text
+
+  sessionId String
+  session   ChatSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([sessionId])
+}
+
+/// A student's paywall subscription. One active subscription unlocks unlimited chatbot
+/// usage across every country/license chatbot.
+model Subscription {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  stripeCustomerId     String  @unique
+  stripeSubscriptionId String? @unique
+
+  plan            SubscriptionPlan?
+  status          SubscriptionStatus @default(INCOMPLETE)
+  currentPeriodEnd DateTime?
+  cancelAtPeriodEnd Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// An instructor's public profile + payout config. Wraps a User with role=INSTRUCTOR.
+model Instructor {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id])
+
+  bio            String? @db.Text
+  hourlyRateCents Int    // instructor's own rate; platform commission is added on top
+  currency       String  @default("usd")
+
+  /// IANA zone (e.g. "America/New_York"), captured from the instructor's browser when they
+  /// set up their profile. All of their InstructorAvailability windows are in this timezone.
+  timezone String @default("UTC")
+
+  stripeConnectAccountId String?  @unique
+  connectOnboarded       Boolean  @default(false)
+
+  ratingAvg   Float @default(0)
+  ratingCount Int   @default(0)
+
+  countries     InstructorCountry[]
+  licenseTypes  InstructorLicenseType[]
+  availability  InstructorAvailability[]
+  bookings      Booking[] @relation("InstructorBookings")
+  reviews       Review[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InstructorCountry {
+  instructorId String
+  instructor   Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  countryId String
+  country   Country @relation(fields: [countryId], references: [id])
+
+  @@id([instructorId, countryId])
+}
+
+model InstructorLicenseType {
+  instructorId String
+  instructor   Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  licenseTypeId String
+  licenseType   LicenseType @relation(fields: [licenseTypeId], references: [id])
+
+  @@id([instructorId, licenseTypeId])
+}
+
+/// A recurring weekly window an instructor is generally available, in Instructor.timezone.
+/// e.g. {dayOfWeek: 1 (Monday), startMinute: 540 (09:00), endMinute: 1020 (17:00)}.
+/// Expanded into an actual calendar of free windows by src/lib/availability.ts, which
+/// subtracts out anything already booked.
+model InstructorAvailability {
+  id String @id @default(cuid())
+
+  /// 0 = Sunday ... 6 = Saturday (matches JS Date#getDay in the instructor's own timezone).
+  dayOfWeek Int
+  /// Minutes since local midnight, e.g. 9:00 AM = 540.
+  startMinute Int
+  /// Minutes since local midnight; must be > startMinute.
+  endMinute Int
+
+  instructorId String
+  instructor   Instructor @relation(fields: [instructorId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([instructorId, dayOfWeek])
+}
+
+model Booking {
+  id     String @id @default(cuid())
+
+  studentId String
+  student   User   @relation("StudentBookings", fields: [studentId], references: [id])
+
+  instructorId String
+  instructor   Instructor @relation("InstructorBookings", fields: [instructorId], references: [id])
+
+  startAt         DateTime
+  endAt           DateTime
+  /// Redundant with endAt - startAt, stored for cheap display/queries.
+  durationMinutes Int
+
+  /// True for a student's first-ever booking with this instructor (free trial session).
+  isFreeSession Boolean @default(false)
+
+  currency             String @default("usd")
+  /// What the student is charged in total (0 for a free session).
+  priceCents           Int    @default(0)
+  /// Platform's cut of priceCents (PLATFORM_COMMISSION_BPS applied to the instructor rate).
+  commissionCents      Int    @default(0)
+  /// priceCents - commissionCents; what gets transferred to the instructor's connected account.
+  instructorPayoutCents Int   @default(0)
+
+  stripePaymentIntentId String? @unique
+
+  status BookingStatus @default(PENDING_PAYMENT)
+
+  /// Daily.co room backing this session's video call — created once the booking is CONFIRMED,
+  /// time-boxed to open shortly before startAt and close shortly after endAt.
+  dailyRoomName String? @unique
+  dailyRoomUrl  String?
+
+  /// Set once the confirmation email goes out — guards against sending it twice if a Stripe
+  /// webhook retries after the booking is already CONFIRMED.
+  confirmationEmailSentAt DateTime?
+  /// Set once the pre-session reminder email goes out (src/app/api/cron/reminders).
+  reminderSentAt DateTime?
+  /// Set whenever this booking's money needs a human to look at it: a refund attempt on
+  /// cancellation threw, a payment landed on a booking that was no longer PENDING_PAYMENT
+  /// (refunded automatically, but still logged here), or Stripe reported a dispute. Never
+  /// cleared automatically — surfaced as a flag on /admin.
+  paymentIssueAt DateTime?
+  /// Free-text note on what the payment issue was, for whoever reconciles it.
+  paymentIssueNote String?
+
+  review Review?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([studentId])
+  @@index([instructorId, startAt])
+}
+
+/// A student's rating of one completed booking. One per booking, written once.
+model Review {
+  id      String @id @default(cuid())
+  rating  Int // 1-5
+  comment String? @db.Text
+
+  bookingId String  @unique
+  booking   Booking @relation(fields: [bookingId], references: [id])
+
+  studentId String
+  student   User   @relation(fields: [studentId], references: [id])
+
+  instructorId String
+  instructor   Instructor @relation(fields: [instructorId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([instructorId])
+}
