@@ -135,6 +135,7 @@
 
   let avatar = null;
   let config = null;
+  let pageContext = null; // { url, title, text } from the host page, once fetched — see requestPageContext()
   let sessionId = null;
   let pendingSources = null;
   let pendingFigures = null;
@@ -274,6 +275,10 @@
 
     if (config.limitReached) { showFatal(config.limitMessage || 'This assistant has reached its usage limit for this month. Please check back later.'); return; }
 
+    if (config.project.pageContextEnabled) {
+      pageContext = await requestPageContext();
+    }
+
     // No voice key issued by the server (PUBLIC_GEMINI_API_KEY unset, or the
     // owner's quota was exhausted between config load and now). Degrade to
     // text-only mode: the server answers typed questions through POST /ask,
@@ -336,6 +341,7 @@
     captureFields = config.captureFields || [];
     const baseSystemPrompt = (config.project.systemPrompt || '')
       + buildKnowledgeBaseToolInstructions(config.project.webSearchEnabled)
+      + buildPageContextInstructions(pageContext)
       + buildCaptureInstructions(captureFields)
       + buildQuickReplyInstructions(config.project.showQuickReplies);
     const systemPromptWithGreeting = welcomeMessage
@@ -450,7 +456,11 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       const res = await fetch(`/embed/${publicId}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: text, sessionId }),
+        body: JSON.stringify({
+          question: text,
+          sessionId,
+          ...(config.project.pageContextEnabled && pageContext ? { pageContext } : {}),
+        }),
       });
 
       if (res.status === 429) {
@@ -1452,6 +1462,35 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     try { parent.postMessage({ source: 'avatar-platform', publicId, ...payload }, '*'); } catch (_) {}
   }
 
+  // ── Page-content awareness (opt-in — config.project.pageContextEnabled) ──
+  // This iframe is cross-origin from the host page, so it can't read the
+  // page's DOM directly — embed-loader.js (running in the host page itself)
+  // does the extraction and relays it back over postMessage. Called once
+  // during boot(), before the system prompt is built / before the first
+  // /ask request, with a short timeout so a slow or unresponsive host page
+  // never blocks the widget from opening.
+  function requestPageContext(timeoutMs = 500) {
+    return new Promise((resolve) => {
+      let settled = false;
+      function onMessage(e) {
+        const data = e.data;
+        if (!data || data.source !== 'avatar-platform-host' || data.type !== 'page-content') return;
+        if (settled) return;
+        settled = true;
+        window.removeEventListener('message', onMessage);
+        resolve({ url: data.url || null, title: data.title || null, text: data.text || '' });
+      }
+      window.addEventListener('message', onMessage);
+      notifyParent({ type: 'request-page-content' });
+      setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        window.removeEventListener('message', onMessage);
+        resolve(null);
+      }, timeoutMs);
+    });
+  }
+
   // ── 7. Composer + input handling ─────────────────────────────
   textInput.addEventListener('input', () => {
     textInput.style.height = 'auto';
@@ -1531,6 +1570,24 @@ You have a search_knowledge_base tool connected to this website's uploaded docum
 You also have a search_web tool for the public internet. Always try search_knowledge_base first. Call search_web only if search_knowledge_base found nothing relevant, the question is about current/time-sensitive information, or the user explicitly asks for a link or source. Give a concise spoken answer — never read a URL or list of links aloud.`;
     }
     return text;
+  }
+
+  // Page-content awareness (config.project.pageContextEnabled) — a static
+  // snapshot taken once at boot (see requestPageContext()), not a live tool,
+  // since a Live session's system prompt is only set once at connect time.
+  // Text-only mode instead re-sends pageContext with every /ask request
+  // (see sendTextOnly()), so it can't go stale the same way.
+  function buildPageContextInstructions(pageContext) {
+    if (!pageContext || !pageContext.text) return '';
+    const label = [pageContext.title, pageContext.url].filter(Boolean).join(' — ');
+    return `
+
+You can see the content of the web page the visitor is currently viewing${label ? ` (${label})` : ''}. Use it to answer questions about what's on this page. Don't mention that you were given this content — just answer naturally, as if you'd looked at the page yourself.
+
+Page content:
+"""
+${pageContext.text.slice(0, 4000)}
+"""`;
   }
 
   // The one retrieval mechanism for the whole avatar widget — voice and

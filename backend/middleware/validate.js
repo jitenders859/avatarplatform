@@ -113,6 +113,7 @@ const schemas = {
     showSourceCards: z.boolean().optional(),
     showQuickReplies: z.boolean().optional(),
     webSearchEnabled: z.boolean().optional(),
+    pageContextEnabled: z.boolean().optional(),
     allowDragDropUpload: z.boolean().optional(),
     widgetOffsetX: z.number().int().min(0).max(100).optional(),
     widgetOffsetY: z.number().int().min(0).max(100).optional(),
@@ -326,9 +327,18 @@ const schemas = {
     language: z.string().trim().max(10).optional(),
   }),
 
+  // pageContext is volunteered by the client (extracted from the host page
+  // by embed-loader.js — see public/js/embed-loader.js) and only ever used
+  // server-side when the project owner has opted in (project.pageContextEnabled,
+  // re-checked in answerQuestion.js — never trusted from this flag alone).
   ask: z.object({
     question: z.string().min(1, 'question is required').max(1000, 'Question too long'),
     sessionId: z.string().optional().nullable(),
+    pageContext: z.object({
+      url: z.string().max(2048).optional().nullable(),
+      title: z.string().max(300).optional().nullable(),
+      text: z.string().max(6000).optional().nullable(),
+    }).optional().nullable(),
   }),
 
   study: z.object({

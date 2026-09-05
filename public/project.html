@@ -297,6 +297,14 @@
             <span class="help">Let the avatar search the web when it doesn't know the answer from your knowledge base.</span>
           </div>
           <div class="field">
+            <label>Read the current page's content</label>
+            <select class="select" id="f-pagecontext">
+              <option value="false">Off (default)</option>
+              <option value="true">On</option>
+            </select>
+            <span class="help">Let the widget read the text of the page it's embedded on (title, URL, visible content) so it can answer questions about what's on that page. Off by default — visitors' page content is only read once you turn this on.</span>
+          </div>
+          <div class="field">
             <label>Allow drag &amp; drop image upload</label>
             <select class="select" id="f-dragdrop">
               <option value="false">No — click-to-upload button only (default)</option>
@@ -923,6 +931,7 @@
       document.getElementById('f-sources').value   = String(p.showSourceCards !== false);
       document.getElementById('f-quickreplies').value = String(p.showQuickReplies === true);
       document.getElementById('f-websearch').value = String(p.webSearchEnabled === true);
+      document.getElementById('f-pagecontext').value = String(p.pageContextEnabled === true);
       document.getElementById('f-dragdrop').value = String(p.allowDragDropUpload === true);
       document.getElementById('f-fullscreen-desktop').value = String(p.fullScreenOnDesktop === true);
       document.getElementById('f-fullscreen-mobile').value  = String(p.fullScreenOnMobile === true);
@@ -1267,6 +1276,7 @@
         showSourceCards:      document.getElementById('f-sources').value === 'true',
         showQuickReplies:     document.getElementById('f-quickreplies').value === 'true',
         webSearchEnabled:     document.getElementById('f-websearch').value === 'true',
+        pageContextEnabled:   document.getElementById('f-pagecontext').value === 'true',
         allowDragDropUpload:  document.getElementById('f-dragdrop').value === 'true',
         fullScreenOnDesktop:  document.getElementById('f-fullscreen-desktop').value === 'true',
         fullScreenOnMobile:   document.getElementById('f-fullscreen-mobile').value === 'true',

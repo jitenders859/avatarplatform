@@ -19,6 +19,10 @@
  *   6. Expands the iframe to cover the whole viewport on a 'fullscreen'
  *      postMessage (or an 'open' message carrying { fullscreen: true }),
  *      snapshotting the prior inline styles so restoring is exact.
+ *   7. On request, reads the host page's own visible content (title, URL,
+ *      main text) and relays it into the iframe — opt-in per project, and
+ *      the only place in the widget that can actually see the host page
+ *      (embed.html itself is sandboxed inside the cross-origin iframe).
  */
 (function () {
   'use strict';
@@ -262,6 +266,36 @@
     }
   }
 
+  // ── Page-content extraction (opt-in per project) ───────────────
+  // Runs in the HOST page's own document (this script is loaded directly on
+  // the customer's site, unlike embed.html which is sandboxed in the
+  // iframe) — this is the only place in the widget that can actually read
+  // the page it's embedded on. Only ever invoked in response to the
+  // iframe's own 'request-page-content' message, itself only sent when the
+  // project owner enabled this in project settings (config.project.
+  // pageContextEnabled — see public/embed.html's boot()).
+  function extractPageContent() {
+    try {
+      const metaDesc = document.querySelector('meta[name="description"]');
+      const root = document.querySelector('main, article, [role="main"]') || document.body;
+      const clone = root.cloneNode(true);
+      clone.querySelectorAll('script, style, noscript, nav, footer, header, aside, svg, [aria-hidden="true"]')
+        .forEach(n => n.remove());
+      // .innerText would return empty here — the clone is detached from the
+      // rendered DOM, so layout-dependent APIs don't work on it. textContent
+      // doesn't need layout, at the cost of also picking up hidden text.
+      const text = (clone.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 6000);
+      return {
+        url: location.href.slice(0, 2048),
+        title: (document.title || '').slice(0, 300),
+        description: metaDesc ? (metaDesc.getAttribute('content') || '').slice(0, 500) : null,
+        text,
+      };
+    } catch (_) {
+      return { url: location.href, title: document.title || '', description: null, text: '' };
+    }
+  }
+
   // ── Programmatic control (public/docs/prefetching.html "Controlling the
   // widget" section) — a host page dispatches ap:open/ap:close/ap:hide/
   // ap:show on document instead of needing a reference to this closure.
@@ -356,6 +390,12 @@
       document.dispatchEvent(new CustomEvent('ap:response', {
         detail: { botId: publicId, sessionId: data.sessionId, answer: data.answer, sources: data.sources || [] },
       }));
+      return;
+    }
+
+    // ── Page-content request (opt-in — see extractPageContent above) ────
+    if (data.type === 'request-page-content') {
+      sendToIframe({ type: 'page-content', ...extractPageContent() });
       return;
     }
 

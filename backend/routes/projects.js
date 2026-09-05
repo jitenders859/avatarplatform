@@ -121,6 +121,7 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
     showSourceCards: true,
     showQuickReplies: false,
     webSearchEnabled: false,
+    pageContextEnabled: false,
     allowDragDropUpload: false,
     fullScreenOnDesktop: false,
     fullScreenOnMobile: false,

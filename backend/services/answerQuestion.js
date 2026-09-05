@@ -35,13 +35,25 @@ async function filesForHits(hits) {
  * their own quota checks (checkLimit) before calling this — this function
  * always persists and tracks usage.
  */
-async function answerQuestion(project, question, incomingSessionId, { ip = 'unknown' } = {}) {
+async function answerQuestion(project, question, incomingSessionId, { ip = 'unknown', pageContext = null } = {}) {
   const queryEmbedding = await embedOne(String(question).slice(0, 1500), 'RETRIEVAL_QUERY');
   const hits = await searchProject(project.id, queryEmbedding, 5);
 
   const fileCache = await filesForHits(hits);
   const sources = [];
   const contextParts = [];
+
+  // pageContext is volunteered by the widget (extracted client-side from the
+  // host page — see public/js/embed-loader.js) and only trusted when the
+  // owner has opted in; project.pageContextEnabled is the server-side gate,
+  // not the client's request alone (see middleware/validate.js's ask schema).
+  if (project.pageContextEnabled && pageContext && (pageContext.text || pageContext.title)) {
+    const label = [pageContext.title, pageContext.url].filter(Boolean).join(' — ');
+    contextParts.push(
+      `[Content of the page the visitor is currently viewing${label ? `: ${label}` : ''}]\n${String(pageContext.text || '').slice(0, 6000)}`
+    );
+  }
+
   for (const hit of hits) {
     const file = fileCache.get(hit.chunk.fileId);
     contextParts.push(`[Source: ${file ? file.originalName : 'Unknown'}]\n${hit.chunk.text}`);

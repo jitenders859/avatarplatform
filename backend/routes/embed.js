@@ -183,6 +183,7 @@ router.get('/:publicId/config', async (req, res) => {
         showSourceCards:       project.showSourceCards       !== false,
         showQuickReplies:      project.showQuickReplies      === true,
         webSearchEnabled:      planId === 'free' ? false : project.webSearchEnabled === true,
+        pageContextEnabled:    project.pageContextEnabled === true,
         allowDragDropUpload:   project.allowDragDropUpload   === true,
         fullScreenOnDesktop:   project.fullScreenOnDesktop   === true,
         fullScreenOnMobile:    project.fullScreenOnMobile    === true,
@@ -375,11 +376,11 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
     const limitCheck = await checkLimit(project.userId, 'message', 1);
     if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason, limitReached: true, limitMessage: limitMessageFor(project, limitCheck) });
 
-    const { question, sessionId: incomingSessionId } = req.body;
+    const { question, sessionId: incomingSessionId, pageContext } = req.body;
     let result;
     try {
       // Shared with the WhatsApp channel — see services/answerQuestion.js.
-      result = await answerQuestion(project, question, incomingSessionId, { ip: req.ip || 'unknown' });
+      result = await answerQuestion(project, question, incomingSessionId, { ip: req.ip || 'unknown', pageContext });
     } catch (e) {
       logger.error({ err: e.message }, 'ask failed');
       return res.status(502).json({ error: 'AI service unavailable' });

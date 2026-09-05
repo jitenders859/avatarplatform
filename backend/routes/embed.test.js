@@ -305,6 +305,50 @@ test('config exposes showCharacterFullscreen', async (t) => {
   assert.equal(res.body.project.showCharacterFullscreen, true);
 });
 
+test('config exposes pageContextEnabled, off by default', async (t) => {
+  process.env.GEMINI_API_KEY = SERVER_KEY;
+  delete process.env.PUBLIC_GEMINI_API_KEY;
+  delete require.cache[require.resolve('./embed')];
+
+  // Distinct publicIds per sub-test — /config's projectCache is keyed by
+  // publicId, so reusing one across a project-data change (unlike the
+  // quota-state changes other tests in this file exercise) would just
+  // return the first lookup's cached project.
+  const resolved = require.resolve('../db');
+  require.cache[resolved] = {
+    id: resolved, filename: resolved, loaded: true, children: [], paths: [],
+    exports: {
+      findOne: async (table, where) => {
+        if (table !== 'projects') return null;
+        if (where.publicId === 'test-public-id-pagectx-off') return { ...PROJECT, publicId: where.publicId };
+        if (where.publicId === 'test-public-id-pagectx-on') return { ...PROJECT, publicId: where.publicId, pageContextEnabled: true };
+        return null;
+      },
+      findAll: async () => [], insert: async (t, r) => r, insertMany: async () => [],
+      update: async () => null, remove: async () => 0, query: async () => [], queryOne: async () => null,
+      pool: { end: async () => {} },
+    },
+  };
+
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/embed', require('./embed'));
+  const agent = require('supertest')(app);
+
+  await t.test('defaults to false when unset on the project', async () => {
+    const res = await agent.get('/embed/test-public-id-pagectx-off/config');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.project.pageContextEnabled, false);
+  });
+
+  await t.test('reflects true once the owner opts in', async () => {
+    const res = await agent.get('/embed/test-public-id-pagectx-on/config');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.project.pageContextEnabled, true);
+  });
+});
+
 test.after(() => {
   delete process.env.PUBLIC_GEMINI_API_KEY;
 });

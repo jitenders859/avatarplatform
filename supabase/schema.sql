@@ -67,6 +67,11 @@ CREATE TABLE IF NOT EXISTS projects (
   -- default, and blocked server-side on the free plan regardless of this
   -- value (see routes/projects.js PATCH and routes/embed.js /config).
   web_search_enabled       BOOLEAN DEFAULT false,
+  -- Page-content awareness (see backend/services/answerQuestion.js and
+  -- public/js/embed-loader.js) — off by default; the owner opts in per
+  -- project so the widget may read the host page's visible content (title,
+  -- URL, main text) and use it to answer questions about that page.
+  page_context_enabled     BOOLEAN DEFAULT false,
   -- Avatar placement
   avatar_position          TEXT    DEFAULT 'right',
   avatar_size              TEXT    DEFAULT 'large',
