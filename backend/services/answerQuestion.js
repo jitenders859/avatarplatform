@@ -13,7 +13,13 @@ const { embedOne } = require('./embed');
 const { searchProject } = require('./vector');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const settings = require('./settings');
+const { searchWebForProject } = require('./searchWeb');
 const logger = require('../logger').child({ module: 'answer-question' });
+
+// Web search fallback trigger (see docs/superpowers/specs/2026-09-05-web-search-grounding-design.md
+// Part 2) — /ask has no tool-calling loop, so there's no model decision
+// point the way the Live path has; this heuristic gate stands in for it.
+const TIME_SENSITIVE_RE = /\b(latest|current(ly)?|today|this week|this year|right now|price|cost|version|release|schedule|news)\b/i;
 
 /** Fetch files for a set of chunk hits in one round trip instead of one query per hit. */
 async function filesForHits(hits) {
@@ -45,6 +51,22 @@ async function answerQuestion(project, question, incomingSessionId, { ip = 'unkn
         url: file.kind === 'url' ? file.sourceUrl : null,
         snippet: hit.chunk.text.slice(0, 180).trim(),
       });
+    }
+  }
+
+  // hits.length === 0 already means "below RAG_MIN_SCORE" (vector.js
+  // filters those rows out server-side), so that alone is the confidence
+  // signal; the regex additionally catches a time-sensitive question the KB
+  // might technically have stale content for.
+  if (project.webSearchEnabled && (hits.length === 0 || TIME_SENSITIVE_RE.test(question))) {
+    try {
+      const webResults = await searchWebForProject(project, question, { language: 'en' });
+      for (const r of webResults) {
+        contextParts.push(`[Web result: ${r.title}]\n${r.snippet}`);
+        sources.push({ title: r.title, url: r.url, snippet: r.snippet });
+      }
+    } catch (e) {
+      logger.warn({ err: e.message }, 'ask web-search fallback failed — continuing with KB-only context');
     }
   }
 
