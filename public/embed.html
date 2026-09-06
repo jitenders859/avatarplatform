@@ -888,19 +888,99 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     return el;
   }
 
+  // Bot replies that are a calculation, formula, or a detailed
+  // step-by-step explanation are rendered as a distinctly-styled
+  // "note" bubble (see .msg.bot.note in embed.css) instead of a
+  // plain chat bubble, so they read like a saved note rather than
+  // conversational text.
+  const NOTE_LABELS = {
+    code: { icon: '💻', text: 'Code' },
+    calc: { icon: '🧮', text: 'Calculation' },
+    steps: { icon: '📋', text: 'Step-by-step' },
+  };
+
+  function detectNoteType(text) {
+    const str = String(text);
+    if (/```/.test(str)) return 'code';
+    const lines = str.split('\n').map(l => l.trim()).filter(Boolean);
+    const stepLines = lines.filter(l => /^(step\s*\d+\s*[:.)]|\d+[.)]\s+)/i.test(l));
+    if (stepLines.length >= 2) return 'steps';
+    const mathLines = lines.filter(l => /\d\s*[-+*/=×÷]\s*\d/.test(l) || /^[^a-z]*=\s*-?\d/i.test(l));
+    if (mathLines.length >= 2) return 'calc';
+    const hasFormulaKeyword = /\b(formula|equation|calculat\w*)\b/i.test(str);
+    if (mathLines.length >= 1 && hasFormulaKeyword) return 'calc';
+    if (hasFormulaKeyword && lines.some(l => /[a-z0-9)]\s*=\s*[a-z0-9(]/i.test(l))) return 'calc';
+    return null;
+  }
+
+  function detectListType(lines) {
+    const nonEmpty = lines.filter(l => l.trim());
+    if (nonEmpty.length < 2) return null;
+    if (nonEmpty.every(l => /^\s*[-*•]\s+/.test(l))) return 'ul';
+    if (nonEmpty.every(l => /^\s*\d+[.)]\s+/.test(l))) return 'ol';
+    return null;
+  }
+
+  function renderTextBlock(el, text) {
+    const paragraphs = String(text).split(/\n{2,}/);
+    for (const para of paragraphs) {
+      if (!para.trim()) continue;
+      const lines = para.split('\n');
+      const listType = detectListType(lines);
+      if (listType) {
+        const list = document.createElement(listType);
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const content = line.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '');
+          const li = document.createElement('li');
+          appendInlineFormatted(li, content);
+          list.appendChild(li);
+        }
+        el.appendChild(list);
+      } else {
+        const p = document.createElement('p');
+        lines.forEach((line, i) => {
+          if (i > 0) p.appendChild(document.createElement('br'));
+          appendInlineFormatted(p, line);
+        });
+        el.appendChild(p);
+      }
+    }
+  }
+
   function setMessageText(el, text) {
     el.innerHTML = '';
     if (!text) return;
-    const paragraphs = String(text).split(/\n{2,}/);
-    for (const para of paragraphs) {
-      const p = document.createElement('p');
-      const lines = para.split('\n');
-      lines.forEach((line, i) => {
-        if (i > 0) p.appendChild(document.createElement('br'));
-        appendInlineFormatted(p, line);
-      });
-      el.appendChild(p);
+    const isBot = el.classList.contains('bot');
+    const noteType = isBot ? detectNoteType(text) : null;
+    el.classList.toggle('note', !!noteType);
+    if (noteType) {
+      const info = NOTE_LABELS[noteType];
+      const label = document.createElement('div');
+      label.className = 'msg-note-label';
+      const icon = document.createElement('span');
+      icon.textContent = info.icon;
+      const lbl = document.createElement('span');
+      lbl.textContent = info.text;
+      label.appendChild(icon);
+      label.appendChild(lbl);
+      el.appendChild(label);
     }
+
+    const str = String(text);
+    const codeRe = /```[ \t]*([\w+-]*)\n?([\s\S]*?)```/g;
+    let lastIndex = 0, m;
+    while ((m = codeRe.exec(str)) !== null) {
+      if (m.index > lastIndex) renderTextBlock(el, str.slice(lastIndex, m.index));
+      const pre = document.createElement('pre');
+      const code = document.createElement('code');
+      if (m[1]) code.className = `lang-${m[1]}`;
+      code.textContent = m[2].replace(/\n$/, '');
+      pre.appendChild(code);
+      el.appendChild(pre);
+      lastIndex = codeRe.lastIndex;
+    }
+    if (lastIndex < str.length) renderTextBlock(el, str.slice(lastIndex));
   }
 
   function appendInlineFormatted(parent, text) {
@@ -919,13 +999,15 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   }
 
   function appendStyled(parent, text) {
-    const re = /(\*\*[^*]+\*\*|\*[^*]+\*)/g;
+    const re = /(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
     let last = 0, m;
     while ((m = re.exec(text)) !== null) {
       if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)));
       const tok = m[0];
       if (tok.startsWith('**')) {
         const b = document.createElement('strong'); b.textContent = tok.slice(2, -2); parent.appendChild(b);
+      } else if (tok.startsWith('`')) {
+        const c = document.createElement('code'); c.textContent = tok.slice(1, -1); parent.appendChild(c);
       } else {
         const i = document.createElement('em'); i.textContent = tok.slice(1, -1); parent.appendChild(i);
       }
