@@ -70,6 +70,7 @@ async function answerQuestion(project, question, incomingSessionId, { ip = 'unkn
   // filters those rows out server-side), so that alone is the confidence
   // signal; the regex additionally catches a time-sensitive question the KB
   // might technically have stale content for.
+  let usedWebFallback = false;
   if (project.webSearchEnabled && (hits.length === 0 || TIME_SENSITIVE_RE.test(question))) {
     try {
       const webResults = await searchWebForProject(project, question, { language: 'en' });
@@ -77,22 +78,32 @@ async function answerQuestion(project, question, incomingSessionId, { ip = 'unkn
         contextParts.push(`[Web result: ${r.title}]\n${r.snippet}`);
         sources.push({ title: r.title, url: r.url, snippet: r.snippet });
       }
+      usedWebFallback = webResults.length > 0;
     } catch (e) {
       logger.warn({ err: e.message }, 'ask web-search fallback failed — continuing with KB-only context');
     }
   }
 
-  const systemPrompt = project.systemPrompt ||
-    'You are a helpful AI assistant. Answer the user\'s question using the provided knowledge base context. Be concise and accurate.';
-  const contextText = contextParts.length
-    ? `Knowledge base context:\n\n${contextParts.join('\n\n---\n\n')}`
-    : 'No relevant context found in the knowledge base.';
-  const prompt = `${systemPrompt}\n\n${contextText}\n\nUser question: ${String(question).slice(0, 1000)}\n\nAnswer:`;
+  // Owner's static fallback message (project.fallbackMessage) skips the
+  // model call entirely rather than letting it guess, but only when there's
+  // truly no grounding context at all — a successful web-search fallback
+  // above still gets a real, generated answer.
+  let answer;
+  if (hits.length === 0 && !usedWebFallback && project.fallbackMessage) {
+    answer = project.fallbackMessage;
+  } else {
+    const systemPrompt = project.systemPrompt ||
+      'You are a helpful AI assistant. Answer the user\'s question using the provided knowledge base context. Be concise and accurate.';
+    const contextText = contextParts.length
+      ? `Knowledge base context:\n\n${contextParts.join('\n\n---\n\n')}`
+      : 'No relevant context found in the knowledge base.';
+    const prompt = `${systemPrompt}\n\n${contextText}\n\nUser question: ${String(question).slice(0, 1000)}\n\nAnswer:`;
 
-  const genai = new GoogleGenerativeAI(await settings.getSetting('GEMINI_API_KEY'));
-  const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
-  const result = await model.generateContent(prompt);
-  const answer = result.response.text();
+    const genai = new GoogleGenerativeAI(await settings.getSetting('GEMINI_API_KEY'));
+    const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
+    const result = await model.generateContent(prompt);
+    answer = result.response.text();
+  }
 
   let sid = incomingSessionId;
   try {

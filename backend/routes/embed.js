@@ -15,9 +15,11 @@ const { answerQuestion } = require('../services/answerQuestion');
 const { resolveFigures } = require('../services/figures');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const { projectCache } = require('../cache');
+const { projectCache, invalidateProjectCache } = require('../cache');
 const { validate, schemas } = require('../middleware/validate');
 const { toolsForTier, projectActionTools } = require('../services/tools');
+const { synthesizeSpeech, TtsError } = require('../services/tts');
+const { isWithinBusinessHours } = require('../services/hours');
 const { resolveLearnerKey, backfillLearnerKey } = require('../services/learner');
 const { checkLimit, userPlanId } = require('../services/usage');
 const logger = require('../logger').child({ module: 'embed' });
@@ -126,6 +128,20 @@ async function pageImagesForHits(hits) {
   return map;
 }
 
+module.exports.invalidateProjectCache = invalidateProjectCache;
+
+// Admin kill switch (projects.admin_suspended — see backend/routes/admin.js
+// PATCH /projects/:id) for one specific chatbot, short of suspending the
+// owner's whole account. Checked at the top of every route below that
+// serves the widget or costs money, right after the existing "not found"
+// check — a suspended project should be as inert as one that doesn't exist,
+// just with a clearer message for the widget to show instead of erroring.
+function rejectIfSuspended(project, res) {
+  if (!project.adminSuspended) return false;
+  res.status(403).json({ error: 'This chatbot has been disabled.', disabled: true });
+  return true;
+}
+
 // Deliberately NOT status-filtered — an archived character (soft-deleted
 // via the admin panel) must keep resolving for projects already assigned
 // to it; only NEW assignment (routes/projects.js) is gated to status
@@ -148,6 +164,7 @@ router.get('/:publicId/config', async (req, res) => {
   try {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+    if (rejectIfSuspended(project, res)) return;
     const character = await findCharacterForEmbed(project.characterId);
     const triggers = character
       ? await db.findAll('character_triggers', { characterId: character.id }, { orderBy: 'createdAt', order: 'asc' })
@@ -170,6 +187,7 @@ router.get('/:publicId/config', async (req, res) => {
         publicId: project.publicId,
         name: project.name,
         voice: project.voice,
+        voiceEngine: project.voiceEngine || 'gemini-live',
         systemPrompt: project.systemPrompt,
         welcomeMessage: project.welcomeMessage,
         capabilityTier: project.capabilityTier || 'basic',
@@ -201,6 +219,12 @@ router.get('/:publicId/config', async (req, res) => {
         avatarCompactOnMobile: project.avatarCompactOnMobile !== false,
         avatarLauncherStyle:   project.avatarLauncherStyle   || 'bubble',
         proactiveGreetingEnabled: project.proactiveGreetingEnabled === true,
+        // Away message / business hours: isOpen is computed server-side (not
+        // just the raw config) so the widget doesn't need its own timezone
+        // logic — see backend/services/hours.js.
+        isOpen:                isWithinBusinessHours(project.businessHours),
+        awayMessage:           project.awayMessage || null,
+        conversationStarters:  Array.isArray(project.conversationStarters) ? project.conversationStarters : [],
       },
       character: character ? {
         id: character.slug,
@@ -249,6 +273,7 @@ router.get('/:publicId/config', async (req, res) => {
 router.post('/:publicId/retrieve', aiCostLimiter, validate(schemas.embedRetrieve), async (req, res) => {
   const project = await findByPublicId(req.params.publicId);
   if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+    if (rejectIfSuspended(project, res)) return;
 
   const { query, k = 5 } = req.body;
 
@@ -334,6 +359,7 @@ router.get('/:publicId/file/:fileId', async (req, res) => {
   try {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).end();
+    if (project.adminSuspended) return res.status(403).end();
     const file = await db.findOne('files', { id: req.params.fileId, projectId: project.id });
     if (!file) return res.status(404).end();
     const allowed = file.kind === 'image' || (file.kind === 'pdf' && project.capabilityTier !== 'basic');
@@ -354,6 +380,7 @@ router.get('/:publicId/page-image/:pageImageId', async (req, res) => {
   try {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).end();
+    if (project.adminSuspended) return res.status(403).end();
     if (project.capabilityTier === 'basic') return res.status(403).end();
 
     const pageImage = await db.findOne('pageImages', { id: req.params.pageImageId, projectId: project.id });
@@ -374,6 +401,7 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
   try {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+    if (rejectIfSuspended(project, res)) return;
 
     const limitCheck = await checkLimit(project.userId, 'message', 1);
     if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason, limitReached: true, limitMessage: limitMessageFor(project, limitCheck) });
@@ -396,6 +424,53 @@ router.post('/:publicId/ask', validate(schemas.ask), aiCostLimiter, async (req, 
 });
 
 /**
+ * POST /embed/:publicId/speak
+ *
+ * Synthesizes text into audio through the project's TTS-only voice engine
+ * (Fish Audio / Cartesia / ElevenLabs — see backend/services/tts.js). Used
+ * only by projects configured with one of those engines: the widget still
+ * gets its reply text from POST /ask (unchanged), then calls this endpoint
+ * with that text to get audio to play through the avatar. Gemini Live
+ * projects never call this — they get audio directly from their own live
+ * session and don't need a separate synthesis step.
+ *
+ * For ElevenLabs, the response also carries `alignment` — per-character
+ * timestamps from its "with-timestamps" endpoint — which the widget passes
+ * to avatar.speakPCMWithAlignment() for real timestamp-anchored lip-sync
+ * instead of speakPCM()'s amplitude-only fallback. `alignment` is null for
+ * Fish Audio/Cartesia, which don't offer this.
+ *
+ * Shares /ask's per-(visitor, project) rate limit since this is the other
+ * paid step of the same "answer a question" flow.
+ */
+router.post('/:publicId/speak', validate(schemas.speak), aiCostLimiter, async (req, res) => {
+  try {
+    const project = await findByPublicId(req.params.publicId);
+    if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+    if (rejectIfSuspended(project, res)) return;
+
+    const engine = project.voiceEngine || 'gemini-live';
+    if (engine === 'gemini-live') {
+      return res.status(400).json({ error: 'This project uses Gemini Live, which does not use /speak.' });
+    }
+
+    const limitCheck = await checkLimit(project.userId, 'message', 1);
+    if (!limitCheck.ok) return res.status(402).json({ error: limitCheck.reason });
+
+    const { audioBase64, mimeType, sampleRate, alignment } = await synthesizeSpeech({
+      engine,
+      voiceId: project.voice,
+      text: req.body.text,
+    });
+    res.json({ audio: audioBase64, mimeType, sampleRate, alignment });
+  } catch (e) {
+    if (e instanceof TtsError) return res.status(502).json({ error: e.message });
+    logger.error({ err: e.message }, 'speak error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
  * POST /embed/:publicId/study
  *
  * Tool-calling chat for study-tier features (quizzes, flashcards, etc. —
@@ -413,6 +488,7 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
   try {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+    if (rejectIfSuspended(project, res)) return;
 
     if (project.capabilityTier === 'basic') {
       return res.status(403).json({
@@ -564,6 +640,7 @@ router.post('/:publicId/quiz-attempt', validate(schemas.quizAttempt), async (req
   try {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+    if (rejectIfSuspended(project, res)) return;
 
     const { sessionId, question, topic, selectedIndex, correctIndex, sourceChunkIds } = req.body;
     const session = await db.findOne('sessions', { id: sessionId, projectId: project.id });
@@ -599,6 +676,7 @@ router.post('/:publicId/flashcard-review', validate(schemas.flashcardReview), as
   try {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+    if (rejectIfSuspended(project, res)) return;
 
     const { sessionId, front, back, topic, sourceChunkId, selfRating } = req.body;
     const session = await db.findOne('sessions', { id: sessionId, projectId: project.id });
@@ -637,6 +715,7 @@ router.get('/:publicId/progress', async (req, res) => {
   try {
     const project = await findByPublicId(req.params.publicId);
     if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+    if (rejectIfSuspended(project, res)) return;
 
     const sessionId = req.query.sessionId;
     if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
@@ -719,6 +798,7 @@ router.get('/:publicId/progress', async (req, res) => {
 router.post('/:publicId/log', validate(schemas.log), async (req, res) => {
   const project = await findByPublicId(req.params.publicId);
   if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+    if (rejectIfSuspended(project, res)) return;
 
   const ip = req.ip || 'unknown';
   const { sessionId, role, text } = req.body;
@@ -779,11 +859,31 @@ router.post('/:publicId/log', validate(schemas.log), async (req, res) => {
 });
 
 /**
+ * GET /embed/:publicId/capture-fields
+ */
+router.get('/:publicId/capture-fields', async (req, res) => {
+  try {
+    const project = await findByPublicId(req.params.publicId);
+    if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+    if (rejectIfSuspended(project, res)) return;
+
+    const fields = await db.findAll('captureFields', { projectId: project.id }, { orderBy: 'order', order: 'asc' });
+    res.json({
+      fields: fields.map(f => ({ id: f.id, label: f.label, key: f.key, type: f.type, options: f.options, required: f.required })),
+    });
+  } catch (e) {
+    logger.error({ err: e.message }, 'capture-fields error');
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+/**
  * POST /embed/:publicId/lead
  */
 router.post('/:publicId/lead', validate(schemas.embedLead), async (req, res) => {
   const project = await findByPublicId(req.params.publicId);
   if (!project) return res.status(404).json({ error: 'Chatbot not found' });
+    if (rejectIfSuspended(project, res)) return;
 
   const { sessionId, data, complete } = req.body;
 

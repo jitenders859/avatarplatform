@@ -9,8 +9,32 @@ const { validate, schemas } = require('../middleware/validate');
 const { userPlanId } = require('../services/usage');
 const { sendTeamInviteEmail } = require('../services/email');
 const storage = require('../services/storage');
+const { synthesizeSpeech, TtsError } = require('../services/tts');
+const { rateLimit } = require('express-rate-limit');
 
 const router = express.Router();
+
+// Owner-only, but still a paid call to a third-party TTS API per click —
+// capped generously above normal "click a few voices to compare" usage,
+// not meant to stop a determined abuser (that's the visitor-facing
+// /embed/:publicId/speak limiter's job).
+const voicePreviewLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id || req.ip,
+  handler: (_req, res) => res.status(429).json({ error: 'Too many preview requests — please slow down a little.' }),
+});
+
+// Which env var backs each TTS-only voice engine — checked at PATCH time so
+// an owner switching engines gets a clear error immediately instead of a
+// silently broken widget once a visitor tries to speak to it.
+const VOICE_ENGINE_ENV_KEY = {
+  'fish-audio': 'FISH_AUDIO_API_KEY',
+  cartesia: 'CARTESIA_API_KEY',
+  elevenlabs: 'ELEVENLABS_API_KEY',
+};
 
 // Characters assignable to a project: admin-published (status='active') and
 // either globally available or explicitly granted to this user. Ordered
@@ -84,7 +108,7 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
     });
   }
 
-  const { name, characterId, systemPrompt, voice, categoryId } = req.body;
+  const { name, characterId, systemPrompt, voice, voiceEngine, categoryId } = req.body;
 
   const { checkLimit } = require('../services/usage');
   const limitCheck = await checkLimit(req.user.id, 'project', 1);
@@ -107,6 +131,7 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
     characterId: ch.id,
     categoryId: category ? category.id : null,
     systemPrompt: systemPrompt || 'You are a friendly, helpful AI assistant. Speak naturally and conversationally.',
+    voiceEngine: voiceEngine || 'gemini-live',
     voice: voice || 'Puck',
     welcomeMessage: 'Hi! Ask me anything.',
     publicId: uuid().replace(/-/g, '').slice(0, 16),
@@ -253,6 +278,12 @@ router.patch('/:id', authRequired, validate(schemas.patchProject), async (req, r
   if (patch.categoryId) {
     const category = await db.findOne('chatbotCategories', { id: patch.categoryId, userId: req.user.id });
     if (!category) return res.status(400).json({ error: 'Unknown category' });
+  }
+  if (patch.voiceEngine) {
+    const envKey = VOICE_ENGINE_ENV_KEY[patch.voiceEngine];
+    if (envKey && !process.env[envKey]) {
+      return res.status(400).json({ error: `This server isn't configured for ${patch.voiceEngine} yet (missing ${envKey}).` });
+    }
   }
   if (patch.webhookUrl) {
     try {
@@ -435,6 +466,34 @@ router.post('/:id/webhook/test', authRequired, async (req, res) => {
     res.json({ ok: response.ok, status: response.status, statusText: response.statusText });
   } catch (e) {
     res.json({ ok: false, error: e.message });
+  }
+});
+
+/**
+ * POST /:id/voice-preview
+ *
+ * Lets the owner hear a candidate voice before saving it — reads
+ * voiceEngine/voice straight from the request body (not the project's
+ * saved record), since the whole point is previewing an *unsaved* choice
+ * mid-edit in the Settings UI. Gemini Live isn't supported here: it has no
+ * simple one-shot TTS call outside a live session, unlike the three
+ * TTS-only engines this hits directly via the same synthesizeSpeech()
+ * backend/services/tts.js uses for real visitor replies.
+ */
+router.post('/:id/voice-preview', authRequired, voicePreviewLimiter, validate(schemas.voicePreview), async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  try {
+    const { audioBase64, mimeType } = await synthesizeSpeech({
+      engine: req.body.voiceEngine,
+      voiceId: req.body.voice,
+      text: req.body.text || "Hi! This is a preview of what I'll sound like.",
+    });
+    res.json({ audio: audioBase64, mimeType });
+  } catch (e) {
+    if (e instanceof TtsError) return res.status(502).json({ error: e.message });
+    throw e;
   }
 });
 

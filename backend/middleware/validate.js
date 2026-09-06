@@ -32,8 +32,52 @@ const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
 const YOUTUBE_URL_RE = /^https:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/)[\w-]+/;
 const CAPTURE_FIELD_TYPES = ['text', 'email', 'phone', 'number', 'date', 'time', 'select'];
 
+const VOICE_ENGINES = ['gemini-live', 'fish-audio', 'cartesia', 'elevenlabs'];
+
 const systemPrompt = z.string().max(4000, 'systemPrompt too long').optional();
-const voice = z.enum(VOICES, { error: 'Invalid voice' }).optional();
+// Gemini Live projects must use one of the 30 prebuilt voice names; Fish
+// Audio / Cartesia projects use a provider-issued voice/reference id, which
+// is an arbitrary string we can't enumerate here. The enum check against
+// voiceEngine happens below, in a superRefine on each schema that uses this
+// (so it sees both fields from the same request body).
+const voice = z.string().trim().min(1).max(200, 'Invalid voice').optional();
+const voiceEngine = z.enum(VOICE_ENGINES, { error: 'Invalid voiceEngine' }).optional();
+
+// Shared by createProject/patchProject: voice must be one of the 30 Gemini
+// Live names unless voiceEngine opts into a provider with its own IDs. Only
+// sees the fields sent in this one request — a PATCH that changes `voice`
+// alone on a project already using a non-gemini-live engine (set in an
+// earlier request) still needs voiceEngine echoed back in the same call to
+// pass this check; the project.html UI always sends both together.
+function checkVoiceForEngine(d, ctx) {
+  const engine = d.voiceEngine || 'gemini-live';
+  if (engine === 'gemini-live' && d.voice !== undefined && !VOICES.includes(d.voice)) {
+    ctx.addIssue({ code: 'custom', message: 'Invalid voice', path: ['voice'] });
+  }
+}
+
+// Comma-separated hostnames, each optionally wildcarded ("*.example.com")
+// or carrying a port ("localhost:3000") — see backend/server.js's
+// frame-ancestors enforcement on GET /e/:publicId.
+const HOSTNAME_RE = /^(\*\.)?[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/i;
+const allowedDomains = z.string().trim().max(2000).nullable().optional()
+  .refine(v => !v || v.split(',').every(h => HOSTNAME_RE.test(h.trim())), {
+    message: 'allowedDomains must be a comma-separated list of hostnames (e.g. example.com, *.example.com)',
+  });
+
+const HHMM_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
+const WEEKDAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const businessHours = z.object({
+  enabled: z.boolean(),
+  timezone: z.string().trim().min(1, 'timezone is required').max(100),
+  days: z.array(z.enum(WEEKDAYS)).max(7),
+  openTime: z.string().regex(HHMM_RE, 'openTime must be HH:MM'),
+  closeTime: z.string().regex(HHMM_RE, 'closeTime must be HH:MM'),
+}).nullable().optional();
+
+const awayMessage = z.string().trim().max(500, 'awayMessage too long').nullable().optional();
+const fallbackMessage = z.string().trim().max(500, 'fallbackMessage too long').nullable().optional();
+const conversationStarters = z.array(z.string().trim().min(1).max(200)).max(6, 'Up to 6 conversation starters').nullable().optional();
 
 const schemas = {
   signup: z.object({
@@ -71,8 +115,9 @@ const schemas = {
     characterId: z.string().optional(),
     systemPrompt,
     voice,
+    voiceEngine,
     categoryId: z.string().optional(),
-  }),
+  }).superRefine(checkVoiceForEngine),
 
   categoryCreate: z.object({
     name: z.string().trim().min(1, 'name is required').max(80, 'name too long'),
@@ -103,6 +148,7 @@ const schemas = {
     characterId: z.string().optional(),
     systemPrompt,
     voice,
+    voiceEngine,
     welcomeMessage: z.string().max(300, 'welcomeMessage too long').optional(),
     widgetPosition: z.enum(
       ['top-left', 'top-right', 'middle-left', 'middle-right', 'bottom-left', 'bottom-right', 'inline'],
@@ -146,6 +192,11 @@ const schemas = {
     // Ownership check (does this category belong to req.user.id?) stays in
     // routes/projects.js, same as characterId above — null unassigns.
     categoryId: z.string().nullable().optional(),
+    allowedDomains,
+    businessHours,
+    awayMessage,
+    conversationStarters,
+    fallbackMessage,
     // Owner-editable overrides for widget copy that's otherwise hardcoded
     // English — see improvement-prompts.md Prompt F4 item 4. Both keys
     // optional/independent; an unset key falls back to the widget default.
@@ -153,6 +204,12 @@ const schemas = {
       inputPlaceholder: z.string().max(100, 'inputPlaceholder too long').optional(),
       limitReachedMessage: z.string().max(300, 'limitReachedMessage too long').optional(),
     }).optional(),
+  }).superRefine(checkVoiceForEngine),
+
+  voicePreview: z.object({
+    voiceEngine: z.enum(['fish-audio', 'cartesia', 'elevenlabs'], { error: 'Invalid voiceEngine for preview' }),
+    voice: z.string().trim().min(1, 'voice is required').max(200),
+    text: z.string().trim().max(300).optional(),
   }),
 
   filesInit: z.object({
@@ -276,6 +333,11 @@ const schemas = {
     confirmEmail: z.string().min(1, 'confirmEmail is required'),
   }),
 
+  adminPatchProject: z.object({
+    adminSuspended: z.boolean(),
+    reason: z.string().trim().max(500, 'reason too long').optional(),
+  }),
+
   flashcardCreate: z.object({
     front: z.string().trim().min(1, 'front is required').max(2000, 'front too long'),
     back: z.string().trim().min(1, 'back is required').max(2000, 'back too long'),
@@ -344,6 +406,13 @@ const schemas = {
       title: z.string().max(300).optional().nullable(),
       text: z.string().max(6000).optional().nullable(),
     }).optional().nullable(),
+  }),
+
+  // Backs POST /embed/:publicId/speak — synthesizes already-generated reply
+  // text (from /ask) through the project's TTS-only voice engine (Fish
+  // Audio / Cartesia). See backend/services/tts.js.
+  speak: z.object({
+    text: z.string().min(1, 'text is required').max(2000, 'text too long'),
   }),
 
   study: z.object({

@@ -166,6 +166,7 @@
   let handoffState = 'none';     // 1a — 'none' | 'requested' | 'human'
   let handoffPollTimer = null;
   let handoffLastTs = 0;
+  let ttsMode = false;       // true for TTS-only voice engines (Fish Audio, Cartesia)
 
   const AVATAR_SIZES = { small: 80, medium: 120, large: 160, xlarge: 200 };
 
@@ -299,6 +300,12 @@
       pageContext = await requestPageContext();
     }
 
+    // Project configured for a TTS-only voice engine (Fish Audio, Cartesia)
+    // instead of the default Gemini Live speech-to-speech. These providers
+    // only synthesize audio from text, so unlike Gemini Live this mode
+    // doesn't open a live WebSocket at all — see initTtsMode().
+    if ((config.project.voiceEngine || 'gemini-live') !== 'gemini-live') { initTtsMode(); return; }
+
     // No voice key issued by the server (PUBLIC_GEMINI_API_KEY unset, or the
     // owner's quota was exhausted between config load and now). Degrade to
     // text-only mode: the server answers typed questions through POST /ask,
@@ -336,6 +343,36 @@
     return RTL_REGEX.test(text) ? 'rtl' : 'ltr';
   }
 
+  // Away message overrides the greeting (not the rest of the bot's
+  // functionality) when the project's business hours are configured and
+  // the server-computed isOpen says we're outside them — see
+  // backend/services/hours.js / GET /embed/:publicId/config.
+  function effectiveWelcomeMessage() {
+    if (config.project.isOpen === false && config.project.awayMessage) return config.project.awayMessage;
+    return config.project.welcomeMessage || '';
+  }
+
+  // Owner-defined suggested first questions, shown once as tappable buttons
+  // right after the welcome/away message on boot (all three modes call this
+  // from finishBoot). Distinct from the AI-driven mid-conversation
+  // quick-replies (extractOptionsTag) — these are fixed, not model-chosen.
+  function renderConversationStarters() {
+    const starters = config.project.conversationStarters;
+    if (!starters || !starters.length) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'starters-row';
+    for (const text of starters) {
+      const btn = document.createElement('button');
+      btn.className = 'starter-btn';
+      btn.type = 'button';
+      btn.textContent = text;
+      btn.addEventListener('click', () => { wrap.remove(); sendMessage(text); });
+      wrap.appendChild(btn);
+    }
+    messagesEl.appendChild(wrap);
+    scrollToBottom();
+  }
+
   // Narrower than RTL_REGEX — only the two scripts common enough here to
   // label with confidence. Syriac/Thaana/NKo text is still detected as
   // RTL by RTL_REGEX (direction is still correct), it just doesn't get a
@@ -356,14 +393,15 @@
   // ── 2. SDK init ─────────────────────────────────────────────
   function initSDK() {
     const GREET_TRIGGER = '__GREET_USER_NOW__';
-    const welcomeMessage = (config.project.welcomeMessage || '').trim();
+    const welcomeMessage = effectiveWelcomeMessage().trim();
 
     captureFields = config.captureFields || [];
     const baseSystemPrompt = (config.project.systemPrompt || '')
       + buildKnowledgeBaseToolInstructions(config.project.webSearchEnabled)
       + buildPageContextInstructions(pageContext)
       + buildCaptureInstructions(captureFields)
-      + buildQuickReplyInstructions(config.project.showQuickReplies);
+      + buildQuickReplyInstructions(config.project.showQuickReplies)
+      + buildFallbackInstruction(config.project.fallbackMessage);
     const systemPromptWithGreeting = welcomeMessage
       ? `${baseSystemPrompt}
 
@@ -459,8 +497,9 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     statusDot.className = 'status-dot connected';
     statusText.textContent = 'Text mode';
 
-    if (config.project.welcomeMessage) {
-      addMessage('bot', config.project.welcomeMessage, { welcome: true });
+    const welcome = effectiveWelcomeMessage();
+    if (welcome) {
+      addMessage('bot', welcome, { welcome: true });
     }
     finishBoot(!!config.project.widgetStartOpen);
   }
@@ -522,6 +561,164 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     }
   }
 
+  // ── 2c. TTS-only mode (Fish Audio / Cartesia) ────────────────────
+  // These providers only synthesize audio from text — no live session, no
+  // speech understanding, no vision. Reply text still comes from the same
+  // Gemini-backed POST /ask used by text-only mode; this mode additionally
+  // calls POST /speak with that text and plays the resulting audio through
+  // the avatar's existing playback + amplitude-driven lip-sync pipeline
+  // (avatar.speakPCM — see public/lipsync-sdk.js), so the avatar stays
+  // visible and animated even though there's no live Gemini connection.
+  function engineLabel(engine) {
+    if (engine === 'fish-audio') return 'Fish Audio';
+    if (engine === 'cartesia') return 'Cartesia';
+    if (engine === 'elevenlabs') return 'ElevenLabs';
+    return 'Voice';
+  }
+
+  function initTtsMode() {
+    ttsMode = true;
+    captureFields = config.captureFields || [];
+
+    // Neither provider can see images — only Gemini Live's native vision
+    // (avatar.sendImage) supports the image-upload feature today.
+    imageBtn.style.display = 'none';
+    imageInput.style.display = 'none';
+
+    avatar = new LipsyncAvatar({
+      container:    '#sdk-host',
+      riveSrc:      config.character.rivePath,
+      voiceEngine:  config.project.voiceEngine,
+      showVoiceSelect: false, showTranscript: false,
+      showTextInput: false,   showBands: false,
+      width: 300, height: 300,
+    });
+
+    waitForCanvas(canvas => {
+      avatarCanvas = canvas;
+      Object.assign(canvas.style, { width: '100%', height: '100%', display: 'block', borderRadius: '12px' });
+      avatarCanvasSlot.appendChild(canvas);
+      launcherFallback.style.display = 'none';
+    });
+
+    statusDot.className = 'status-dot connected';
+    statusText.textContent = `${engineLabel(config.project.voiceEngine)} voice`;
+
+    const welcome = effectiveWelcomeMessage();
+    if (welcome) {
+      addMessage('bot', welcome, { welcome: true });
+      speakReply(welcome);
+    }
+    finishBoot(!!config.project.widgetStartOpen);
+  }
+
+  /** Synthesize `text` via POST /speak and play it through the avatar. Best-effort: the text reply already rendered, so a synthesis failure just means no audio this turn. */
+  async function speakReply(text) {
+    if (!text) return;
+    try {
+      const res = await fetch(`/embed/${publicId}/speak`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.audio) return;
+      // ElevenLabs returns per-character timestamps alongside the audio —
+      // when present, use them for precise lip-sync instead of the
+      // amplitude-only fallback speakPCM() uses without any timing data.
+      if (data.alignment) avatar.speakPCMWithAlignment(data.audio, text, data.alignment);
+      else avatar.speakPCM(data.audio);
+    } catch (_) { /* voice is best-effort */ }
+  }
+
+  async function sendTtsMessage(text) {
+    addMessage('user', text);
+    textInput.value = '';
+    textInput.style.height = 'auto';
+    sendBtn.disabled = true;
+    statusText.textContent = 'Thinking…';
+
+    try {
+      const res = await fetch(`/embed/${publicId}/ask`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: text, sessionId }),
+      });
+
+      if (res.status === 429) {
+        addMessage('bot', '⚠️ Slow down a bit — too many messages in a short time.');
+        return;
+      }
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.status === 402 || data.limitReached) {
+        addMessage('bot', data.limitMessage || data.error || 'This assistant has reached its usage limit for this month. Please check back later.');
+        return;
+      }
+      if (!res.ok) {
+        addMessage('bot', data.error || 'Something went wrong — please try again in a moment.');
+        return;
+      }
+
+      if (data.sessionId) sessionId = data.sessionId;
+
+      const answerEl = addMessage('bot', data.answer || '…');
+      if (config.project.showSourceCards !== false && data.sources && data.sources.length) {
+        attachSources(answerEl, data.sources.map(s => ({
+          fileId: null, fileName: s.title, kind: s.url ? 'url' : null, url: s.url || null, previewUrl: null,
+        })));
+      }
+      speakReply(data.answer || '');
+    } catch (e) {
+      addMessage('bot', 'Something went wrong — please try again in a moment.');
+    } finally {
+      sendBtn.disabled = false;
+      statusText.textContent = `${engineLabel(config.project.voiceEngine)} voice`;
+    }
+  }
+
+  // Mic input for TTS-only engines: neither provider does speech-to-text,
+  // so this uses the browser's built-in Web Speech API instead of a
+  // streamed mic feed. Chrome/Edge only — browsers without support (Firefox,
+  // Safari) fall back to a clear inline message; typing always still works.
+  let speechRecognizer = null;
+  function getSpeechRecognizer() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) return null;
+    if (!speechRecognizer) {
+      speechRecognizer = new SR();
+      speechRecognizer.continuous = false;
+      speechRecognizer.interimResults = false;
+      speechRecognizer.lang = document.documentElement.lang || 'en-US';
+    }
+    return speechRecognizer;
+  }
+
+  let ttsMicOn = false;
+  function handleTtsMicClick() {
+    const rec = getSpeechRecognizer();
+    if (!rec) {
+      addMessage('bot', "⚠️ Voice input isn't supported in this browser — please type instead.");
+      return;
+    }
+    if (ttsMicOn) { rec.stop(); return; }
+
+    ttsMicOn = true;
+    micBtn.classList.add('active');
+    statusText.textContent = 'Listening…';
+
+    rec.onresult = (e) => sendMessage(e.results[0][0].transcript);
+    rec.onerror = () => addMessage('bot', '⚠️ Could not hear that — please try again or type.');
+    rec.onend = () => {
+      ttsMicOn = false;
+      micBtn.classList.remove('active');
+      statusText.textContent = `${engineLabel(config.project.voiceEngine)} voice`;
+    };
+    rec.start();
+  }
+
   function waitForCanvas(cb, attempts = 60) {
     const host = document.getElementById('sdk-host');
     const canvas = host && host.querySelector('canvas');
@@ -549,6 +746,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     }
     setupDrag();
     setupImageDragDrop();
+    renderConversationStarters();
     notifyParent({ type: 'ready' });
   }
 
@@ -626,7 +824,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
   // ── Drag-and-drop image upload (opt-in per project) ────────────
   function setupImageDragDrop() {
-    if (!config.project.allowDragDropUpload) return;
+    if (!config.project.allowDragDropUpload || ttsMode) return;
     let dragDepth = 0;
     const hasFiles = e => e.dataTransfer && e.dataTransfer.types && e.dataTransfer.types.includes('Files');
 
@@ -668,6 +866,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     text = (text || '').trim();
     if (!text) return;
     if (textOnly) return sendTextOnly(text);
+    if (ttsMode) return sendTtsMessage(text);
 
     addMessage('user', text);
     textInput.value = '';
@@ -1600,6 +1799,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
   let micOn = false;
   micBtn.addEventListener('click', async () => {
+    if (ttsMode) return handleTtsMicClick();
     if (!avatar) return;
     if (!statusDot.classList.contains('connected')) {
       avatar.connect();
@@ -1797,6 +1997,20 @@ Always tag a value as soon as you receive it. If the visitor provides multiple v
 
 QUICK REPLY INSTRUCTIONS: When you offer the user a small, closed set of choices to pick from (a menu of next steps, an either/or decision, a short list of topics) — and only then — append a line in this exact format after your response: [[OPTIONS:Choice one|Choice two|Choice three]]
 Use 2 to 5 short options. Do not mention the tag to the user — it will be stripped before display and shown as tappable buttons. Do not use this for open-ended questions or when collecting free-text information.`;
+  }
+
+  // Only used by the Gemini Live path (initSDK) — /ask and /study enforce
+  // this deterministically server-side instead (see backend/routes/embed.js)
+  // since a REST call can just short-circuit before invoking the model at
+  // all. The live session has no such hook (search_knowledge_base is a
+  // mid-conversation tool call, not a pre-check), so this is a prompt-level
+  // instruction instead — less strictly enforced than the REST path, but
+  // still steers the model away from guessing.
+  function buildFallbackInstruction(message) {
+    if (!message) return '';
+    return `
+
+FALLBACK INSTRUCTION: If search_knowledge_base returns nothing relevant to the user's question, respond with exactly this message and nothing else: "${message}"`;
   }
 
   const OPTIONS_TAG_RE = /\[\[OPTIONS:([^\]]+)\]\]/g;

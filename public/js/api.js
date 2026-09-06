@@ -125,6 +125,7 @@ const API = {
   reindexProject:  (pid) => apiCall(`/api/projects/${pid}/reindex`, { method: 'POST' }),
   duplicateProject:(pid) => apiCall(`/api/projects/${pid}/duplicate`, { method: 'POST' }),
   testWebhook:     (pid) => apiCall(`/api/projects/${pid}/webhook/test`, { method: 'POST' }),
+  previewVoice:    (pid, body) => apiCall(`/api/projects/${pid}/voice-preview`, { method: 'POST', body }),
   webhookDeliveries: (pid) => apiCall(`/api/projects/${pid}/webhook/deliveries`),
   rotateWebhookSecret: (pid) => apiCall(`/api/projects/${pid}/webhook/rotate-secret`, { method: 'POST' }),
   fileStatus:     (pid, fid) => apiCall(`/api/projects/${pid}/files/${fid}/status`),

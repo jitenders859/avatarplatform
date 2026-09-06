@@ -7,6 +7,7 @@ async function loadUsersTab() {
   section.innerHTML = `
     <div class="row gap-sm mb-md">
       <input type="text" id="users-search" placeholder="Search by email or name…" class="input" style="max-width:320px" />
+      <button class="btn btn-ghost btn-sm" id="users-export-btn" style="margin-left:auto">↓ Export CSV</button>
     </div>
     <div id="users-table"></div>
     <div id="users-pagination"></div>
@@ -16,6 +17,16 @@ async function loadUsersTab() {
     clearTimeout(usersSearchTimer);
     usersSearchTimer = setTimeout(() => { usersCurrentPage = 1; renderUsersTable(e.target.value); }, 300);
   });
+  document.getElementById('users-export-btn').addEventListener('click', async () => {
+    try {
+      const { users } = await AdminAPI.exportUsers(document.getElementById('users-search').value);
+      if (!users.length) return adminToast('No users to export', 'error');
+      const rows = [['id', 'email', 'name', 'plan', 'plan_source', 'suspended', 'joined']];
+      for (const u of users) rows.push([u.id, u.email, u.name || '', u.planId, u.planSource, u.suspended ? 'yes' : 'no', new Date(u.createdAt).toISOString()]);
+      downloadCsv('users.csv', rows);
+    } catch (err) { adminToast(err.message, 'error'); }
+  });
+  usersCurrentPage = 1;
   await renderUsersTable('');
 }
 
@@ -76,7 +87,7 @@ async function renderUserDetail(userId) {
   ];
   const bars = items.map(i => {
     const pct = Math.min(100, Math.round((i.current / Math.max(1, i.limit)) * 100));
-    const color = pct >= 90 ? 'background:#ef4444' : pct >= 70 ? 'background:#f59e0b' : 'background:linear-gradient(90deg,var(--accent),var(--accent-2))';
+    const color = pct >= 90 ? 'background:var(--danger)' : pct >= 70 ? 'background:var(--warn)' : 'background:linear-gradient(90deg,var(--accent),var(--accent-2))';
     return `<div>
       <div class="row" style="justify-content:space-between;margin-bottom:6px">
         <span class="text-sm">${i.label}</span>
@@ -104,10 +115,15 @@ async function renderUserDetail(userId) {
       : `<span class="text-sm muted">No overrides set</span>`;
 
     return `<tr>
-        <td>${escapeHtml(p.name)}</td><td>${escapeHtml(p.characterId)}</td><td>${p.fileCount}</td><td>${new Date(p.createdAt).toLocaleDateString()}</td>
+        <td>${escapeHtml(p.name)}</td>
+        <td>${escapeHtml(p.characterId)}</td>
+        <td>${p.fileCount}</td>
+        <td>${new Date(p.createdAt).toLocaleDateString()}</td>
+        <td>${p.adminSuspended ? `<span class="pill pill-danger" title="${escapeHtml(p.adminSuspendedReason || '')}">Disabled</span>` : ''}</td>
+        <td><button class="btn btn-ghost btn-sm" data-suspend-project="${p.id}" data-suspended="${p.adminSuspended}">${p.adminSuspended ? 'Enable' : 'Disable'}</button></td>
       </tr>
       <tr class="project-detail-row">
-        <td colspan="4" style="padding-top:0">
+        <td colspan="6" style="padding-top:0">
           <div class="col gap-sm" style="padding:2px 0 12px">
             <div>
               <span class="text-sm" style="font-weight:500">Team members</span>
@@ -144,14 +160,32 @@ async function renderUserDetail(userId) {
       <span class="spacer"></span>
       <button class="btn btn-danger" id="delete-user-btn">Delete account</button>
     </div>
-    <h3 style="font-size:15px;margin:20px 0 10px">Projects (read-only)</h3>
+    <h3 style="font-size:15px;margin:20px 0 10px">Projects</h3>
     <div class="table-scroll">
     <table class="table">
-      <thead><tr><th>Name</th><th>Character</th><th>Files</th><th>Created</th></tr></thead>
-      <tbody>${projectRows || '<tr><td colspan="4" class="muted">No projects</td></tr>'}</tbody>
+      <thead><tr><th>Name</th><th>Character</th><th>Files</th><th>Created</th><th>Status</th><th></th></tr></thead>
+      <tbody>${projectRows || '<tr><td colspan="6" class="muted">No projects</td></tr>'}</tbody>
     </table>
     </div>
   `;
+
+  for (const btn of detail.querySelectorAll('[data-suspend-project]')) {
+    btn.addEventListener('click', async () => {
+      const projectId = btn.dataset.suspendProject;
+      const nowSuspended = btn.dataset.suspended === 'true';
+      let reason = '';
+      if (!nowSuspended) {
+        const typed = prompt('Reason for disabling this chatbot (shown only in the audit log):');
+        if (typed === null) return;
+        reason = typed;
+      }
+      try {
+        await AdminAPI.patchProject(projectId, { adminSuspended: !nowSuspended, reason });
+        adminToast(nowSuspended ? 'Chatbot re-enabled' : 'Chatbot disabled', 'success');
+        renderUserDetail(userId);
+      } catch (err) { adminToast(err.message, 'error'); }
+    });
+  }
 
   document.getElementById('set-override-btn').addEventListener('click', () => {
     openSetOverrideModal(userId, tiers, user.adminPlanId);

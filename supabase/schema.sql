@@ -41,6 +41,12 @@ CREATE TABLE IF NOT EXISTS projects (
   name                     TEXT    NOT NULL,
   character_id             TEXT    NOT NULL DEFAULT 'character_1',
   system_prompt            TEXT,
+  -- 'gemini-live' (default, real-time speech-to-speech + native vision via
+  -- lipsync-sdk.js's direct browser WebSocket) | 'fish-audio' | 'cartesia'
+  -- (server-synthesized TTS-only voices, see backend/services/tts.js).
+  -- `voice` holds a Gemini prebuilt voice name for gemini-live, or the
+  -- provider's own voice/reference id string for fish-audio/cartesia.
+  voice_engine             TEXT    NOT NULL DEFAULT 'gemini-live',
   voice                    TEXT    DEFAULT 'Puck',
   welcome_message          TEXT,
   -- Capability tier: 'basic' | 'medium' | 'advanced' — gates study-tool
@@ -93,6 +99,30 @@ CREATE TABLE IF NOT EXISTS projects (
   -- Webhook
   webhook_url              TEXT,
   webhook_secret           TEXT,
+  -- Access control: comma-separated hostnames (e.g. "example.com,app.example.com").
+  -- NULL/empty = unrestricted (default, backward compatible). Enforced via a
+  -- Content-Security-Policy: frame-ancestors header on GET /e/:publicId —
+  -- see backend/server.js.
+  allowed_domains          TEXT,
+  -- Business hours: { enabled, timezone (IANA name), days: ['mon',...],
+  -- openTime: 'HH:MM', closeTime: 'HH:MM' } — see backend/services/hours.js.
+  business_hours           JSONB,
+  away_message             TEXT,
+  -- Owner-defined suggested first questions, shown as buttons when the
+  -- widget opens (before the visitor's first message) — distinct from the
+  -- AI-driven mid-conversation quick-replies (show_quick_replies above).
+  conversation_starters    JSONB   DEFAULT '[]',
+  -- Shown verbatim (REST paths) or injected as a system-prompt instruction
+  -- (Gemini Live) when the knowledge base has nothing relevant to a
+  -- question, instead of letting the model guess. NULL = no override
+  -- (today's behavior).
+  fallback_message         TEXT,
+  -- Admin kill switch for one specific chatbot (e.g. abuse, a broken
+  -- config racking up API cost) without suspending the owner's whole
+  -- account — see backend/routes/admin.js PATCH /projects/:id. Enforced in
+  -- backend/routes/embed.js (config/ask/speak/study all refuse to serve).
+  admin_suspended          BOOLEAN NOT NULL DEFAULT false,
+  admin_suspended_reason   TEXT,
   -- Timestamps
   created_at               BIGINT  NOT NULL,
   updated_at               BIGINT

@@ -37,6 +37,7 @@ const logger = require('./logger');
 const { AppError } = require('./errors');
 const { pool } = require('./db');
 const { getRateLimitStore, embedKeyGenerator } = require('./services/rateLimitStore');
+const db = require('./db');
 
 const authRoutes = require('./routes/auth');
 const ssoAuthRoutes = require('./routes/ssoAuth');
@@ -251,20 +252,36 @@ for (const page of PAGES) {
 
 // ── Docs ──────────────────────────────────────────────────────
 app.get('/docs', (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'docs', 'index.html')));
-const DOCS_PAGES = ['js-sdk', 'react-sdk', 'vue-sdk', 'react-native-sdk', 'elevenlabs-avatar', 'gemini-live', 'openai-realtime', 'natural-lipsync', 'prefetching', 'zapier-integration', 'troubleshooting'];
+const DOCS_PAGES = ['js-sdk', 'react-sdk', 'vue-sdk', 'react-native-sdk', 'elevenlabs-avatar', 'gemini-live', 'openai-realtime', 'fish-audio', 'cartesia', 'natural-lipsync', 'prefetching', 'zapier-integration', 'troubleshooting'];
 for (const p of DOCS_PAGES) {
   app.get(`/docs/${p}`, (_req, res) => res.sendFile(path.join(PUBLIC_DIR, 'docs', `${p}.html`)));
 }
 
-// Pretty embed URL
+// Pretty embed URL. When the project has allowedDomains configured (see
+// projects.allowed_domains, set via Settings), sets a Content-Security-
+// Policy: frame-ancestors header so browsers refuse to render the widget
+// in an iframe on any other site — enforced client-side by the visitor's
+// own browser, not spoofable the way a Referer-header check would be.
+// Unconfigured (the default) stays exactly as before: unrestricted.
+//
 // helmet's frameguard (X-Frame-Options: SAMEORIGIN) is on by default and
 // isn't touched by the contentSecurityPolicy/crossOriginEmbedderPolicy
 // overrides above — left as-is, it makes every browser refuse to render
 // this exact document inside an iframe on a customer's site, which is the
 // widget's entire purpose. Must be stripped only here, not app-wide: the
 // dashboard/admin pages still want clickjacking protection.
-app.get('/e/:publicId', (_req, res) => {
+app.get('/e/:publicId', async (req, res) => {
   res.removeHeader('X-Frame-Options');
+  try {
+    const project = await db.findOne('projects', { publicId: req.params.publicId });
+    const hosts = (project?.allowedDomains || '').split(',').map(h => h.trim()).filter(Boolean);
+    if (hosts.length) {
+      const sources = hosts.flatMap(h => [`https://${h}`, `http://${h}`]).join(' ');
+      res.setHeader('Content-Security-Policy', `frame-ancestors ${sources}`);
+    }
+  } catch (e) {
+    logger.warn({ err: e.message }, 'allowedDomains lookup failed — serving embed unrestricted');
+  }
   res.sendFile(path.join(PUBLIC_DIR, 'embed.html'));
 });
 
