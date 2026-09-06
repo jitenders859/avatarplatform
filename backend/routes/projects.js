@@ -137,6 +137,8 @@ router.post('/', authRequired, validate(schemas.createProject), async (req, res)
     avatarOffsetY: 0,
     avatarKeepVisible: true,
     avatarCompactOnMobile: true,
+    avatarLauncherStyle: 'bubble',
+    proactiveGreetingEnabled: false,
     // Webhook
     webhookUrl: null,
     webhookSecret: crypto.randomBytes(32).toString('hex'),

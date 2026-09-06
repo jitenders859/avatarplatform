@@ -241,9 +241,13 @@
             <select class="select" id="f-position">
               <option value="bottom-right">Bottom right (default)</option>
               <option value="bottom-left">Bottom left</option>
+              <option value="top-right">Top right</option>
+              <option value="top-left">Top left</option>
+              <option value="middle-right">Middle right</option>
+              <option value="middle-left">Middle left</option>
               <option value="inline">Inline (full iframe)</option>
             </select>
-            <span class="help">Where the widget appears on host sites.</span>
+            <span class="help">Where the widget appears on host sites. Visitors can still drag it to a custom spot (desktop only) if you leave that enabled.</span>
           </div>
           <div class="field">
             <label>Start state</label>
@@ -251,6 +255,14 @@
               <option value="false">Minimized (visitor clicks to open)</option>
               <option value="true">Open by default</option>
             </select>
+          </div>
+          <div class="field">
+            <label>Proactive greeting</label>
+            <select class="select" id="f-proactive-greeting">
+              <option value="false">Off (default)</option>
+              <option value="true">On — show the welcome message unprompted</option>
+            </select>
+            <span class="help">A few seconds after load, shows your Welcome message (Basic info tab) next to the closed avatar, before the visitor clicks anything. Shown once per visitor per browser tab.</span>
           </div>
           <div class="field">
             <label>Text direction</label>
@@ -354,12 +366,12 @@
           <div class="field">
             <label>Horizontal offset (px)</label>
             <input class="input" type="number" id="f-offset-x" min="0" max="100" value="0" />
-            <span class="help">Distance from the left/right edge. Applies to floating widget.</span>
+            <span class="help">Distance from the anchor's left/right edge. Applies to floating widget.</span>
           </div>
           <div class="field">
             <label>Vertical offset (px)</label>
             <input class="input" type="number" id="f-offset-y" min="0" max="100" value="0" />
-            <span class="help">Distance from the bottom edge.</span>
+            <span class="help">Distance from the anchor's top/bottom edge (ignored for Middle positions, which always center).</span>
           </div>
         </div>
       </div>
@@ -390,6 +402,14 @@
               <option value="true">Yes — Rive avatar in the FAB</option>
               <option value="false">No — use icon/emoji</option>
             </select>
+          </div>
+          <div class="field">
+            <label>Launcher style</label>
+            <select class="select" id="f-avatar-launcher-style">
+              <option value="bubble">Chat bubble (default) — avatar inside a circular button</option>
+              <option value="avatar-only">Avatar only — bare character, no button chrome</option>
+            </select>
+            <span class="help">Avatar only shows just the character floating at Position above, full size — no circle, shadow, or pulse ring. Clicking it opens the chat as usual.</span>
           </div>
           <div class="field">
             <label>Keep avatar visible while AI speaks</label>
@@ -925,6 +945,7 @@
       // Widget tab
       document.getElementById('f-position').value  = p.widgetPosition || 'bottom-right';
       document.getElementById('f-startopen').value = String(!!p.widgetStartOpen);
+      document.getElementById('f-proactive-greeting').value = String(p.proactiveGreetingEnabled === true);
       document.getElementById('f-direction').value = p.textDirection || 'auto';
       document.getElementById('f-theme').value     = p.themeColor || '#7c6af5';
       document.getElementById('f-widget-theme').value = p.widgetTheme || 'light';
@@ -982,6 +1003,8 @@
       document.getElementById('f-avatar-position').value = p.avatarPosition || 'right';
       document.getElementById('f-avatar-size').value     = p.avatarSize || 'large';
       document.getElementById('f-avatar-launcher').value = String(p.showAvatarInLauncher !== false);
+      document.getElementById('f-avatar-launcher-style').value = p.avatarLauncherStyle || 'bubble';
+      applyAvatarLauncherStyleLock(p.avatarLauncherStyle || 'bubble');
       document.getElementById('f-avatar-keep').value     = String(p.avatarKeepVisible !== false);
       document.getElementById('f-avatar-compact').value  = String(p.avatarCompactOnMobile !== false);
       document.getElementById('f-avatar-offset-x').value = p.avatarOffsetX ?? 0;
@@ -1264,6 +1287,24 @@
   }
   document.getElementById('refresh-deliveries-btn').addEventListener('click', loadWebhookDeliveries);
 
+  // Avatar-only launcher style has no button chrome to put an emoji/icon in —
+  // it only makes sense with the avatar actually showing, so force "Show
+  // avatar in launcher" on and lock it while avatar-only is selected. Runs
+  // both on load (see applyAvatarLauncherStyleLock call above) and live as
+  // the owner changes the select.
+  function applyAvatarLauncherStyleLock(style) {
+    const launcherField = document.getElementById('f-avatar-launcher');
+    if (style === 'avatar-only') {
+      launcherField.value = 'true';
+      launcherField.disabled = true;
+    } else {
+      launcherField.disabled = false;
+    }
+  }
+  document.getElementById('f-avatar-launcher-style').addEventListener('change', (e) => {
+    applyAvatarLauncherStyleLock(e.target.value);
+  });
+
   // ── Save widget ──
   document.getElementById('save-widget').addEventListener('click', async () => {
     try {
@@ -1285,10 +1326,12 @@
         showBranding:         document.getElementById('f-branding').value === 'true',
         widgetOffsetX:        parseInt(document.getElementById('f-offset-x').value, 10) || 0,
         widgetOffsetY:        parseInt(document.getElementById('f-offset-y').value, 10) || 0,
+        proactiveGreetingEnabled: document.getElementById('f-proactive-greeting').value === 'true',
         // Avatar placement
         avatarPosition:       document.getElementById('f-avatar-position').value,
         avatarSize:           document.getElementById('f-avatar-size').value,
         showAvatarInLauncher: document.getElementById('f-avatar-launcher').value === 'true',
+        avatarLauncherStyle:  document.getElementById('f-avatar-launcher-style').value,
         avatarKeepVisible:    document.getElementById('f-avatar-keep').value === 'true',
         avatarCompactOnMobile:document.getElementById('f-avatar-compact').value === 'true',
         avatarOffsetX:        parseInt(document.getElementById('f-avatar-offset-x').value, 10) || 0,

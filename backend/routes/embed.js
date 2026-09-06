@@ -199,6 +199,8 @@ router.get('/:publicId/config', async (req, res) => {
         avatarOffsetY:         project.avatarOffsetY         || 0,
         avatarKeepVisible:     project.avatarKeepVisible     !== false,
         avatarCompactOnMobile: project.avatarCompactOnMobile !== false,
+        avatarLauncherStyle:   project.avatarLauncherStyle   || 'bubble',
+        proactiveGreetingEnabled: project.proactiveGreetingEnabled === true,
       },
       character: character ? {
         id: character.slug,

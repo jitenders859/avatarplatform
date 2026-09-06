@@ -104,7 +104,10 @@ const schemas = {
     systemPrompt,
     voice,
     welcomeMessage: z.string().max(300, 'welcomeMessage too long').optional(),
-    widgetPosition: z.enum(['bottom-right', 'bottom-left', 'inline'], { error: 'Invalid widgetPosition' }).optional(),
+    widgetPosition: z.enum(
+      ['top-left', 'top-right', 'middle-left', 'middle-right', 'bottom-left', 'bottom-right', 'inline'],
+      { error: 'Invalid widgetPosition' }
+    ).optional(),
     widgetStartOpen: z.boolean().optional(),
     textDirection: z.enum(['auto', 'ltr', 'rtl'], { error: 'Invalid textDirection' }).optional(),
     themeColor: z.string().regex(HEX_COLOR_RE, 'themeColor must be a 6-digit hex color').optional(),
@@ -124,6 +127,8 @@ const schemas = {
     avatarPosition: z.enum(['left', 'right'], { error: 'Invalid avatarPosition' }).optional(),
     avatarSize: z.enum(['small', 'medium', 'large', 'xlarge'], { error: 'Invalid avatarSize' }).optional(),
     showAvatarInLauncher: z.boolean().optional(),
+    avatarLauncherStyle: z.enum(['bubble', 'avatar-only'], { error: 'Invalid avatarLauncherStyle' }).optional(),
+    proactiveGreetingEnabled: z.boolean().optional(),
     avatarOffsetX: z.number().int().min(-100).max(100).optional(),
     avatarOffsetY: z.number().int().min(-100).max(100).optional(),
     avatarKeepVisible: z.boolean().optional(),

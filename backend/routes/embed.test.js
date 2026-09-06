@@ -349,6 +349,54 @@ test('config exposes pageContextEnabled, off by default', async (t) => {
   });
 });
 
+test('config exposes avatarLauncherStyle and proactiveGreetingEnabled', async (t) => {
+  process.env.GEMINI_API_KEY = SERVER_KEY;
+  delete process.env.PUBLIC_GEMINI_API_KEY;
+  delete require.cache[require.resolve('./embed')];
+
+  const AVATAR_ONLY_PROJECT = {
+    ...PROJECT,
+    publicId: 'test-public-id-avatar-only',
+    avatarLauncherStyle: 'avatar-only',
+    proactiveGreetingEnabled: true,
+  };
+  const resolved = require.resolve('../db');
+  require.cache[resolved] = {
+    id: resolved, filename: resolved, loaded: true, children: [], paths: [],
+    exports: {
+      findOne: async (table, where) => {
+        if (table !== 'projects') return null;
+        if (where.publicId === 'test-public-id-avatar-only') return { ...AVATAR_ONLY_PROJECT };
+        if (where.publicId === 'test-public-id-avatar-default') return { ...PROJECT, publicId: where.publicId };
+        return null;
+      },
+      findAll: async () => [], insert: async (t, r) => r, insertMany: async () => [],
+      update: async () => null, remove: async () => 0, query: async () => [], queryOne: async () => null,
+      pool: { end: async () => {} },
+    },
+  };
+
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/embed', require('./embed'));
+  const agent = require('supertest')(app);
+
+  await t.test('defaults to bubble / off when unset', async () => {
+    const res = await agent.get('/embed/test-public-id-avatar-default/config');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.project.avatarLauncherStyle, 'bubble');
+    assert.equal(res.body.project.proactiveGreetingEnabled, false);
+  });
+
+  await t.test('reflects the owner-configured values', async () => {
+    const res = await agent.get('/embed/test-public-id-avatar-only/config');
+    assert.equal(res.status, 200);
+    assert.equal(res.body.project.avatarLauncherStyle, 'avatar-only');
+    assert.equal(res.body.project.proactiveGreetingEnabled, true);
+  });
+});
+
 test.after(() => {
   delete process.env.PUBLIC_GEMINI_API_KEY;
 });

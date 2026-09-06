@@ -37,6 +37,14 @@
   -->
 
   <div class="widget-root" id="root" data-position="bottom-right" data-state="loading" hidden>
+    <!-- Proactive greeting bubble (opt-in — config.project.proactiveGreetingEnabled).
+         Sits beside the launcher in the flex layout used for the closed/peek
+         states only (see embed.css); order relative to .launcher controls
+         which side it appears on for left- vs right-anchored positions. -->
+    <div class="peek-bubble" id="peek-bubble">
+      <button class="peek-close" id="peek-close" aria-label="Dismiss" type="button">✕</button>
+      <div class="peek-text" id="peek-text"></div>
+    </div>
     <!-- Launcher (visible when minimized) -->
     <button class="launcher" id="launcher" aria-label="Open chat" aria-expanded="false" type="button">
       <div class="launcher-avatar-slot" id="launcher-avatar-slot"></div>
@@ -152,6 +160,7 @@
   let fullscreenActive = false;
   let characterFullscreenActive = false;
   let avatarCanvas = null;   // single Rive canvas element shuttled between slots
+  let launcherSizePx = 72;   // px size of the launcher/avatar, set in boot() — used to size the peek bubble
   let textOnly = false;      // true when no voice key (server answers via /ask)
   let satisfactionShown = false; // 1b — show the thumbs prompt at most once per session
   let handoffState = 'none';     // 1a — 'none' | 'requested' | 'human'
@@ -166,6 +175,9 @@
   const launcherBadge     = document.getElementById('launcher-badge');
   const launcherAvatarSlot= document.getElementById('launcher-avatar-slot');
   const launcherFallback  = document.getElementById('launcher-fallback');
+  const peekBubble        = document.getElementById('peek-bubble');
+  const peekText          = document.getElementById('peek-text');
+  const peekClose         = document.getElementById('peek-close');
   const messagesEl        = document.getElementById('messages');
   const statusDot         = document.getElementById('status-dot');
   const statusText        = document.getElementById('status-text');
@@ -266,12 +278,20 @@
     panel.dataset.avatarPos = avatarPos;
     if (compactMobile) panel.dataset.compactMobile = '1';
 
-    // Apply launcher size: make launcher larger when showing avatar
-    if (config.project.showAvatarInLauncher !== false) {
-      const launcherSz = Math.max(64, Math.min(avatarSizePx, 88));
-      document.documentElement.style.setProperty('--launcher-size', launcherSz + 'px');
+    // Apply launcher size: make launcher larger when showing avatar.
+    // Avatar-only mode (config.project.avatarLauncherStyle) strips the
+    // circular bubble chrome entirely, so the avatar isn't capped to fit
+    // inside an ~88px button — it renders at its full configured avatarSize.
+    const isAvatarOnly = config.project.avatarLauncherStyle === 'avatar-only';
+    if (config.project.showAvatarInLauncher !== false || isAvatarOnly) {
+      launcherSizePx = isAvatarOnly ? avatarSizePx : Math.max(64, Math.min(avatarSizePx, 88));
+      document.documentElement.style.setProperty('--launcher-size', launcherSizePx + 'px');
       launcher.classList.add('has-avatar');
+      if (isAvatarOnly) launcher.classList.add('avatar-only');
     }
+    // Matches embed-loader.js's AVATAR_ONLY_PAD/CLOSED_W sizing so the bare
+    // avatar isn't flush against the iframe's edge.
+    document.documentElement.style.setProperty('--widget-inset', isAvatarOnly ? '12px' : '20px');
 
     if (config.limitReached) { showFatal(config.limitMessage || 'This assistant has reached its usage limit for this month. Please check back later.'); return; }
 
@@ -525,11 +545,64 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       openPanel();
     } else {
       closePanel(true);
+      schedulePeekGreeting();
     }
     setupDrag();
     setupImageDragDrop();
     notifyParent({ type: 'ready' });
   }
+
+  // ── Proactive greeting bubble (config.project.proactiveGreetingEnabled) ──
+  // Shows the welcome message next to the closed avatar, unprompted, a few
+  // seconds after load — grabs attention before any click, unlike the
+  // normal launcher which only speaks once opened. Once per visitor per
+  // browser tab (sessionStorage), so it doesn't re-appear on every page of
+  // a multi-page site within the same visit.
+  let peekShown = false;
+  let peekAutoHideTimer = null;
+  const PEEK_DELAY_MS = 3500;
+  const PEEK_AUTO_HIDE_MS = 15000;
+
+  function schedulePeekGreeting() {
+    if (!config.project.proactiveGreetingEnabled) return;
+    const greeting = (config.project.welcomeMessage || '').trim();
+    if (!greeting) return;
+    const seenKey = `ap-peek-seen-${publicId}`;
+    try { if (sessionStorage.getItem(seenKey)) return; } catch (_) {}
+    setTimeout(() => {
+      if (panelOpen || peekShown) return;
+      showPeek(greeting);
+      try { sessionStorage.setItem(seenKey, '1'); } catch (_) {}
+    }, PEEK_DELAY_MS);
+  }
+
+  function showPeek(text) {
+    peekShown = true;
+    peekText.textContent = text;
+    root.dataset.state = 'peek';
+    // Generous, not pixel-exact — the iframe background is transparent, so
+    // extra box beyond the visible bubble is invisible; matches --widget-inset
+    // (set in boot()) on both sides plus room for the bubble alongside the avatar.
+    const insetPx = config.project.avatarLauncherStyle === 'avatar-only' ? 12 : 20;
+    notifyParent({
+      type: 'peek-show',
+      width: insetPx * 2 + launcherSizePx + 250,
+      height: insetPx * 2 + Math.max(launcherSizePx, 90),
+    });
+    clearTimeout(peekAutoHideTimer);
+    peekAutoHideTimer = setTimeout(hidePeek, PEEK_AUTO_HIDE_MS);
+  }
+
+  function hidePeek() {
+    clearTimeout(peekAutoHideTimer);
+    if (!peekShown) return;
+    peekShown = false;
+    root.dataset.state = 'closed-instant';
+    notifyParent({ type: 'peek-hide' });
+  }
+
+  peekBubble.addEventListener('click', () => openPanel());
+  peekClose.addEventListener('click', (e) => { e.stopPropagation(); hidePeek(); });
 
   // ── Drag-to-reposition ─────────────────────────────────────────
   function setupDrag() {
@@ -1393,6 +1466,13 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   // ── 6. Open/close + avatar canvas shuttling ──────────────────
   function openPanel() {
     panelOpen = true;
+    // Clear peek state directly rather than via hidePeek() — that would
+    // also send a 'peek-hide' resize-down message right before the 'open'
+    // resize-up message below, a pointless shrink-then-grow flicker.
+    if (peekShown) {
+      peekShown = false;
+      clearTimeout(peekAutoHideTimer);
+    }
     root.dataset.state = 'open';
     unreadCount = 0;
     launcherBadge.hidden = true;
@@ -1430,7 +1510,9 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         launcherAvatarSlot.appendChild(avatarCanvas);
         Object.assign(avatarCanvas.style, {
           width: '100%', height: '100%',
-          borderRadius: '50%',
+          // Avatar-only mode has no circular bubble to clip to — see
+          // launcher.avatar-only in embed.css.
+          borderRadius: config.project.avatarLauncherStyle === 'avatar-only' ? '0' : '50%',
         });
       }
       launcherFallback.style.display = 'none';

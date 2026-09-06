@@ -80,6 +80,16 @@ CREATE TABLE IF NOT EXISTS projects (
   avatar_offset_y          INTEGER DEFAULT 0,
   avatar_keep_visible      BOOLEAN DEFAULT true,
   avatar_compact_on_mobile BOOLEAN DEFAULT true,
+  -- 'bubble' (default): avatar rendered inside the circular launcher button,
+  -- same as always. 'avatar-only': the launcher's circular chrome (bg,
+  -- shadow, pulse ring) is stripped so just the bare character floats at
+  -- widgetPosition, full avatarSize instead of the bubble's ~88px cap — see
+  -- public/js/embed-loader.js and public/embed.html.
+  avatar_launcher_style    TEXT    DEFAULT 'bubble',
+  -- Unprompted greeting bubble shown next to the closed avatar a few
+  -- seconds after load (see public/embed.html's schedulePeekGreeting) —
+  -- reuses welcome_message as its text. Off by default.
+  proactive_greeting_enabled BOOLEAN DEFAULT false,
   -- Webhook
   webhook_url              TEXT,
   webhook_secret           TEXT,

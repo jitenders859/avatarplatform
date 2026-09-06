@@ -23,6 +23,13 @@
  *      main text) and relays it into the iframe — opt-in per project, and
  *      the only place in the widget that can actually see the host page
  *      (embed.html itself is sandboxed inside the cross-origin iframe).
+ *   8. Positions the widget at any of six fixed anchors (top/middle/bottom
+ *      × left/right), not just the two bottom corners — see parseAnchor()/
+ *      anchorStyle(). In avatar-only launcher mode the closed box is sized
+ *      to the bare avatar instead of the 80x80 bubble default.
+ *   9. Resizes the closed box for a proactive "peek" greeting bubble
+ *      (embed.html's schedulePeekGreeting) via peek-show/peek-hide
+ *      messages, independent of the open/close chat-panel state.
  */
 (function () {
   'use strict';
@@ -43,16 +50,27 @@
   const inlineMode = SCRIPT.getAttribute('data-mode') === 'inline';
 
   // ── Sizing — data-* attributes provide script-tag overrides ───
-  const CLOSED_W = 80, CLOSED_H = 80;
+  // CLOSED_W/H are mutable: avatar-only launcher style (see below) sizes the
+  // closed box to fit the bare character instead of this bubble default.
+  let CLOSED_W = 80, CLOSED_H = 80;
   let OPEN_W   = parseInt(SCRIPT.getAttribute('data-width'),    10) || 400;
   let OPEN_H   = parseInt(SCRIPT.getAttribute('data-height'),   10) || 640;
   let OFFSET_X = parseInt(SCRIPT.getAttribute('data-offset-x'), 10) || 0;
   let OFFSET_Y = parseInt(SCRIPT.getAttribute('data-offset-y'), 10) || 0;
 
+  // Matches public/embed.html's AVATAR_SIZES px mapping — kept in sync by
+  // hand (both are small, stable lookup tables keyed by the same enum).
+  const AVATAR_PX = { small: 80, medium: 120, large: 160, xlarge: 200 };
+  // Padding around the bare avatar in avatar-only mode (see mount()) — also
+  // matches the --widget-inset embed.html sets on itself in that mode.
+  const AVATAR_ONLY_PAD = 24;
+
   // ── State ──────────────────────────────────────────────────────
   let iframe      = null;
   let panelOpen   = false;
-  let position    = 'bottom-right';  // 'bottom-right' | 'bottom-left' | 'inline'
+  // One of 'top-left' | 'top-right' | 'middle-left' | 'middle-right' |
+  // 'bottom-left' | 'bottom-right' | 'inline' — see parseAnchor().
+  let position    = 'bottom-right';
   let iframeReady = false;           // true once iframe fires the 'ready' postMessage
   let pendingOpen = false;           // user clicked placeholder before iframe was ready
   let placeholder = null;            // FAB shown while iframe loads
@@ -62,6 +80,30 @@
 
   // localStorage key for persisting drag position
   const POS_KEY = `ap-pos-${publicId}`;
+
+  // Splits a widgetPosition value into its vertical ('top'|'middle'|'bottom')
+  // and horizontal ('left'|'right') anchor components. Not called for
+  // 'inline', which has no anchor.
+  function parseAnchor(pos) {
+    const idx = pos.indexOf('-');
+    return { v: pos.slice(0, idx), h: pos.slice(idx + 1) };
+  }
+
+  // Builds the inline-style patch that pins an element to one of the six
+  // anchors. 'middle' centers via transform, which — unlike a computed pixel
+  // top — stays correct automatically when the element's height changes
+  // (closed avatar → open panel, or vice versa), no resize recompute needed.
+  function anchorStyle(vAnchor, hAnchor, hOffsetPx, vOffsetPx) {
+    const style = { left: '', right: '', top: '', bottom: '', transform: '' };
+    style[hAnchor] = hOffsetPx + 'px';
+    if (vAnchor === 'middle') {
+      style.top = '50%';
+      style.transform = `translateY(calc(-50% + ${vOffsetPx}px))`;
+    } else {
+      style[vAnchor] = vOffsetPx + 'px';
+    }
+    return style;
+  }
 
   // ── Boot: fetch config then mount ─────────────────────────────
   fetch(`${ORIGIN}/embed/${encodeURIComponent(publicId)}/config`)
@@ -74,6 +116,14 @@
       if (config && config.project) {
         if (config.project.widgetOffsetX != null) OFFSET_X = config.project.widgetOffsetX;
         if (config.project.widgetOffsetY != null) OFFSET_Y = config.project.widgetOffsetY;
+        // Avatar-only launcher: no circular bubble to crop it to, so the
+        // closed box is sized to the actual avatar (+ padding) instead of
+        // the fixed 80x80 bubble default — see public/embed.html's matching
+        // --widget-inset / --launcher-size logic.
+        if (config.project.avatarLauncherStyle === 'avatar-only') {
+          const avatarPx = AVATAR_PX[config.project.avatarSize] || AVATAR_PX.large;
+          CLOSED_W = CLOSED_H = avatarPx + AVATAR_ONLY_PAD;
+        }
       }
       mount(pos);
     })
@@ -103,44 +153,40 @@
     }
 
     // Floating mode — restore any saved drag position; fall back to configured offsets
-    const saved   = loadSavedPosition(pos);
-    const isLeft  = pos === 'bottom-left';
-    const corner  = isLeft ? 'left' : 'right';
-    const cornerV = saved ? (isLeft ? saved.left : saved.right) : OFFSET_X;
-    const bottomV = saved ? saved.bottom : OFFSET_Y;
+    const { v: vAnchor, h: hAnchor } = parseAnchor(pos);
+    const saved   = loadSavedPosition(hAnchor);
+    const hOffset = saved ? saved.hOffset : OFFSET_X;
+    const vOffset = saved ? saved.vOffset : OFFSET_Y;
+    const effV    = saved ? saved.vAnchor : vAnchor; // a drag commits 'middle' to a concrete edge
 
     Object.assign(iframe.style, {
       position:   'fixed',
-      bottom:     bottomV + 'px',
-      [corner]:   cornerV + 'px',
       width:      CLOSED_W + 'px',
       height:     CLOSED_H + 'px',
       zIndex:     '2147483647',
       transition: 'width .25s ease, height .25s ease',
+      ...anchorStyle(effV, hAnchor, hOffset, vOffset),
     });
     document.body.appendChild(iframe);
 
-    // Show placeholder FAB immediately (same corner as iframe)
-    createPlaceholder(pos, cornerV, bottomV);
+    // Show placeholder FAB immediately (same anchor as iframe)
+    createPlaceholder(effV, hAnchor, hOffset, vOffset);
   }
 
   // ── Placeholder FAB ────────────────────────────────────────────
   // Displayed while the iframe is loading. Clicking it before the iframe
   // is ready sets pendingOpen so the click is replayed once 'ready' fires.
-  function createPlaceholder(pos, cornerV, bottomV) {
-    const corner = pos === 'bottom-left' ? 'left' : 'right';
-
+  function createPlaceholder(vAnchor, hAnchor, hOffset, vOffset) {
     placeholder = document.createElement('div');
     Object.assign(placeholder.style, {
       position:    'fixed',
-      [corner]:    cornerV + 'px',
-      bottom:      bottomV + 'px',
       width:       CLOSED_W + 'px',
       height:      CLOSED_H + 'px',
       zIndex:      '2147483646',  // just below iframe
       display:     'grid',
       placeItems:  'center',
       cursor:      'pointer',
+      ...anchorStyle(vAnchor, hAnchor, hOffset, vOffset),
     });
 
     const btn = document.createElement('div');
@@ -173,15 +219,22 @@
   function startDrag() {
     if (!iframe || position === 'inline') return;
 
-    const rect   = iframe.getBoundingClientRect();
-    const isLeft = position === 'bottom-left';
-    const corner = isLeft ? 'left' : 'right';
+    const rect    = iframe.getBoundingClientRect();
+    const { v: configuredV, h: hAnchor } = parseAnchor(position);
+    const isLeft  = hAnchor === 'left';
 
-    // Snapshot the current corner offsets in pixels
-    const initCorner = isLeft
-      ? rect.left
-      : (window.innerWidth - rect.right);
-    const initBottom = window.innerHeight - rect.bottom;
+    // 'middle' has no fixed edge to track deltas against (it's centered via
+    // transform, not a pixel offset) — a drag commits it to whichever edge
+    // the avatar is currently closer to, same as clicking-and-dragging any
+    // other anchor from then on. loadSavedPosition()/mount() pick this
+    // committed edge back up on the next page load.
+    const vAnchor = configuredV === 'middle'
+      ? (rect.top + rect.height / 2 < window.innerHeight / 2 ? 'top' : 'bottom')
+      : configuredV;
+
+    // Snapshot the current anchor offsets in pixels
+    const initH = isLeft ? rect.left : (window.innerWidth - rect.right);
+    const initV = vAnchor === 'top' ? rect.top : (window.innerHeight - rect.bottom);
 
     // Kill transition during drag for instant response
     iframe.style.transition = 'none';
@@ -210,16 +263,13 @@
       const dy = e.clientY - startY;
       const W  = rect.width;
       const H  = rect.height;
-      const maxCorner = window.innerWidth  - W - 8;
-      const maxBottom = window.innerHeight - H - 8;
+      const maxH = window.innerWidth  - W - 8;
+      const maxV = window.innerHeight - H - 8;
 
-      const newCorner = Math.max(8, Math.min(maxCorner, isLeft
-        ? initCorner + dx
-        : initCorner - dx));
-      const newBottom = Math.max(8, Math.min(maxBottom, initBottom - dy));
+      const newH = Math.max(8, Math.min(maxH, isLeft ? initH + dx : initH - dx));
+      const newV = Math.max(8, Math.min(maxV, vAnchor === 'top' ? initV + dy : initV - dy));
 
-      iframe.style[corner] = newCorner + 'px';
-      iframe.style.bottom  = newBottom + 'px';
+      Object.assign(iframe.style, anchorStyle(vAnchor, hAnchor, newH, newV));
     }
 
     function onUp() {
@@ -227,14 +277,10 @@
       iframe.style.transition = 'width .25s ease, height .25s ease';
 
       // Persist the final position
-      const finalRect   = iframe.getBoundingClientRect();
-      const finalCorner = isLeft
-        ? finalRect.left
-        : (window.innerWidth - finalRect.right);
-      const finalBottom = window.innerHeight - finalRect.bottom;
-      savePosition(pos => pos === 'bottom-left'
-        ? { left: finalCorner, bottom: finalBottom }
-        : { right: finalCorner, bottom: finalBottom });
+      const finalRect = iframe.getBoundingClientRect();
+      const finalH = isLeft ? finalRect.left : (window.innerWidth - finalRect.right);
+      const finalV = vAnchor === 'top' ? finalRect.top : (window.innerHeight - finalRect.bottom);
+      savePosition({ hAnchor, hOffset: finalH, vAnchor, vOffset: finalV });
 
       // Tell the iframe the drag is finished so it can reset cursor
       sendToIframe({ type: 'drag-end' });
@@ -251,9 +297,14 @@
           top: iframe.style.top, left: iframe.style.left,
           right: iframe.style.right, bottom: iframe.style.bottom,
           width: iframe.style.width, height: iframe.style.height,
+          // A 'middle' vertical anchor centers via transform (see
+          // anchorStyle) — must be snapshotted and cleared too, or it fights
+          // the top:0/bottom:0 inset below, and restored after so the
+          // avatar re-centers correctly once fullscreen exits.
+          transform: iframe.style.transform,
         };
       }
-      Object.assign(iframe.style, { top: '0', left: '0', right: '0', bottom: '0', width: '', height: '' });
+      Object.assign(iframe.style, { top: '0', left: '0', right: '0', bottom: '0', width: '', height: '', transform: '' });
     } else if (preFullscreenStyle) {
       Object.assign(iframe.style, preFullscreenStyle);
       preFullscreenStyle = null;
@@ -338,20 +389,24 @@
   document.addEventListener('ap:hide',  (e) => { if (matchesThisBot(e)) setWidgetVisible(false); });
   document.addEventListener('ap:show',  (e) => { if (matchesThisBot(e)) setWidgetVisible(true); });
 
-  function loadSavedPosition(pos) {
+  // Saved shape: { hAnchor: 'left'|'right', hOffset, vAnchor: 'top'|'bottom', vOffset }.
+  // Keyed off hAnchor only (not the full configured position) — if the owner
+  // later reconfigures to the opposite side, a stale saved drag on the old
+  // side is correctly discarded; a vertical anchor change (including
+  // 'middle', which a drag always resolves away from) is still honored from
+  // the save, same as today's "drag always wins" behavior.
+  function loadSavedPosition(hAnchor) {
     try {
       const data = JSON.parse(localStorage.getItem(POS_KEY) || 'null');
-      if (!data) return null;
-      if (pos === 'bottom-right' && typeof data.right  === 'number') return data;
-      if (pos === 'bottom-left'  && typeof data.left   === 'number') return data;
-      return null;
+      if (!data || data.hAnchor !== hAnchor) return null;
+      if (typeof data.hOffset !== 'number' || typeof data.vOffset !== 'number') return null;
+      if (data.vAnchor !== 'top' && data.vAnchor !== 'bottom') return null;
+      return data;
     } catch (_) { return null; }
   }
 
-  function savePosition(builder) {
-    try {
-      localStorage.setItem(POS_KEY, JSON.stringify(builder(position)));
-    } catch (_) {}
+  function savePosition(data) {
+    try { localStorage.setItem(POS_KEY, JSON.stringify(data)); } catch (_) {}
   }
 
   // ── Message bus ────────────────────────────────────────────────
@@ -432,6 +487,18 @@
       // flags rather than this message's `enabled` value alone.
       characterFullscreenOn = !!data.enabled;
       setFullscreenIframe(wholePanelFullscreen || characterFullscreenOn);
+    } else if (data.type === 'peek-show') {
+      // Proactive greeting bubble (see public/embed.html's
+      // schedulePeekGreeting) — grows the closed box just enough to fit the
+      // avatar + speech bubble side by side, independent of panelOpen/
+      // fullscreen state; embed.html sizes it to its own layout.
+      if (panelOpen) return;
+      iframe.style.width  = (data.width  || 320) + 'px';
+      iframe.style.height = (data.height || 100) + 'px';
+    } else if (data.type === 'peek-hide') {
+      if (panelOpen) return;
+      iframe.style.width  = CLOSED_W + 'px';
+      iframe.style.height = CLOSED_H + 'px';
     }
   });
 
