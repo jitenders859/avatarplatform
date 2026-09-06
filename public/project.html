@@ -15,63 +15,6 @@
   <style>
     @keyframes spin { to { transform: rotate(360deg); } }
 
-    /* ── Settings shell: grouped sidebar + main panel ──────────────── */
-    .settings-shell { display: flex; align-items: flex-start; gap: 24px; }
-    .settings-nav {
-      flex: 0 0 200px;
-      position: sticky; top: 16px;
-      display: flex; flex-direction: column; gap: 18px;
-    }
-    .nav-group-title {
-      font-size: 11px; font-weight: 600; text-transform: uppercase;
-      letter-spacing: .06em; color: var(--text-dim);
-      padding: 0 10px; margin-bottom: 4px;
-    }
-    .settings-nav .tab {
-      display: block; width: 100%; text-align: left;
-      padding: 8px 10px; border-radius: 8px;
-      border: none; background: none;
-      font-size: 13px; font-weight: 500; color: var(--text-2);
-      cursor: pointer; margin-bottom: 2px;
-      transition: background .15s, color .15s;
-    }
-    .settings-nav .tab:hover { background: var(--bg-3); color: var(--text); }
-    .settings-nav .tab.active { background: var(--accent-soft); color: var(--accent-strong); }
-    .settings-main { flex: 1 1 auto; min-width: 0; }
-
-    @media (max-width: 860px) {
-      .settings-shell { flex-direction: column; }
-      .settings-nav { position: static; width: 100%; flex-direction: row; flex-wrap: wrap; gap: 8px; }
-      .nav-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-      .nav-group-title { display: none; }
-    }
-
-    /* ── Collapsible field groups (Widget tab) ─────────────────────── */
-    .settings-group { border: 1px solid var(--border); border-radius: var(--radius-lg); margin-bottom: 12px; overflow: hidden; }
-    .settings-group summary {
-      cursor: pointer; padding: 12px 16px; font-size: 14px; font-weight: 600;
-      list-style: none; display: flex; align-items: center; justify-content: space-between;
-      background: var(--bg-3);
-    }
-    .settings-group summary::-webkit-details-marker { display: none; }
-    .settings-group summary::after { content: '▾'; color: var(--text-dim); transition: transform .15s; }
-    .settings-group:not([open]) summary::after { transform: rotate(-90deg); }
-    .settings-group summary .muted { font-weight: 400; }
-    .settings-group .settings-group-body { padding: 16px; }
-
-    /* ── Widget tab split view: settings + live preview ────────────── */
-    .widget-split { display: grid; grid-template-columns: 1fr 360px; gap: 20px; align-items: start; }
-    .widget-preview-col { position: sticky; top: 16px; }
-    .widget-preview-col iframe {
-      width: 100%; height: 620px; border: 1px solid var(--border);
-      border-radius: var(--radius-lg); background: var(--bg-2);
-    }
-    @media (max-width: 1100px) {
-      .widget-split { grid-template-columns: 1fr; }
-      .widget-preview-col { position: static; }
-      .widget-preview-col iframe { height: 480px; }
-    }
-
     /* ── Chip list (conversation starters, allowed domains) ────────── */
     .chip-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
     .chip {
@@ -124,90 +67,30 @@
       </div>
     </div>
 
-    <div class="settings-shell">
-      <nav class="settings-nav">
-        <div class="nav-group">
-          <div class="nav-group-title">Setup</div>
-          <button class="tab active" data-tab="settings">Basics &amp; Voice</button>
-          <button class="tab" data-tab="knowledge">Knowledge</button>
-        </div>
-        <div class="nav-group">
-          <div class="nav-group-title">Conversation</div>
-          <button class="tab" data-tab="capture">Lead Capture</button>
-          <button class="tab" data-tab="quiz">Quiz</button>
-          <button class="tab" data-tab="flashcards">Flashcards</button>
-          <button class="tab" data-tab="videos">Videos</button>
-        </div>
-        <div class="nav-group">
-          <div class="nav-group-title">Widget</div>
-          <button class="tab" data-tab="widget">Appearance &amp; Preview</button>
-          <button class="tab" data-tab="embed">Embed code</button>
-        </div>
-        <div class="nav-group">
-          <div class="nav-group-title">Insights</div>
-          <button class="tab" data-tab="analytics">Analytics</button>
-          <button class="tab" data-tab="conversations">Conversations</button>
-          <button class="tab" data-tab="leads" id="leads-tab">Leads</button>
-        </div>
-      </nav>
-
-      <div class="settings-main">
+    <div class="tabs" role="tablist" aria-label="Chatbot settings">
+      <button class="tab active" data-tab="settings">Settings</button>
+      <button class="tab" data-tab="knowledge">Knowledge</button>
+      <button class="tab" data-tab="capture">Capture</button>
+      <button class="tab" data-tab="quiz">Quiz</button>
+      <button class="tab" data-tab="flashcards">Flashcards</button>
+      <button class="tab" data-tab="videos">Videos</button>
+      <button class="tab" data-tab="widget">Widget</button>
+      <button class="tab" data-tab="preview">Preview</button>
+      <button class="tab" data-tab="analytics">Analytics</button>
+      <button class="tab" data-tab="embed">Embed</button>
+      <button class="tab" data-tab="conversations">Conversations</button>
+      <button class="tab" data-tab="leads" id="leads-tab">Leads</button>
+    </div>
 
     <!-- ── Settings tab ───────────────────────────────────── -->
     <section class="tab-panel" id="panel-settings">
-      <details class="settings-group" open>
-        <summary>Basics</summary>
-        <div class="settings-group-body col gap-md">
+      <div class="card">
+        <h2 class="card-title mb-md">Basic info</h2>
+        <div class="col gap-md">
           <div class="field">
             <label>Name</label>
             <input class="input" id="f-name" />
           </div>
-          <div class="grid grid-2">
-            <div class="field">
-              <label>Character</label>
-              <select class="select" id="f-character"></select>
-            </div>
-            <div class="field">
-              <label>Capability tier</label>
-              <select class="select" id="f-tier">
-                <option value="basic">Basic — chat, knowledge base, lead capture</option>
-                <option value="medium">Medium — adds referenced images, video recs, slides</option>
-                <option value="advanced">Advanced — adds quizzes, flashcards, progress tracking</option>
-              </select>
-              <span class="help">Higher tiers include everything in the ones below them.</span>
-            </div>
-          </div>
-        </div>
-      </details>
-
-      <details class="settings-group" open>
-        <summary>Voice</summary>
-        <div class="settings-group-body col gap-md">
-          <div class="field">
-            <label>Speech engine</label>
-            <select class="select" id="f-voice-engine">
-              <option value="gemini-live">Gemini Live — real-time speech-to-speech + vision (default)</option>
-              <option value="elevenlabs">ElevenLabs — text-to-speech with precise timestamp-based lip-sync</option>
-              <option value="fish-audio">Fish Audio — text-to-speech voices</option>
-              <option value="cartesia">Cartesia Sonic — text-to-speech voices</option>
-            </select>
-          </div>
-          <div class="field">
-            <label id="f-voice-label">Voice</label>
-            <div class="voice-row">
-              <select class="select" id="f-voice"></select>
-              <input class="input" id="f-voice-id" type="text" placeholder="Voice / reference ID from your Fish Audio or Cartesia account" style="display:none" />
-              <button class="voice-preview-btn" id="voice-preview-btn" type="button" title="Play a sample of this voice">▶</button>
-            </div>
-            <span class="help" id="f-voice-help">One of Gemini Live's 30 built-in voices.</span>
-            <span class="help" id="voice-preview-error" style="display:none;color:var(--danger)"></span>
-          </div>
-        </div>
-      </details>
-
-      <details class="settings-group" open>
-        <summary>Conversation</summary>
-        <div class="settings-group-body col gap-md">
           <div class="field">
             <label>Welcome message</label>
             <input class="input" id="f-welcome" placeholder="Hi! Ask me anything." />
@@ -228,6 +111,40 @@
             <input type="hidden" id="f-starters-json" value="[]" />
             <span class="help">Up to 6 suggested first questions, shown as buttons when the widget opens.</span>
           </div>
+          <div class="grid grid-2">
+            <div class="field">
+              <label>Character</label>
+              <select class="select" id="f-character"></select>
+            </div>
+            <div class="field">
+              <label>Capability tier</label>
+              <select class="select" id="f-tier">
+                <option value="basic">Basic — chat, knowledge base, lead capture</option>
+                <option value="medium">Medium — adds referenced images, video recs, slides, explanation boards</option>
+                <option value="advanced">Advanced — adds quizzes, flashcards, progress tracking</option>
+              </select>
+              <span class="help">Which study-tool features this chatbot has. Higher tiers include everything in the ones below them.</span>
+            </div>
+          </div>
+          <div class="field">
+            <label>Speech engine</label>
+            <select class="select" id="f-voice-engine">
+              <option value="gemini-live">Gemini Live — real-time speech-to-speech + vision (default)</option>
+              <option value="elevenlabs">ElevenLabs — text-to-speech with precise timestamp-based lip-sync</option>
+              <option value="fish-audio">Fish Audio — text-to-speech voices</option>
+              <option value="cartesia">Cartesia Sonic — text-to-speech voices</option>
+            </select>
+          </div>
+          <div class="field">
+            <label id="f-voice-label">Voice</label>
+            <div class="voice-row">
+              <select class="select" id="f-voice"></select>
+              <input class="input" id="f-voice-id" type="text" placeholder="Voice / reference ID from your Fish Audio or Cartesia account" style="display:none" />
+              <button class="voice-preview-btn" id="voice-preview-btn" type="button" title="Play a sample of this voice">▶</button>
+            </div>
+            <span class="help" id="f-voice-help">One of Gemini Live's 30 built-in voices.</span>
+            <span class="help" id="voice-preview-error" style="display:none;color:var(--danger)"></span>
+          </div>
           <div class="field" id="voice-clone-field">
             <label>Clone a custom voice</label>
             <div class="row" style="gap:8px;align-items:center">
@@ -238,62 +155,10 @@
             <span class="help">Pro/Business plan. Upload a short (30s+) clean audio sample to create a custom ElevenLabs voice for this chatbot.</span>
           </div>
           <div class="field">
-            <label>Capability tier</label>
-            <select class="select" id="f-tier">
-              <option value="basic">Basic — chat, knowledge base, lead capture</option>
-              <option value="medium">Medium — adds referenced images, video recs, slides, explanation boards</option>
-              <option value="advanced">Advanced — adds quizzes, flashcards, progress tracking</option>
-            </select>
-            <span class="help">Which study-tool features this chatbot has. Higher tiers include everything in the ones below them.</span>
-          </div>
-          <div class="field">
             <label>Fallback message</label>
             <textarea class="textarea" id="f-fallback" rows="2" placeholder="I don't have information on that yet — try asking about [topic], or contact us at support@example.com."></textarea>
             <span class="help">Shown instead of a guess when nothing in the knowledge base is relevant. Leave blank to let the AI answer from general knowledge as it does today.</span>
           </div>
-        </div>
-      </details>
-
-      <details class="settings-group">
-        <summary>Availability</summary>
-        <div class="settings-group-body col gap-md">
-          <div class="field">
-            <label>Business hours</label>
-            <select class="select" id="f-hours-enabled">
-              <option value="false">Always available (default)</option>
-              <option value="true">Only during set hours — show an away message otherwise</option>
-            </select>
-          </div>
-          <div id="f-hours-detail" style="display:none" class="col gap-md">
-            <div class="field">
-              <label>Days</label>
-              <div class="row" style="gap:10px;flex-wrap:wrap" id="f-hours-days"></div>
-            </div>
-            <div class="grid grid-3">
-              <div class="field">
-                <label>Opens</label>
-                <input class="input" type="time" id="f-hours-open" value="09:00" />
-              </div>
-              <div class="field">
-                <label>Closes</label>
-                <input class="input" type="time" id="f-hours-close" value="17:00" />
-              </div>
-              <div class="field">
-                <label>Timezone</label>
-                <select class="select" id="f-hours-tz"></select>
-              </div>
-            </div>
-            <div class="field">
-              <label>Away message</label>
-              <textarea class="textarea" id="f-away" rows="2" placeholder="We're offline right now — back tomorrow at 9am. Leave a message and we'll follow up!"></textarea>
-            </div>
-          </div>
-        </div>
-      </details>
-
-      <details class="settings-group">
-        <summary>Integrations &amp; access</summary>
-        <div class="settings-group-body col gap-md">
           <div class="field">
             <label>Custom domain</label>
             <input class="input" id="f-custom-domain" type="text" placeholder="chat.yoursite.com" />
@@ -332,7 +197,44 @@
             <span class="help">Comma-separated. Restricts which sites can embed this widget. Leave blank to allow anywhere (default).</span>
           </div>
         </div>
-      </details>
+      </div>
+
+      <div class="card mt-md">
+        <h2 class="card-title mb-md">Availability</h2>
+        <div class="col gap-md">
+          <div class="field">
+            <label>Business hours</label>
+            <select class="select" id="f-hours-enabled">
+              <option value="false">Always available (default)</option>
+              <option value="true">Only during set hours — show an away message otherwise</option>
+            </select>
+          </div>
+          <div id="f-hours-detail" style="display:none" class="col gap-md">
+            <div class="field">
+              <label>Days</label>
+              <div class="row" style="gap:10px;flex-wrap:wrap" id="f-hours-days"></div>
+            </div>
+            <div class="grid grid-3">
+              <div class="field">
+                <label>Opens</label>
+                <input class="input" type="time" id="f-hours-open" value="09:00" />
+              </div>
+              <div class="field">
+                <label>Closes</label>
+                <input class="input" type="time" id="f-hours-close" value="17:00" />
+              </div>
+              <div class="field">
+                <label>Timezone</label>
+                <select class="select" id="f-hours-tz"></select>
+              </div>
+            </div>
+            <div class="field">
+              <label>Away message</label>
+              <textarea class="textarea" id="f-away" rows="2" placeholder="We're offline right now — back tomorrow at 9am. Leave a message and we'll follow up!"></textarea>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="savebar" id="settings-savebar">
         <span class="savebar-msg"><span class="savebar-dot"></span>Unsaved changes</span>
@@ -450,257 +352,243 @@
 
     <!-- ── Widget customization tab ───────────────────────── -->
     <section class="tab-panel" id="panel-widget" hidden>
-      <div class="widget-split">
-        <div>
-          <details class="settings-group" open>
-            <summary>Appearance</summary>
-            <div class="settings-group-body grid grid-2">
-              <div class="field">
-                <label>Position</label>
-                <select class="select" id="f-position">
-                  <option value="bottom-right">Bottom right (default)</option>
-                  <option value="bottom-left">Bottom left</option>
-                  <option value="top-right">Top right</option>
-                  <option value="top-left">Top left</option>
-                  <option value="middle-right">Middle right</option>
-                  <option value="middle-left">Middle left</option>
-                  <option value="inline">Inline (full iframe)</option>
-                </select>
-                <span class="help">Where the widget appears on host sites. Visitors can still drag it to a custom spot (desktop only) if you leave that enabled.</span>
-              </div>
-              <div class="field">
-                <label>Start state</label>
-                <select class="select" id="f-startopen">
-                  <option value="false">Minimized (visitor clicks to open)</option>
-                  <option value="true">Open by default</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Proactive greeting</label>
-                <select class="select" id="f-proactive-greeting">
-                  <option value="false">Off (default)</option>
-                  <option value="true">On — show the welcome message unprompted</option>
-                </select>
-                <span class="help">A few seconds after load, shows your Welcome message (Basic info tab) next to the closed avatar, before the visitor clicks anything. Shown once per visitor per browser tab.</span>
-              </div>
-              <div class="field">
-                <label>Text direction</label>
-                <select class="select" id="f-direction">
-                  <option value="auto">Auto (detect from language)</option>
-                  <option value="ltr">Left-to-right</option>
-                  <option value="rtl">Right-to-left (Arabic, Hebrew…)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Theme color</label>
-                <input class="input" type="color" id="f-theme" style="height:42px;padding:4px;cursor:pointer" />
-                <span class="help">Primary color for buttons and gradients.</span>
-              </div>
-              <div class="field">
-                <label>Widget theme</label>
-                <select class="select" id="f-widget-theme">
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                </select>
-                <span class="help">Light/dark look of the chat panel itself.</span>
-              </div>
-              <div class="field">
-                <label>Show "Powered by" branding</label>
-                <select class="select" id="f-branding">
-                  <option value="true">Yes</option>
-                  <option value="false">No (paid plans)</option>
-                </select>
-              </div>
-            </div>
-          </details>
-
-          <details class="settings-group" open>
-            <summary>Behavior</summary>
-            <div class="settings-group-body grid grid-2">
-              <div class="field">
-                <label>Show source cards</label>
-                <select class="select" id="f-sources">
-                  <option value="true">Yes — cite the docs / URLs used</option>
-                  <option value="false">No</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Show quick-reply buttons</label>
-                <select class="select" id="f-quickreplies">
-                  <option value="false">No</option>
-                  <option value="true">Yes — let visitors tap a choice instead of typing</option>
-                </select>
-                <span class="help">When the assistant offers a short menu of choices, show them as tappable buttons.</span>
-              </div>
-              <div class="field">
-                <label>Enable live web search</label>
-                <select class="select" id="f-websearch">
-                  <option value="false">Off</option>
-                  <option value="true">On</option>
-                </select>
-                <span class="help">Let the avatar search the web when it doesn't know the answer from your knowledge base.</span>
-              </div>
-              <div class="field">
-                <label>Read the current page's content</label>
-                <select class="select" id="f-pagecontext">
-                  <option value="false">Off (default)</option>
-                  <option value="true">On</option>
-                </select>
-                <span class="help">Let the widget read the text of the page it's embedded on (title, URL, visible content) so it can answer questions about what's on that page. Off by default — visitors' page content is only read once you turn this on.</span>
-              </div>
-              <div class="field">
-                <label>Allow drag &amp; drop image upload</label>
-                <select class="select" id="f-dragdrop">
-                  <option value="false">No — click-to-upload button only (default)</option>
-                  <option value="true">Yes — visitors can also drag an image onto the widget</option>
-                </select>
-                <span class="help">The image upload button is always available regardless of this setting; this only controls whether dropping a file onto the widget also works.</span>
-              </div>
-              <div class="field">
-                <label>Full-screen on desktop</label>
-                <select class="select" id="f-fullscreen-desktop">
-                  <option value="false">No — floating panel (default)</option>
-                  <option value="true">Yes — open panel fills the screen</option>
-                </select>
-                <span class="help">No effect when Position is Inline.</span>
-              </div>
-              <div class="field">
-                <label>Full-screen on mobile</label>
-                <select class="select" id="f-fullscreen-mobile">
-                  <option value="false">No — floating panel (default)</option>
-                  <option value="true">Yes — open panel fills the screen</option>
-                </select>
-                <span class="help">No effect when Position is Inline.</span>
-              </div>
-              <div class="field">
-                <label>Show maximize/restore button</label>
-                <select class="select" id="f-fullscreen-toggle">
-                  <option value="false">No</option>
-                  <option value="true">Yes — let visitors switch modes themselves</option>
-                </select>
-                <span class="help">Adds a header button so visitors can toggle full screen regardless of the defaults above.</span>
-              </div>
-              <div class="field">
-                <label>Character full screen (click avatar)</label>
-                <select class="select" id="f-character-fullscreen">
-                  <option value="false">No</option>
-                  <option value="true">Yes — visitors can click the avatar to fill the screen with just the character</option>
-                </select>
-                <span class="help">Distinct from the full-screen settings above: this hides the whole chat window (header, messages, composer) and shows only the talking character. Exit is by clicking the character again — no close button is shown.</span>
-              </div>
-            </div>
-          </details>
-
-          <details class="settings-group">
-            <summary>Widget text</summary>
-            <div class="settings-group-body grid grid-2">
-              <div class="field">
-                <label>Input placeholder</label>
-                <input class="input" id="f-msg-placeholder" maxlength="100" placeholder="Type a message…" />
-              </div>
-              <div class="field">
-                <label>Usage-limit-reached message</label>
-                <input class="input" id="f-msg-limit" maxlength="300" placeholder="This assistant has reached its usage limit for this month. Please check back later." />
-                <span class="help">Shown when the monthly message quota runs out.</span>
-              </div>
-            </div>
-          </details>
-
-          <details class="settings-group" open>
-            <summary>Avatar</summary>
-            <div class="settings-group-body grid grid-2">
-              <div class="field">
-                <label>Avatar position (open panel)</label>
-                <select class="select" id="f-avatar-position">
-                  <option value="right">Right side (default)</option>
-                  <option value="left">Left side</option>
-                </select>
-                <span class="help">Which side of the chat panel the character appears on.</span>
-              </div>
-              <div class="field">
-                <label>Avatar size</label>
-                <select class="select" id="f-avatar-size">
-                  <option value="small">Small (80px)</option>
-                  <option value="medium">Medium (120px)</option>
-                  <option value="large">Large (160px) — default</option>
-                  <option value="xlarge">Extra large (200px)</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Show avatar in launcher button</label>
-                <select class="select" id="f-avatar-launcher">
-                  <option value="true">Yes — Rive avatar in the FAB</option>
-                  <option value="false">No — use icon/emoji</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Launcher style</label>
-                <select class="select" id="f-avatar-launcher-style">
-                  <option value="bubble">Chat bubble (default) — avatar inside a circular button</option>
-                  <option value="avatar-only">Avatar only — bare character, no button chrome</option>
-                </select>
-                <span class="help">Avatar only shows just the character floating at Position above, full size — no circle, shadow, or pulse ring. Clicking it opens the chat as usual.</span>
-              </div>
-              <div class="field">
-                <label>Keep avatar visible while AI speaks</label>
-                <select class="select" id="f-avatar-keep">
-                  <option value="true">Yes (recommended)</option>
-                  <option value="false">No</option>
-                </select>
-              </div>
-              <div class="field">
-                <label>Compact avatar on mobile</label>
-                <select class="select" id="f-avatar-compact">
-                  <option value="true">Yes — reduce to 80px on small screens</option>
-                  <option value="false">No — keep full size</option>
-                </select>
-              </div>
-            </div>
-          </details>
-
-          <details class="settings-group">
-            <summary>Advanced placement <span class="muted text-sm">pixel offsets</span></summary>
-            <div class="settings-group-body grid grid-2">
-              <div class="field">
-                <label>Widget horizontal offset (px)</label>
-                <input class="input" type="number" id="f-offset-x" min="0" max="100" value="0" />
-                <span class="help">Distance from the anchor's left/right edge. Applies to floating widget.</span>
-              </div>
-              <div class="field">
-                <label>Widget vertical offset (px)</label>
-                <input class="input" type="number" id="f-offset-y" min="0" max="100" value="0" />
-                <span class="help">Distance from the anchor's top/bottom edge (ignored for Middle positions, which always center).</span>
-              </div>
-              <div class="field">
-                <label>Avatar horizontal offset (px)</label>
-                <input class="input" type="number" id="f-avatar-offset-x" min="-100" max="100" value="0" />
-              </div>
-              <div class="field">
-                <label>Avatar vertical offset (px)</label>
-                <input class="input" type="number" id="f-avatar-offset-y" min="-100" max="100" value="0" />
-              </div>
-            </div>
-          </details>
-
-          <div class="savebar" id="widget-savebar">
-            <span class="savebar-msg"><span class="savebar-dot"></span>Unsaved changes</span>
-            <div class="row" style="gap:8px">
-              <button class="btn btn-ghost btn-sm" id="widget-discard-btn">Discard</button>
-              <button class="btn btn-primary btn-sm" id="save-widget">Save changes</button>
-            </div>
+      <div class="card mb-md">
+        <h2 class="card-title mb-md">Widget appearance</h2>
+        <div class="grid grid-2">
+          <div class="field">
+            <label>Position</label>
+            <select class="select" id="f-position">
+              <option value="bottom-right">Bottom right (default)</option>
+              <option value="bottom-left">Bottom left</option>
+              <option value="top-right">Top right</option>
+              <option value="top-left">Top left</option>
+              <option value="middle-right">Middle right</option>
+              <option value="middle-left">Middle left</option>
+              <option value="inline">Inline (full iframe)</option>
+            </select>
+            <span class="help">Where the widget appears on host sites. Visitors can still drag it to a custom spot (desktop only) if you leave that enabled.</span>
+          </div>
+          <div class="field">
+            <label>Start state</label>
+            <select class="select" id="f-startopen">
+              <option value="false">Minimized (visitor clicks to open)</option>
+              <option value="true">Open by default</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Proactive greeting</label>
+            <select class="select" id="f-proactive-greeting">
+              <option value="false">Off (default)</option>
+              <option value="true">On — show the welcome message unprompted</option>
+            </select>
+            <span class="help">A few seconds after load, shows your Welcome message (Basic info tab) next to the closed avatar, before the visitor clicks anything. Shown once per visitor per browser tab.</span>
+          </div>
+          <div class="field">
+            <label>Text direction</label>
+            <select class="select" id="f-direction">
+              <option value="auto">Auto (detect from language)</option>
+              <option value="ltr">Left-to-right</option>
+              <option value="rtl">Right-to-left (Arabic, Hebrew…)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Theme color</label>
+            <input class="input" type="color" id="f-theme" style="height:42px;padding:4px;cursor:pointer" />
+            <span class="help">Primary color for buttons and gradients.</span>
+          </div>
+          <div class="field">
+            <label>Widget theme</label>
+            <select class="select" id="f-widget-theme">
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+            <span class="help">Light/dark look of the chat panel itself.</span>
+          </div>
+          <div class="field">
+            <label>Show source cards</label>
+            <select class="select" id="f-sources">
+              <option value="true">Yes — cite the docs / URLs used</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Show quick-reply buttons</label>
+            <select class="select" id="f-quickreplies">
+              <option value="false">No</option>
+              <option value="true">Yes — let visitors tap a choice instead of typing</option>
+            </select>
+            <span class="help">When the assistant offers a short menu of choices, show them as tappable buttons.</span>
+          </div>
+          <div class="field">
+            <label>Enable live web search</label>
+            <select class="select" id="f-websearch">
+              <option value="false">Off</option>
+              <option value="true">On</option>
+            </select>
+            <span class="help">Let the avatar search the web when it doesn't know the answer from your knowledge base.</span>
+          </div>
+          <div class="field">
+            <label>Read the current page's content</label>
+            <select class="select" id="f-pagecontext">
+              <option value="false">Off (default)</option>
+              <option value="true">On</option>
+            </select>
+            <span class="help">Let the widget read the text of the page it's embedded on (title, URL, visible content) so it can answer questions about what's on that page. Off by default — visitors' page content is only read once you turn this on.</span>
+          </div>
+          <div class="field">
+            <label>Allow drag &amp; drop image upload</label>
+            <select class="select" id="f-dragdrop">
+              <option value="false">No — click-to-upload button only (default)</option>
+              <option value="true">Yes — visitors can also drag an image onto the widget</option>
+            </select>
+            <span class="help">The image upload button is always available regardless of this setting; this only controls whether dropping a file onto the widget also works.</span>
+          </div>
+          <div class="field">
+            <label>Full-screen on desktop</label>
+            <select class="select" id="f-fullscreen-desktop">
+              <option value="false">No — floating panel (default)</option>
+              <option value="true">Yes — open panel fills the screen</option>
+            </select>
+            <span class="help">No effect when Position is Inline.</span>
+          </div>
+          <div class="field">
+            <label>Full-screen on mobile</label>
+            <select class="select" id="f-fullscreen-mobile">
+              <option value="false">No — floating panel (default)</option>
+              <option value="true">Yes — open panel fills the screen</option>
+            </select>
+            <span class="help">No effect when Position is Inline.</span>
+          </div>
+          <div class="field">
+            <label>Show maximize/restore button</label>
+            <select class="select" id="f-fullscreen-toggle">
+              <option value="false">No</option>
+              <option value="true">Yes — let visitors switch modes themselves</option>
+            </select>
+            <span class="help">Adds a header button so visitors can toggle full screen regardless of the defaults above.</span>
+          </div>
+          <div class="field">
+            <label>Character full screen (click avatar)</label>
+            <select class="select" id="f-character-fullscreen">
+              <option value="false">No</option>
+              <option value="true">Yes — visitors can click the avatar to fill the screen with just the character</option>
+            </select>
+            <span class="help">Distinct from the full-screen settings above: this hides the whole chat window (header, messages, composer) and shows only the talking character. Exit is by clicking the character again — no close button is shown.</span>
+          </div>
+          <div class="field">
+            <label>Show "Powered by" branding</label>
+            <select class="select" id="f-branding">
+              <option value="true">Yes</option>
+              <option value="false">No (paid plans)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Horizontal offset (px)</label>
+            <input class="input" type="number" id="f-offset-x" min="0" max="100" value="0" />
+            <span class="help">Distance from the anchor's left/right edge. Applies to floating widget.</span>
+          </div>
+          <div class="field">
+            <label>Vertical offset (px)</label>
+            <input class="input" type="number" id="f-offset-y" min="0" max="100" value="0" />
+            <span class="help">Distance from the anchor's top/bottom edge (ignored for Middle positions, which always center).</span>
           </div>
         </div>
+      </div>
 
-        <div class="widget-preview-col">
-          <div class="card">
-            <div class="card-header">
-              <h3 class="card-title">Live preview</h3>
-              <button class="btn btn-sm btn-ghost" id="refresh-preview-btn" style="margin-left:auto" title="Reload preview">↺</button>
-            </div>
-            <p class="muted text-sm mb-md">Updates automatically after you save. Exactly what visitors see.</p>
-            <iframe id="preview-frame"></iframe>
+      <div class="card mb-md">
+        <h2 class="card-title mb-md">Avatar placement</h2>
+        <div class="grid grid-2">
+          <div class="field">
+            <label>Avatar position (open panel)</label>
+            <select class="select" id="f-avatar-position">
+              <option value="right">Right side (default)</option>
+              <option value="left">Left side</option>
+            </select>
+            <span class="help">Which side of the chat panel the character appears on.</span>
+          </div>
+          <div class="field">
+            <label>Avatar size</label>
+            <select class="select" id="f-avatar-size">
+              <option value="small">Small (80px)</option>
+              <option value="medium">Medium (120px)</option>
+              <option value="large">Large (160px) — default</option>
+              <option value="xlarge">Extra large (200px)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Show avatar in launcher button</label>
+            <select class="select" id="f-avatar-launcher">
+              <option value="true">Yes — Rive avatar in the FAB</option>
+              <option value="false">No — use icon/emoji</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Launcher style</label>
+            <select class="select" id="f-avatar-launcher-style">
+              <option value="bubble">Chat bubble (default) — avatar inside a circular button</option>
+              <option value="avatar-only">Avatar only — bare character, no button chrome</option>
+            </select>
+            <span class="help">Avatar only shows just the character floating at Position above, full size — no circle, shadow, or pulse ring. Clicking it opens the chat as usual.</span>
+          </div>
+          <div class="field">
+            <label>Keep avatar visible while AI speaks</label>
+            <select class="select" id="f-avatar-keep">
+              <option value="true">Yes (recommended)</option>
+              <option value="false">No</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Compact avatar on mobile</label>
+            <select class="select" id="f-avatar-compact">
+              <option value="true">Yes — reduce to 80px on small screens</option>
+              <option value="false">No — keep full size</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Avatar horizontal offset (px)</label>
+            <input class="input" type="number" id="f-avatar-offset-x" min="-100" max="100" value="0" />
+          </div>
+          <div class="field">
+            <label>Avatar vertical offset (px)</label>
+            <input class="input" type="number" id="f-avatar-offset-y" min="-100" max="100" value="0" />
           </div>
         </div>
+      </div>
+
+      <div class="card mb-md">
+        <h2 class="card-title mb-md">Widget text</h2>
+        <p class="muted text-sm mb-md">Override the default English copy shown in the widget. Leave a field blank to use the default.</p>
+        <div class="grid grid-2">
+          <div class="field">
+            <label>Input placeholder</label>
+            <input class="input" id="f-msg-placeholder" maxlength="100" placeholder="Type a message…" />
+          </div>
+          <div class="field">
+            <label>Usage-limit-reached message</label>
+            <input class="input" id="f-msg-limit" maxlength="300" placeholder="This assistant has reached its usage limit for this month. Please check back later." />
+            <span class="help">Shown when the monthly message quota runs out.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="savebar" id="widget-savebar">
+        <span class="savebar-msg"><span class="savebar-dot"></span>Unsaved changes</span>
+        <div class="row" style="gap:8px">
+          <button class="btn btn-ghost btn-sm" id="widget-discard-btn">Discard</button>
+          <button class="btn btn-primary btn-sm" id="save-widget">Save changes</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Preview tab ───────────────────────────────────── -->
+    <section class="tab-panel" id="panel-preview" hidden>
+      <div class="card">
+        <div class="card-header">
+          <h2 class="card-title">Test your chatbot</h2>
+          <button class="btn btn-sm btn-ghost" id="refresh-preview-btn" style="margin-left:auto" title="Reload preview">↺</button>
+        </div>
+        <p class="muted text-sm mb-md">This iframe loads the live public widget — exactly as visitors will see it.</p>
+        <iframe id="preview-frame" style="width:100%;height:640px;border:1px solid var(--border);border-radius:12px;background:var(--bg-2)"></iframe>
       </div>
     </section>
 
@@ -1046,9 +934,6 @@
         </div>
       </div>
     </section>
-
-      </div>
-    </div>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -1094,7 +979,7 @@
     });
     document.querySelectorAll('.tab-panel').forEach(p => p.hidden = true);
     document.getElementById('panel-' + t.dataset.tab).hidden = false;
-    if (t.dataset.tab === 'widget') refreshPreview();
+    if (t.dataset.tab === 'preview') refreshPreview();
     if (t.dataset.tab === 'knowledge') loadFiles();
     if (t.dataset.tab === 'analytics') loadProjectAnalytics();
     if (t.dataset.tab === 'conversations') loadSessions();
@@ -1107,7 +992,7 @@
 
   allTabs.forEach(t => t.addEventListener('click', () => activateTab(t)));
 
-  document.querySelector('.settings-nav').addEventListener('keydown', (e) => {
+  document.querySelector('.tabs').addEventListener('keydown', (e) => {
     if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
     const visible = allTabs.filter(t => !t.hidden);
     const from = visible.indexOf(document.activeElement);
