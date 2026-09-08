@@ -315,7 +315,11 @@ router.patch('/users/:id', adminAuthRequired, validate(schemas.adminPatchUser), 
 
   if (adminPlanId !== undefined) {
     if (adminPlanId) {
-      const tier = await db.findOne('plan_tiers', { id: adminPlanId });
+      // Accept either a built-in plan (backend/plans.js — lets a test
+      // account be flipped straight to the real Pro/Business plan) or a
+      // custom plan_tiers row created via the Tiers tab.
+      const isBuiltIn = PLANS.some(p => p.id === adminPlanId);
+      const tier = isBuiltIn || await db.findOne('plan_tiers', { id: adminPlanId });
       if (!tier) return res.status(400).json({ error: 'Unknown plan tier' });
       patch.adminPlanId = adminPlanId;
       patch.adminPlanSetBy = req.admin.id;
@@ -447,7 +451,14 @@ router.patch('/projects/:id', adminAuthRequired, validate(schemas.adminPatchProj
 
 // ── Plan tiers ────────────────────────────────────────────────
 router.get('/tiers', adminAuthRequired, async (req, res) => {
-  res.json({ tiers: await db.query('SELECT * FROM plan_tiers ORDER BY created_at DESC') });
+  res.json({
+    // Real, Stripe-tied plans (minus free — "no override" already means
+    // free) so a test account can be granted actual Pro/Business
+    // functionality directly, without an admin hand-rolling a custom
+    // tier that duplicates those limits.
+    builtInTiers: PLANS.filter(p => p.id !== 'free').map(p => ({ id: p.id, name: p.name, limits: p.limits })),
+    tiers: await db.query('SELECT * FROM plan_tiers ORDER BY created_at DESC'),
+  });
 });
 
 router.post('/tiers', adminAuthRequired, validate(schemas.tierUpsert), async (req, res) => {

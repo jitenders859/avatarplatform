@@ -75,7 +75,7 @@ async function renderUsersTable(search, page = 1) {
 
 async function renderUserDetail(userId) {
   const { user, usage, projects } = await AdminAPI.getUser(userId);
-  const { tiers } = await AdminAPI.listTiers();
+  const { tiers, builtInTiers } = await AdminAPI.listTiers();
   const c = usage.counters, l = usage.limits;
   const items = [
     { label: 'Chatbots', current: c.projects, limit: l.projects, unit: '' },
@@ -188,7 +188,7 @@ async function renderUserDetail(userId) {
   }
 
   document.getElementById('set-override-btn').addEventListener('click', () => {
-    openSetOverrideModal(userId, tiers, user.adminPlanId);
+    openSetOverrideModal(userId, tiers, builtInTiers, user.adminPlanId);
   });
 
   if (override) {
@@ -243,8 +243,9 @@ async function renderUserDetail(userId) {
   });
 }
 
-function openSetOverrideModal(userId, tiers, currentAdminPlanId) {
-  const tierOptions = tiers.map(t => `<option value="${t.id}" ${t.id === currentAdminPlanId ? 'selected' : ''}>${escapeHtml(t.name)}</option>`).join('');
+function openSetOverrideModal(userId, tiers, builtInTiers, currentAdminPlanId) {
+  const builtInOptions = (builtInTiers || []).map(t => `<option value="${t.id}" ${t.id === currentAdminPlanId ? 'selected' : ''}>${escapeHtml(t.name)}</option>`).join('');
+  const customOptions = tiers.map(t => `<option value="${t.id}" ${t.id === currentAdminPlanId ? 'selected' : ''}>${escapeHtml(t.name)}</option>`).join('');
   openModal(`
     <div class="modal-header">
       <h3 class="modal-title">Set tier override</h3>
@@ -255,8 +256,10 @@ function openSetOverrideModal(userId, tiers, currentAdminPlanId) {
         <label for="override-tier">Tier</label>
         <select id="override-tier" class="select" required>
           <option value="">Select a tier…</option>
-          ${tierOptions}
+          ${builtInOptions ? `<optgroup label="Plans">${builtInOptions}</optgroup>` : ''}
+          ${customOptions ? `<optgroup label="Custom tiers">${customOptions}</optgroup>` : ''}
         </select>
+        <span class="help">Pick a real plan (e.g. Pro, Business) to grant its actual functionality for testing, or a custom tier from the Tiers tab.</span>
       </div>
       <div class="field">
         <label for="override-reason">Reason (optional)</label>
