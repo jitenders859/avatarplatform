@@ -12,6 +12,21 @@
  * browser straight to it with no Authorization header available; it's
  * authenticated instead by the signed `state` JWT minted in /connect and
  * verified here, using this app's own JWT_SECRET.
+ *
+ * ACCEPTED RISK: `state` is a self-contained, project-scoped claim, not a
+ * session-bound or single-use nonce — this app is Bearer/localStorage-token
+ * auth throughout (no cookies), so there's no session to bind it to without
+ * introducing one just for this flow. Within its 10-minute expiry, a leaked
+ * `state` value (e.g. via browser history or a proxy access log — plausible
+ * for a GET-based redirect) could be paired with an attacker's OWN Google
+ * authorization code to link the attacker's calendar to someone else's
+ * project (a "login/mix-up CSRF" — the attacker still needs their own valid
+ * Google consent, they can't forge `code` or `state` itself). Judged
+ * low-severity (requires an out-of-band leak of a short-lived token) and
+ * accepted rather than adding session-binding infrastructure for it; if
+ * this flow ever handles more sensitive data than tour scheduling, revisit
+ * with a single-use marker (e.g. the JWT's `jti` checked against a
+ * short-lived store) to shrink the window further.
  */
 const express = require('express');
 const { randomUUID: uuid } = require('crypto');

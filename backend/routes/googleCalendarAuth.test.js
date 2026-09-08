@@ -48,7 +48,7 @@ stubFile('../services/googleCalendar', {
   },
 });
 
-const { router } = require('./googleCalendarAuth');
+const { router, callbackHandler } = require('./googleCalendarAuth');
 
 function request(port, method, path, token) {
   return new Promise((resolve, reject) => {
@@ -77,6 +77,31 @@ function makeServer() {
 
 function ownerToken() {
   return jwt.sign({ uid: OWNER.id }, process.env.JWT_SECRET);
+}
+
+// Matches googleCalendarAuth.js's own buildState — used here to mint state
+// tokens directly (valid and deliberately-invalid) for exercising
+// callbackHandler without going through GET /connect first.
+function stateFor(projectId, { purpose = 'gcal_connect', expiresIn = '10m', secret = process.env.JWT_SECRET } = {}) {
+  return jwt.sign({ pid: projectId, purpose }, secret, { expiresIn });
+}
+
+function makeCallbackServer() {
+  const express = require('express');
+  require('express-async-errors');
+  const app = express();
+  app.get('/api/google-calendar/callback', callbackHandler);
+  const server = app.listen(0);
+  return server;
+}
+
+// http.request doesn't follow redirects automatically, so `res.status` is
+// the raw 302 and `res.headers.location` is what callbackHandler chose —
+// exactly what these tests need to check.
+function parseRedirect(res) {
+  assert.equal(res.status, 302);
+  const url = new URL(res.headers.location, 'http://localhost');
+  return { id: url.searchParams.get('id'), calendar: url.searchParams.get('calendar') };
 }
 
 test('GET /connect returns a Google auth URL for the project owner', async () => {
@@ -123,6 +148,101 @@ test('DELETE / removes the connection', async () => {
   const { port } = server.address();
   const res = await request(port, 'DELETE', `/api/projects/${PROJECT.id}/calendar`, ownerToken());
   assert.equal(res.status, 200);
+  assert.equal(connections.length, 0);
+  server.close();
+});
+
+// ── callbackHandler ──────────────────────────────────────────────
+// This is the one unauthenticated branch of the feature (Google's browser
+// redirect carries no Authorization header) — see the file header comment
+// on googleCalendarAuth.js. Every scenario here must end in a redirect,
+// never a raw JSON error or an uncaught exception.
+
+test('callback: valid state + valid code creates a new connection and redirects to connected', async () => {
+  const server = makeCallbackServer();
+  const { port } = server.address();
+  const res = await request(port, 'GET', `/api/google-calendar/callback?code=good-code&state=${stateFor(PROJECT.id)}`);
+  const redirect = parseRedirect(res);
+  assert.equal(redirect.id, PROJECT.id);
+  assert.equal(redirect.calendar, 'connected');
+  assert.equal(connections.length, 1);
+  assert.equal(connections[0].projectId, PROJECT.id);
+  assert.equal(connections[0].refreshToken, 'rt-1');
+  server.close();
+});
+
+test('callback: a second callback for the same project updates the existing connection instead of duplicating it', async () => {
+  const server = makeCallbackServer();
+  const { port } = server.address();
+  await request(port, 'GET', `/api/google-calendar/callback?code=good-code&state=${stateFor(PROJECT.id)}`);
+  await request(port, 'GET', `/api/google-calendar/callback?code=good-code&state=${stateFor(PROJECT.id)}`);
+  assert.equal(connections.length, 1);
+  server.close();
+});
+
+test('callback: Google-side error query param redirects to error with no project id', async () => {
+  const server = makeCallbackServer();
+  const { port } = server.address();
+  const res = await request(port, 'GET', `/api/google-calendar/callback?error=access_denied&state=${stateFor(PROJECT.id)}`);
+  const redirect = parseRedirect(res);
+  assert.equal(redirect.calendar, 'error');
+  server.close();
+});
+
+test('callback: missing code redirects to error', async () => {
+  const server = makeCallbackServer();
+  const { port } = server.address();
+  const res = await request(port, 'GET', `/api/google-calendar/callback?state=${stateFor(PROJECT.id)}`);
+  assert.equal(parseRedirect(res).calendar, 'error');
+  server.close();
+});
+
+test('callback: exchangeCode throwing (Google rejects the code) redirects to error, not a 500', async () => {
+  const server = makeCallbackServer();
+  const { port } = server.address();
+  const res = await request(port, 'GET', `/api/google-calendar/callback?code=bad-code&state=${stateFor(PROJECT.id)}`);
+  const redirect = parseRedirect(res);
+  assert.equal(redirect.id, PROJECT.id);
+  assert.equal(redirect.calendar, 'error');
+  assert.equal(connections.length, 0);
+  server.close();
+});
+
+test('callback: missing state redirects to error with an empty project id', async () => {
+  const server = makeCallbackServer();
+  const { port } = server.address();
+  const res = await request(port, 'GET', `/api/google-calendar/callback?code=good-code`);
+  const redirect = parseRedirect(res);
+  assert.equal(redirect.id, '');
+  assert.equal(redirect.calendar, 'error');
+  server.close();
+});
+
+test('callback: a state token with the wrong purpose is rejected', async () => {
+  const server = makeCallbackServer();
+  const { port } = server.address();
+  const badState = stateFor(PROJECT.id, { purpose: 'something-else' });
+  const res = await request(port, 'GET', `/api/google-calendar/callback?code=good-code&state=${badState}`);
+  assert.equal(parseRedirect(res).calendar, 'error');
+  assert.equal(connections.length, 0);
+  server.close();
+});
+
+test('callback: an expired state token is rejected', async () => {
+  const server = makeCallbackServer();
+  const { port } = server.address();
+  const expiredState = stateFor(PROJECT.id, { expiresIn: '-1s' });
+  const res = await request(port, 'GET', `/api/google-calendar/callback?code=good-code&state=${expiredState}`);
+  assert.equal(parseRedirect(res).calendar, 'error');
+  server.close();
+});
+
+test('callback: a state token signed with the wrong secret is rejected', async () => {
+  const server = makeCallbackServer();
+  const { port } = server.address();
+  const forgedState = stateFor(PROJECT.id, { secret: 'not-the-real-secret' });
+  const res = await request(port, 'GET', `/api/google-calendar/callback?code=good-code&state=${forgedState}`);
+  assert.equal(parseRedirect(res).calendar, 'error');
   assert.equal(connections.length, 0);
   server.close();
 });
