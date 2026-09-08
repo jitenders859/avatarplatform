@@ -249,6 +249,26 @@ test('patchProject: tourSettings is optional (omitting it is valid)', () => {
   assert.equal(result.success, true);
 });
 
+test('patchProject: rejects a tourSettings.timezone that is not a real IANA name', () => {
+  const result = schemas.patchProject.safeParse({
+    tourSettings: {
+      enabled: true, durationMinutes: 30, timezone: 'not-a-real-timezone', bufferMinutes: 0, location: '',
+      workingHours: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+    },
+  });
+  assert.equal(result.success, false);
+});
+
+test('patchProject: accepts a tourSettings.timezone that is a real IANA name', () => {
+  const result = schemas.patchProject.safeParse({
+    tourSettings: {
+      enabled: true, durationMinutes: 30, timezone: 'Asia/Tokyo', bufferMinutes: 0, location: '',
+      workingHours: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+    },
+  });
+  assert.equal(result.success, true);
+});
+
 // ── filesInit ─────────────────────────────────────────────────
 
 test('filesInit rejects an empty files array', () => {

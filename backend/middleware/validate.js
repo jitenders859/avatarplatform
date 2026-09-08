@@ -88,10 +88,20 @@ const tourWorkingHours = z.object(
   Object.fromEntries(WEEKDAYS.map(day => [day, z.array(tourWindow).max(4)]))
 );
 
+// tourSlots.js's Intl.DateTimeFormat calls throw a RangeError (uncaught,
+// unlike hours.js's isWithinBusinessHours, which wraps the identical
+// construction in try/catch and fails open) for a timezone string that
+// isn't a real IANA name — this is the trust boundary in front of that, so
+// it needs to reject one before it's ever persisted.
+const ianaTimezone = z.string().trim().min(1, 'timezone is required').max(100)
+  .refine(v => {
+    try { new Intl.DateTimeFormat('en-US', { timeZone: v }); return true; } catch { return false; }
+  }, { message: 'timezone must be a valid IANA time zone name, e.g. America/New_York' });
+
 const tourSettings = z.object({
   enabled: z.boolean(),
   durationMinutes: z.number().int().min(5).max(240),
-  timezone: z.string().trim().min(1, 'timezone is required').max(100),
+  timezone: ianaTimezone,
   bufferMinutes: z.number().int().min(0).max(120),
   location: z.string().trim().max(300).optional(),
   workingHours: tourWorkingHours,
