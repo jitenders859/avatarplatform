@@ -52,6 +52,7 @@ const quizQuestionsRoutes = require('./routes/quizQuestions');
 const flashcardsRoutes = require('./routes/flashcards');
 const videoResourcesRoutes = require('./routes/videoResources');
 const projectActionsRoutes = require('./routes/projectActions');
+const { router: googleCalendarAuthRoutes, callbackHandler: googleCalendarCallback } = require('./routes/googleCalendarAuth');
 const voiceCloneRoutes = require('./routes/voiceClone');
 const { router: whatsappRoutes, webhookHandler: whatsappWebhookHandler } = require('./routes/whatsapp');
 const categoriesRoutes = require('./routes/categories');
@@ -197,6 +198,11 @@ app.use('/api/projects', apiLimiter, quizQuestionsRoutes);
 app.use('/api/projects', apiLimiter, flashcardsRoutes);
 app.use('/api/projects', apiLimiter, videoResourcesRoutes);
 app.use('/api/projects', apiLimiter, projectActionsRoutes);
+app.use('/api/projects', apiLimiter, googleCalendarAuthRoutes);
+// Fixed path — must exactly match GOOGLE_CALENDAR_REDIRECT_URI (see
+// backend/routes/googleCalendarAuth.js's header comment for why this can't
+// be nested under /:projectId like the routes above).
+app.get('/api/google-calendar/callback', apiLimiter, googleCalendarCallback);
 app.use('/api/projects', apiLimiter, voiceCloneRoutes);
 app.use('/api/whatsapp', whatsappRoutes);
 app.use('/api', apiLimiter, filesRoutes); // files routes are project-nested
