@@ -13,6 +13,14 @@
  * readability at small sizes).
  */
 
+/* #login-view sets `display: grid` via its inline style attribute, which
+   beats the UA stylesheet's `[hidden] { display: none }` rule (same class
+   of bug as .btn[hidden] in app.css) — so hiding it after login left the
+   full-height login screen in place, pushing #admin-view down the page. An
+   !important author rule is required to win over the non-important inline
+   style. */
+#login-view[hidden] { display: none !important; }
+
 #admin-view, #modal-root {
   /* Type scale — one step tighter than app.css's marketing scale, since
      admin screens are read at a much higher density. */
