@@ -102,3 +102,30 @@ test('formatSlotLabel renders a human-readable label in the target timezone', ()
   const label = formatSlotLabel(new Date('2026-09-14T13:00:00.000Z'), 'America/New_York');
   assert.match(label, /Monday, Sep 14, 9:00\s*AM/);
 });
+
+test('zonedTimeToUtc is correct for a wall-clock time shortly after a spring-forward transition', () => {
+  // 2026-03-08 is the US spring-forward day for America/New_York: 2:00am
+  // local jumps straight to 3:00am (EST UTC-5 -> EDT UTC-4). A single
+  // offset-correction pass evaluates the offset at the wrong (guess)
+  // instant here and comes back an hour late; the second pass fixes it.
+  const utc = zonedTimeToUtc('2026-03-08', '03:00', 'America/New_York');
+  assert.equal(utc.toISOString(), '2026-03-08T07:00:00.000Z');
+});
+
+test('zonedTimeToUtc is correct for a wall-clock time shortly after a fall-back transition', () => {
+  // 2026-11-01 is the US fall-back day: 2:00am local repeats (EDT UTC-4 ->
+  // EST UTC-5). 03:00 local unambiguously means the second, EST occurrence.
+  const utc = zonedTimeToUtc('2026-11-01', '03:00', 'America/New_York');
+  assert.equal(utc.toISOString(), '2026-11-01T08:00:00.000Z');
+});
+
+test('computeCandidateSlots returns no slots instead of hanging when duration + buffer is zero', () => {
+  const settings = { ...BASE_SETTINGS, durationMinutes: 0, bufferMinutes: 0 };
+  const slots = computeCandidateSlots({
+    tourSettings: settings,
+    fromDate: '2026-09-14',
+    rangeDays: 1,
+    now: new Date('2026-09-01T00:00:00Z'),
+  });
+  assert.deepEqual(slots, []);
+});

@@ -9,11 +9,16 @@
  * opposite direction: hours.js reads a UTC Date's wall-clock time in a
  * timezone; this computes the UTC instant FOR a given wall-clock time in a
  * timezone. The offset is resolved by formatting a same-instant guess back
- * into the target timezone and correcting for the difference — one
- * correction pass, exact except for an instant that falls inside the gap or
- * overlap of a DST transition itself, a corner case not worth the added
- * complexity for a "pick a tour time" feature (matching hours.js's own
- * documented same-day-only limitation).
+ * into the target timezone and correcting for the difference. A single
+ * correction pass evaluates the offset AT the (wrong) guess instant rather
+ * than near the true target — on a DST transition day that guess can land
+ * on the wrong side of the transition, silently producing a UTC instant
+ * off by the DST delta for wall-clock times within roughly one offset-
+ * magnitude of the transition (not just the literal gap/overlap hour).
+ * zonedTimeToUtc runs a second pass, re-evaluating the offset near the
+ * corrected instant, which resolves that — exact except for a wall-clock
+ * time that falls inside the gap/overlap hour itself (which doesn't exist,
+ * or exists twice, so there's no single correct instant to return anyway).
  */
 const WEEKDAY_CODES = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MAX_SLOTS = 40;
@@ -41,7 +46,11 @@ function zonedTimeToUtc(dateStr, hhmm, timeZone) {
   const [y, m, d] = dateStr.split('-').map(Number);
   const [hh, mm] = hhmm.split(':').map(Number);
   const guess = new Date(Date.UTC(y, m - 1, d, hh, mm, 0));
-  const offsetMinutes = tzOffsetMinutes(guess, timeZone);
+  const firstPass = new Date(guess.getTime() - tzOffsetMinutes(guess, timeZone) * 60000);
+  // Re-evaluate the offset near the corrected instant (rather than trusting
+  // the one computed at `guess`) — see the file header comment for why this
+  // second pass matters on a DST transition day.
+  const offsetMinutes = tzOffsetMinutes(firstPass, timeZone);
   return new Date(guess.getTime() - offsetMinutes * 60000);
 }
 
@@ -80,6 +89,12 @@ function formatSlotLabel(startUTC, timeZone) {
 function computeCandidateSlots({ tourSettings, fromDate, rangeDays, now = new Date() }) {
   const { durationMinutes, bufferMinutes = 0, timezone, workingHours = {} } = tourSettings;
   const step = durationMinutes + bufferMinutes;
+  // Zod validation upstream (backend/middleware/validate.js) keeps
+  // durationMinutes >= 5 in production, but this function is also callable
+  // directly (e.g. from tests) — without this guard, a non-advancing step
+  // combined with every candidate slot being in the past hangs forever,
+  // since `cursor` never reaches `window.end` and MAX_SLOTS is never hit.
+  if (step <= 0) return [];
   const slots = [];
 
   for (let i = 0; i < rangeDays && slots.length < MAX_SLOTS; i++) {
