@@ -587,6 +587,15 @@ Expected: FAIL — `Cannot find module './googleCalendar'`
  *
  * Scope requested is calendar.events only — this can create/read/delete
  * events it created, not read or modify the owner's other calendar data.
+ *
+ * Every call to Google (token exchange/refresh, freebusy, event insert) is
+ * made synchronously inside the /study function-calling loop while the
+ * visitor is waiting on a chat response (see backend/services/tools.js's
+ * check_availability/book_tour handlers) — an unbounded fetch here would
+ * let a slow or hanging Google API call hang that request indefinitely.
+ * FETCH_TIMEOUT_MS bounds every call via AbortSignal.timeout, matching the
+ * 8s timeout backend/services/tools.js#callProjectAction already uses for
+ * synchronous external calls inside this same tool loop.
  */
 const jwt = require('jsonwebtoken');
 
@@ -596,6 +605,7 @@ const FREEBUSY_URL = 'https://www.googleapis.com/calendar/v3/freeBusy';
 const EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
 const SCOPE = 'https://www.googleapis.com/auth/calendar.events openid email';
 const EXPIRY_SKEW_MS = 60 * 1000;
+const FETCH_TIMEOUT_MS = 8000;
 
 class GoogleAuthRevokedError extends Error {}
 
@@ -641,6 +651,7 @@ async function exchangeCode(code) {
       redirect_uri: process.env.GOOGLE_CALENDAR_REDIRECT_URI,
       grant_type: 'authorization_code',
     }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || !body.refresh_token) {
@@ -664,6 +675,7 @@ async function refreshAccessToken(refreshToken) {
       client_secret: process.env.GOOGLE_CLIENT_SECRET,
       grant_type: 'refresh_token',
     }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -694,6 +706,7 @@ async function freeBusy(accessToken, timeMinISO, timeMaxISO) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({ timeMin: timeMinISO, timeMax: timeMaxISO, items: [{ id: 'primary' }] }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error?.message || `freebusy failed: HTTP ${res.status}`);
@@ -712,6 +725,7 @@ async function insertEvent(accessToken, { summary, description, location, startI
       end: { dateTime: endISO },
       attendees: [{ email: attendeeEmail }],
     }),
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error?.message || `event creation failed: HTTP ${res.status}`);
