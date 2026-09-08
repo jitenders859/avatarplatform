@@ -77,6 +77,7 @@ const TABLE_MAP = {
   projectActions: 'project_actions',
   chatbotCategories: 'chatbot_categories',
   adminSettings: 'admin_settings',
+  calendarConnections: 'calendar_connections',
 };
 const tbl = name => TABLE_MAP[name] || name;
 

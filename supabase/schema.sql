@@ -964,3 +964,28 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS phone               TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS sms_alerts_enabled  BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE usage ADD COLUMN IF NOT EXISTS notified_warning_at BIGINT;
 ALTER TABLE usage ADD COLUMN IF NOT EXISTS notified_over_at    BIGINT;
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Google Calendar tour booking (see
+-- supabase/migrations/2026-09-08_add_tour_booking.sql and
+-- backend/services/googleCalendar.js's header comment).
+-- ═══════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS calendar_connections (
+  id                       UUID    PRIMARY KEY,
+  project_id               UUID    NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+  google_email             TEXT,
+  refresh_token            TEXT    NOT NULL,
+  access_token             TEXT,
+  access_token_expires_at  BIGINT,
+  created_at               BIGINT  NOT NULL,
+  updated_at               BIGINT
+);
+
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS tour_settings JSONB NOT NULL DEFAULT '{
+  "enabled": false,
+  "durationMinutes": 30,
+  "timezone": "UTC",
+  "bufferMinutes": 0,
+  "location": "",
+  "workingHours": {"mon":[],"tue":[],"wed":[],"thu":[],"fri":[],"sat":[],"sun":[]}
+}'::jsonb;
