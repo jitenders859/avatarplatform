@@ -1430,13 +1430,20 @@
     }
 
     /**
-     * Send an image into the live conversation as a discrete client_content
-     * turn (inline_data part + a nudge text part), NOT realtime_input —
-     * verified against the live API that realtime_input.video is treated as
-     * a continuous low-rate video stream and does not reliably deliver a
-     * single standalone image (Gemini acknowledges "an image" but can't
-     * describe its contents), whereas a client_content turn with inline_data
-     * is understood correctly.
+     * Send an image into the live conversation via realtime_input, NOT
+     * client_content — gemini-3.1-flash-live-preview (this SDK's default
+     * model) only accepts client_content for seeding INITIAL history; once
+     * the session has had its first model turn (every session's opening
+     * greeting already counts), the server rejects further client_content
+     * turns, which silently broke the session for every message after the
+     * first image (see https://ai.google.dev/gemini-api/docs/models/gemini-3.1-flash-live-preview).
+     * realtime_input stays accepted for the life of the session, so the
+     * image goes in as a video frame (the Live API's "video stream" is
+     * just a sequence of JPEG Blobs, which is exactly what
+     * prepareImageForSend() in embed.html produces) immediately followed
+     * by a text nudge on the same realtime_input channel sendText() uses —
+     * a video frame alone doesn't reliably prompt a response, but the
+     * nudge does.
      * @throws {Error} if there is no active connection — callers should
      *   wrap this in try/catch rather than assume it always succeeds.
      */
@@ -1445,16 +1452,10 @@
         throw new Error('Not connected — start the session before sending an image.');
       }
       this._ws.send(JSON.stringify({
-        client_content: {
-          turns: [{
-            role: 'user',
-            parts: [
-              { inline_data: { data: base64Data, mime_type: mimeType } },
-              { text: 'The user just shared an image. Briefly describe what you notice and ask a clarifying question about what they\'d like to know.' },
-            ],
-          }],
-          turn_complete: true,
-        },
+        realtime_input: { video: { data: base64Data, mime_type: mimeType } },
+      }));
+      this._ws.send(JSON.stringify({
+        realtime_input: { text: 'The user just shared an image. Briefly describe what you notice and ask a clarifying question about what they\'d like to know.' },
       }));
     }
 
