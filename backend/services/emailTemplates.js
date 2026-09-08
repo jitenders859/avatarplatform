@@ -40,6 +40,14 @@ const FALLBACK_TEMPLATES = {
   "contact_message": {
     "subject": "Contact form: ${name}",
     "body": "\n      <div style=\"font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px\">\n        <h2 style=\"margin:0 0 16px;font-size:20px\">New contact message</h2>\n        <p style=\"color:#555\"><strong>${escapeHtml(name)}</strong> &lt;${escapeHtml(email)}&gt;</p>\n        <p style=\"color:#333;line-height:1.6;white-space:pre-wrap\">${escapeHtml(message)}</p>\n      </div>"
+  },
+  "usage_limit_warning": {
+    "subject": "You're approaching your ${planName} plan limit",
+    "body": "\n      <div style=\"font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px\">\n        <h2 style=\"margin:0 0 16px;font-size:20px\">Heads up — you're close to your plan limit</h2>\n        <p style=\"color:#555;line-height:1.6\">You've used <strong>${current} / ${limit}</strong> ${label} on your <strong>${planName}</strong> plan this billing period (${percent}%). Once you hit the limit, that feature will stop working until your next billing period or until you upgrade.</p>\n        <a href=\"${BASE_URL()}/billing\" style=\"display:inline-block;margin:24px 0;padding:12px 24px;background:#7c6af5;color:#fff;border-radius:8px;text-decoration:none;font-weight:600\">Upgrade your plan →</a>\n        <p style=\"color:#999;font-size:12px\">You can review your usage anytime from your dashboard.</p>\n        <hr style=\"border:none;border-top:1px solid #eee;margin:24px 0\"/>\n        <p style=\"color:#bbb;font-size:11px\">AvatarPlatform · <a href=\"${BASE_URL()}\" style=\"color:#bbb\">${BASE_URL()}</a></p>\n      </div>"
+  },
+  "usage_limit_reached": {
+    "subject": "You've hit your ${planName} plan limit",
+    "body": "\n      <div style=\"font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px 24px\">\n        <h2 style=\"margin:0 0 16px;font-size:20px\">You've reached your plan limit</h2>\n        <p style=\"color:#555;line-height:1.6\">You've used <strong>${current} / ${limit}</strong> ${label} on your <strong>${planName}</strong> plan this billing period. This feature is now paused until your next billing period, unless you upgrade.</p>\n        <a href=\"${BASE_URL()}/billing\" style=\"display:inline-block;margin:24px 0;padding:12px 24px;background:#7c6af5;color:#fff;border-radius:8px;text-decoration:none;font-weight:600\">Upgrade now →</a>\n        <p style=\"color:#999;font-size:12px\">You can review your usage anytime from your dashboard.</p>\n        <hr style=\"border:none;border-top:1px solid #eee;margin:24px 0\"/>\n        <p style=\"color:#bbb;font-size:11px\">AvatarPlatform · <a href=\"${BASE_URL()}\" style=\"color:#bbb\">${BASE_URL()}</a></p>\n      </div>"
   }
 };
 

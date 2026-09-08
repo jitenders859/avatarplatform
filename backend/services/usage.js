@@ -9,6 +9,9 @@
  */
 const db = require('../db');
 const { getPlan } = require('../plans');
+const { sendUsageLimitWarning, sendUsageLimitReached } = require('./email');
+const { sendSms } = require('./sms');
+const logger = require('../logger').child({ module: 'services/usage' });
 
 function periodKey(d = new Date()) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
@@ -316,7 +319,136 @@ async function getUsageAcrossUsers({ page = 1, limit = 25, sortBy = 'ratio' } = 
   return { users: page_, page: pageNum, pageSize, total, period };
 }
 
+const APP_URL = () => process.env.APP_URL || 'http://localhost:8080';
+
+/**
+ * Scans every user's current-period usage and emails/texts the ones
+ * approaching or over a plan limit, so they can upgrade before a feature
+ * stops working. Run on a schedule (see backend/inngest/functions.js's
+ * usage-alerts cron) rather than per-request — this does one aggregate
+ * query across all users, same shape as getUsageAcrossUsers, plus the
+ * columns needed to send and de-duplicate: users.phone/sms_alerts_enabled
+ * and usage.notified_warning_at/notified_over_at.
+ *
+ * Each user gets at most one email per threshold per billing period:
+ * usage.notified_warning_at/notified_over_at are set the first time each
+ * fires and checked before sending again — a fresh `usage` row next period
+ * (see periodKey()) resets both to NULL, so alerts resume naturally next
+ * month. Crossing straight to "over" on a single check (e.g. a burst of
+ * messages) marks both columns at once so a redundant warning email never
+ * follows the reached email a moment later.
+ *
+ * Only users with a usage row for the current period are considered
+ * (INNER JOIN) — a user who hasn't used anything yet can't be over a limit.
+ */
+async function runUsageAlertSweep() {
+  const period = periodKey();
+  const rows = await db.query(
+    `SELECT
+       u.id                                                 AS user_id,
+       u.email,
+       u.phone,
+       u.sms_alerts_enabled,
+       u.admin_plan_id,
+       u.admin_plan_expires_at,
+       s.plan_id                                             AS stripe_plan_id,
+       us.id                                                 AS usage_id,
+       us.notified_warning_at,
+       us.notified_over_at,
+       COUNT(DISTINCT p.id)                                  AS projects,
+       COUNT(DISTINCT f.id)                                  AS files,
+       COALESCE(SUM(f.size), 0)                               AS storage_bytes,
+       COUNT(DISTINCT f.id) FILTER (WHERE f.kind = 'url')     AS url_sources,
+       MAX(COALESCE(us.messages, 0))                          AS messages,
+       MAX(COALESCE(us.embedding_chars, 0))                   AS embedding_chars
+     FROM users u
+     LEFT JOIN LATERAL (
+       SELECT plan_id FROM subscriptions
+        WHERE user_id = u.id AND status = 'active'
+        ORDER BY updated_at DESC NULLS LAST, created_at DESC LIMIT 1
+     ) s ON true
+     LEFT JOIN projects p ON p.user_id = u.id
+     LEFT JOIN files f ON f.project_id = p.id
+     INNER JOIN usage us ON us.user_id = u.id AND us.period = $1
+     GROUP BY u.id, u.email, u.phone, u.sms_alerts_enabled, u.admin_plan_id,
+              u.admin_plan_expires_at, s.plan_id, us.id, us.notified_warning_at, us.notified_over_at`,
+    [period]
+  );
+
+  const planIdForRow = (r) => {
+    const overrideActive = isAdminPlanOverrideActive({
+      adminPlanId: r.adminPlanId,
+      adminPlanExpiresAt: r.adminPlanExpiresAt,
+    });
+    return overrideActive ? r.adminPlanId : (r.stripePlanId || 'free');
+  };
+  const distinctPlanIds = [...new Set(rows.map(planIdForRow))];
+  const planEntries = await Promise.all(distinctPlanIds.map(async (id) => [id, await getPlan(id)]));
+  const planById = new Map(planEntries);
+
+  let warned = 0;
+  let reached = 0;
+  const now = Date.now();
+
+  for (const r of rows) {
+    try {
+      const plan = planById.get(planIdForRow(r));
+      const counters = {
+        projects:       Number(r.projects)       || 0,
+        files:          Number(r.files)          || 0,
+        storageMb:      +((Number(r.storageBytes) || 0) / 1024 / 1024).toFixed(2),
+        urlSources:     Number(r.urlSources)      || 0,
+        messages:       Number(r.messages)        || 0,
+        embeddingChars: Number(r.embeddingChars)  || 0,
+      };
+
+      // Same "closest to any cap" pick getUsageAcrossUsers uses, so the
+      // alert names whichever metric is actually about to bite.
+      let topMetric = null;
+      let maxRatio = 0;
+      for (const m of RATIO_METRICS) {
+        const current = counters[m.counterKey];
+        const cap = plan.limits[m.limitKey];
+        const ratio = cap > 0 ? current / cap : 0;
+        if (ratio > maxRatio) {
+          maxRatio = ratio;
+          topMetric = { label: m.label, current, limit: cap };
+        }
+      }
+      if (!topMetric) continue; // nothing used at all — nothing to alert on
+
+      const info = { planName: plan.name, label: topMetric.label, current: topMetric.current, limit: topMetric.limit };
+      const smsText = (verb) =>
+        `AvatarPlatform: you've ${verb} your ${plan.name} plan's ${topMetric.label} limit ` +
+        `(${topMetric.current}/${topMetric.limit}). Upgrade: ${APP_URL()}/billing`;
+
+      if (maxRatio >= 1 && !r.notifiedOverAt) {
+        await sendUsageLimitReached(r.email, info);
+        if (r.phone && r.smsAlertsEnabled) await sendSms(r.phone, smsText('hit'));
+        // Also stamp notified_warning_at if a burst of usage skipped
+        // straight past the warning threshold, so that alert never fires
+        // redundantly right after this one.
+        await db.query(
+          `UPDATE usage SET notified_over_at = $1, notified_warning_at = COALESCE(notified_warning_at, $1), updated_at = $1 WHERE id = $2`,
+          [now, r.usageId]
+        );
+        reached++;
+      } else if (maxRatio >= WARNING_RATIO && !r.notifiedWarningAt) {
+        await sendUsageLimitWarning(r.email, info);
+        if (r.phone && r.smsAlertsEnabled) await sendSms(r.phone, smsText('nearly reached'));
+        await db.query(`UPDATE usage SET notified_warning_at = $1, updated_at = $1 WHERE id = $2`, [now, r.usageId]);
+        warned++;
+      }
+    } catch (e) {
+      logger.error({ err: e.message, userId: r.userId }, 'usage alert sweep: failed for user, continuing');
+    }
+  }
+
+  logger.info({ period, checked: rows.length, warned, reached }, 'usage alert sweep complete');
+  return { period, checked: rows.length, warned, reached };
+}
+
 module.exports = {
   userPlanId, getUsageSnapshot, trackMessage, trackEmbeddingChars, trackWebSearch, checkLimit,
-  isAdminPlanOverrideActive, getUsageAcrossUsers,
+  isAdminPlanOverrideActive, getUsageAcrossUsers, runUsageAlertSweep,
 };

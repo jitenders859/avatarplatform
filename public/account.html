@@ -40,6 +40,29 @@
       </div>
     </div>
 
+    <!-- ── Usage alerts ─────────────────────────────────────── -->
+    <div class="card mb-md">
+      <h2 class="card-title mb-md">Usage alerts</h2>
+      <p class="muted text-sm" style="margin:0 0 16px">
+        We'll always email you when you're close to (and when you hit) your plan's limits, with a link to upgrade.
+        Add a phone number to also get a text.
+      </p>
+      <div class="col gap-md">
+        <div class="field">
+          <label>Phone number</label>
+          <input class="input" id="f-phone" type="tel" placeholder="+15551234567" />
+          <span class="help">International format, e.g. +15551234567.</span>
+        </div>
+        <label class="row gap-sm" style="align-items:center">
+          <input type="checkbox" id="f-sms-alerts" />
+          <span>Also text me when I'm approaching or hit a plan limit</span>
+        </label>
+        <div class="row" style="justify-content:flex-end">
+          <button class="btn btn-primary" id="save-alerts">Save</button>
+        </div>
+      </div>
+    </div>
+
     <!-- ── Change password ─────────────────────────────────── -->
     <div class="card mb-md">
       <h2 class="card-title mb-md">Change password</h2>
@@ -83,6 +106,8 @@
       Auth.user = user;
       document.getElementById('f-name').value  = user.name  || '';
       document.getElementById('f-email').value = user.email || '';
+      document.getElementById('f-phone').value = user.phone || '';
+      document.getElementById('f-sms-alerts').checked = !!user.smsAlertsEnabled;
     } catch (e) { toast(e.message, 'error'); }
   }
 
@@ -96,6 +121,20 @@
       });
       Auth.user = user;
       toast('Profile saved', 'success');
+    } catch (e) { toast(e.message, 'error'); }
+    finally { btn.disabled = false; }
+  });
+
+  document.getElementById('save-alerts').addEventListener('click', async () => {
+    const btn = document.getElementById('save-alerts');
+    btn.disabled = true;
+    try {
+      const { user } = await API.updateMe({
+        phone: document.getElementById('f-phone').value.trim(),
+        smsAlertsEnabled: document.getElementById('f-sms-alerts').checked,
+      });
+      Auth.user = user;
+      toast('Alert preferences saved', 'success');
     } catch (e) { toast(e.message, 'error'); }
     finally { btn.disabled = false; }
   });

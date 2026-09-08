@@ -12,6 +12,7 @@ const db = require('../db');
 const { processFile } = require('../services/process');
 const { attemptDelivery } = require('../services/webhookDelivery');
 const { tagRecentSessions } = require('../services/sentiment');
+const { runUsageAlertSweep } = require('../services/usage');
 const logger = require('../logger').child({ module: 'inngest' });
 
 // The whole extract→chunk→embed→save pipeline runs as one step rather than
@@ -58,4 +59,16 @@ const sentimentTagJob = inngest.createFunction(
   }
 );
 
-module.exports = { functions: [processFileJob, webhookRetryJob, sentimentTagJob] };
+// Approaching-limit email/SMS alerts (see services/usage.js#runUsageAlertSweep).
+// Hourly rather than realtime: usage is checked and alerted on a schedule
+// rather than on every message/upload — de-duped per period via
+// usage.notified_warning_at/notified_over_at, so re-running hourly just
+// re-checks users who haven't crossed a new threshold yet.
+const usageAlertsJob = inngest.createFunction(
+  { id: 'usage-alerts', triggers: { cron: '0 * * * *' } },
+  async ({ step }) => {
+    await step.run('sweep', () => runUsageAlertSweep());
+  }
+);
+
+module.exports = { functions: [processFileJob, webhookRetryJob, sentimentTagJob, usageAlertsJob] };

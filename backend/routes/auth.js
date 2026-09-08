@@ -76,13 +76,13 @@ router.post('/login', validate(schemas.login), async (req, res) => {
 });
 
 router.get('/me', authRequired, (req, res) => {
-  const { id, email, name, createdAt, emailVerifiedAt } = req.user;
-  res.json({ user: { id, email, name, createdAt, emailVerifiedAt } });
+  const { id, email, name, createdAt, emailVerifiedAt, phone, smsAlertsEnabled } = req.user;
+  res.json({ user: { id, email, name, createdAt, emailVerifiedAt, phone, smsAlertsEnabled } });
 });
 
 router.patch('/me', authRequired, async (req, res) => {
   if (req.impersonated) return res.status(403).json({ error: 'This action is not available while impersonating a user' });
-  const { name, email, currentPassword, newPassword } = req.body || {};
+  const { name, email, currentPassword, newPassword, phone, smsAlertsEnabled } = req.body || {};
   const user = req.user;
   const patch = {};
 
@@ -104,6 +104,24 @@ router.patch('/me', authRequired, async (req, res) => {
     patch.email = normalized;
   }
 
+  // Destination for usage-limit SMS alerts (see services/usage.js's
+  // runUsageAlertSweep and services/sms.js). Loose E.164-ish check — actual
+  // deliverability is Twilio's problem, this just catches obvious typos.
+  if (phone !== undefined) {
+    const trimmed = String(phone || '').trim();
+    if (trimmed && !/^\+?[1-9]\d{6,14}$/.test(trimmed)) {
+      return res.status(400).json({ error: 'Phone number must be in international format, e.g. +15551234567' });
+    }
+    patch.phone = trimmed || null;
+  }
+
+  if (smsAlertsEnabled !== undefined) {
+    if (smsAlertsEnabled && !(patch.phone || user.phone)) {
+      return res.status(400).json({ error: 'Add a phone number before enabling SMS alerts' });
+    }
+    patch.smsAlertsEnabled = !!smsAlertsEnabled;
+  }
+
   if (newPassword !== undefined) {
     if (!currentPassword) return res.status(400).json({ error: 'Current password required' });
     const ok = await bcrypt.compare(currentPassword, user.passwordHash);
@@ -113,7 +131,12 @@ router.patch('/me', authRequired, async (req, res) => {
   }
 
   const updated = await db.update('users', user.id, patch);
-  res.json({ user: { id: updated.id, email: updated.email, name: updated.name } });
+  res.json({
+    user: {
+      id: updated.id, email: updated.email, name: updated.name,
+      phone: updated.phone, smsAlertsEnabled: updated.smsAlertsEnabled,
+    },
+  });
 });
 
 router.post('/forgot-password', validate(schemas.forgotPassword), async (req, res) => {

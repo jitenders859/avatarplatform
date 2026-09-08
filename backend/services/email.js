@@ -181,4 +181,55 @@ async function sendContactMessage({ name, email, message }) {
   });
 }
 
-module.exports = { sendPasswordReset, sendWelcome, sendContactMessage, sendVerificationEmail, sendTeamInviteEmail };
+/**
+ * Send a "you're approaching your plan limit" warning email, with an
+ * upgrade CTA. `label`/`current`/`limit` describe whichever metric is
+ * closest to its cap (see services/usage.js#runUsageAlertSweep).
+ * @param {string} toEmail
+ * @param {{ planName: string, label: string, current: number, limit: number }} info
+ */
+async function sendUsageLimitWarning(toEmail, { planName, label, current, limit }) {
+  const percent = limit > 0 ? Math.round((current / limit) * 100) : 100;
+  const { subject, body } = await getTemplate('usage_limit_warning');
+  const replacements = {
+    '${planName}': escapeHtml(planName),
+    '${label}': escapeHtml(label),
+    '${current}': String(current),
+    '${limit}': String(limit),
+    '${percent}': String(percent),
+    '${BASE_URL()}': BASE_URL(),
+  };
+  await send({
+    to: toEmail,
+    subject: interpolate(subject, replacements),
+    text: `You've used ${current} / ${limit} ${label} on your ${planName} plan this billing period (${percent}%). Upgrade to add more: ${BASE_URL()}/billing`,
+    html: interpolate(body, replacements),
+  });
+}
+
+/**
+ * Send a "you've hit your plan limit" email, with an upgrade CTA.
+ * @param {string} toEmail
+ * @param {{ planName: string, label: string, current: number, limit: number }} info
+ */
+async function sendUsageLimitReached(toEmail, { planName, label, current, limit }) {
+  const { subject, body } = await getTemplate('usage_limit_reached');
+  const replacements = {
+    '${planName}': escapeHtml(planName),
+    '${label}': escapeHtml(label),
+    '${current}': String(current),
+    '${limit}': String(limit),
+    '${BASE_URL()}': BASE_URL(),
+  };
+  await send({
+    to: toEmail,
+    subject: interpolate(subject, replacements),
+    text: `You've used ${current} / ${limit} ${label} on your ${planName} plan this billing period — this feature is paused until your next billing period unless you upgrade: ${BASE_URL()}/billing`,
+    html: interpolate(body, replacements),
+  });
+}
+
+module.exports = {
+  sendPasswordReset, sendWelcome, sendContactMessage, sendVerificationEmail, sendTeamInviteEmail,
+  sendUsageLimitWarning, sendUsageLimitReached,
+};
