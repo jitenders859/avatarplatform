@@ -17,6 +17,8 @@ const { embedOne } = require('./embed');
 const { searchProject } = require('./vector');
 const { safeFetch } = require('./safeFetch');
 const settings = require('./settings');
+const { computeCandidateSlots, subtractBusy } = require('./tourSlots');
+const { getValidAccessToken, freeBusy, insertEvent, GoogleAuthRevokedError } = require('./googleCalendar');
 
 // Quiz/flashcard synthesis is the accuracy-critical task (it's exam
 // content), so it gets the fuller flash model, not flash-lite.
@@ -437,4 +439,135 @@ async function projectActionTools(project) {
   };
 }
 
-module.exports = { toolsForTier, projectActionTools };
+const CHECK_AVAILABILITY_DECLARATION = {
+  name: 'check_availability',
+  description:
+    'Check when the project owner is free for a tour, so you can offer the visitor real open time slots. ' +
+    'Call this whenever a visitor asks about scheduling, booking, or touring, before promising any specific ' +
+    "time. Returns a short list of open slots near the date they asked about (or the soonest available if " +
+    "they didn't give one).",
+  parameters: {
+    type: 'object',
+    properties: {
+      preferredDate: {
+        type: 'string',
+        description:
+          'The date the visitor is interested in, as YYYY-MM-DD. If they said something relative like ' +
+          '"tomorrow" or "next Tuesday", resolve it to an actual date yourself before calling. Omit if they ' +
+          'gave no date preference — this returns the soonest few days of openings.',
+      },
+      rangeDays: {
+        type: 'integer',
+        description:
+          'How many days forward from preferredDate to search for openings. Defaults to 3. Use a larger ' +
+          'value (up to 14) if the visitor asked for a wider window or nothing was found nearby.',
+      },
+    },
+  },
+};
+
+const BOOK_TOUR_DECLARATION = {
+  name: 'book_tour',
+  description:
+    "Book a confirmed tour slot on the project owner's calendar. Only call this AFTER calling " +
+    'check_availability and having the visitor confirm one of the returned slots, and after collecting their ' +
+    'name and email (their email is where the calendar invite goes — ask for it explicitly if they haven\'t given it).',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: "The visitor's full name." },
+      email: { type: 'string', description: "The visitor's email address, to send the calendar invite to." },
+      startTime: {
+        type: 'string',
+        description:
+          'The exact ISO 8601 start time of the slot the visitor picked, copied verbatim from one of the ' +
+          'startTime values check_availability returned — do not compute or guess this yourself.',
+      },
+    },
+    required: ['name', 'email', 'startTime'],
+  },
+};
+
+async function withAccessToken(connection, fn) {
+  let accessToken;
+  try {
+    accessToken = await getValidAccessToken(connection, (id, patch) => db.update('calendarConnections', id, patch));
+  } catch (e) {
+    if (e instanceof GoogleAuthRevokedError) {
+      await db.remove('calendarConnections', { id: connection.id });
+      return { error: 'Tour booking is not available right now.' };
+    }
+    return { error: 'Could not reach Google Calendar: ' + e.message };
+  }
+  return fn(accessToken);
+}
+
+async function handleCheckAvailability(args, project, tourSettings, connection) {
+  const rangeDays = Math.min(Math.max(parseInt(args?.rangeDays, 10) || 3, 1), 14);
+  const fromDate = /^\d{4}-\d{2}-\d{2}$/.test(args?.preferredDate || '')
+    ? args.preferredDate
+    : new Date().toISOString().slice(0, 10);
+
+  const candidates = computeCandidateSlots({ tourSettings, fromDate, rangeDays });
+  if (!candidates.length) return { slots: [], note: 'No working hours are configured in that window.' };
+
+  return withAccessToken(connection, async (accessToken) => {
+    const busy = await freeBusy(
+      accessToken,
+      candidates[0].startUTC.toISOString(),
+      candidates[candidates.length - 1].endUTC.toISOString()
+    );
+    const open = subtractBusy(candidates, busy).slice(0, 8);
+    return { slots: open.map(s => ({ startTime: s.startUTC.toISOString(), label: s.label })) };
+  }).catch(e => ({ error: 'Could not check calendar availability: ' + e.message }));
+}
+
+async function handleBookTour(args, project, tourSettings, connection) {
+  const name = String(args?.name || '').trim();
+  const email = String(args?.email || '').trim();
+  if (!name) return { error: 'name is required' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'A valid email is required' };
+
+  const startUTC = new Date(String(args?.startTime || ''));
+  if (isNaN(startUTC.getTime())) return { error: 'startTime must be a valid ISO 8601 timestamp' };
+  const endUTC = new Date(startUTC.getTime() + tourSettings.durationMinutes * 60000);
+
+  return withAccessToken(connection, async (accessToken) => {
+    const busy = await freeBusy(accessToken, startUTC.toISOString(), endUTC.toISOString());
+    if (busy.length) return { error: 'That slot was just booked by someone else — please check availability again.' };
+
+    const calendarEventId = await insertEvent(accessToken, {
+      summary: `Tour: ${project.name} — ${name}`,
+      description: `Booked via the ${project.name} chatbot.\nVisitor email: ${email}`,
+      location: tourSettings.location || undefined,
+      startISO: startUTC.toISOString(),
+      endISO: endUTC.toISOString(),
+      attendeeEmail: email,
+    });
+    return { booked: true, startTime: startUTC.toISOString(), calendarEventId };
+  }).catch(e => ({ error: 'Could not book the tour: ' + e.message }));
+}
+
+/**
+ * Returns { declarations, dispatch } for check_availability/book_tour —
+ * empty unless the project is advanced tier, has tour_settings.enabled,
+ * AND has a connected Google Calendar. Async and DB-backed like
+ * projectActionTools above, unlike the static, tier-only toolsForTier.
+ */
+async function tourBookingTools(project) {
+  if (!meetsTier(project.capabilityTier, 'advanced')) return { declarations: [], dispatch: {} };
+  const tourSettings = project.tourSettings;
+  if (!tourSettings || !tourSettings.enabled) return { declarations: [], dispatch: {} };
+  const connection = await db.findOne('calendarConnections', { projectId: project.id });
+  if (!connection) return { declarations: [], dispatch: {} };
+
+  return {
+    declarations: [CHECK_AVAILABILITY_DECLARATION, BOOK_TOUR_DECLARATION],
+    dispatch: {
+      check_availability: (args) => handleCheckAvailability(args, project, tourSettings, connection),
+      book_tour: (args) => handleBookTour(args, project, tourSettings, connection),
+    },
+  };
+}
+
+module.exports = { toolsForTier, projectActionTools, tourBookingTools };

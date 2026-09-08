@@ -5,10 +5,52 @@
  * those two, its handler does no DB/embedding work — the model's own
  * function-call arguments ARE the content — so this only needs to check
  * validation/capping and tier gating, no stubbing required.
+ *
+ * check_availability / book_tour — the tour-booking tools (Task 7 of the
+ * Google Calendar tour booking plan) — DO need db/googleCalendar stubbed,
+ * since tourBookingTools is async and DB-backed (mirrors projectActionTools
+ * below, not the static toolsForTier).
  */
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
-const { toolsForTier } = require('./tools');
+
+const stubFile = (rel, exports) => {
+  const resolved = require.resolve(rel);
+  require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports, children: [], paths: [] };
+};
+
+let calendarConnections;
+let removedConnectionIds;
+
+function resetTourBookingStubs() {
+  calendarConnections = [{ id: 'conn-1', projectId: 'proj-1', accessToken: 'at-1', accessTokenExpiresAt: Date.now() + 3600000, refreshToken: 'rt-1' }];
+  removedConnectionIds = [];
+}
+resetTourBookingStubs();
+
+stubFile('../db', {
+  findOne: async (table, filter) => {
+    if (table === 'calendarConnections') return calendarConnections.find(c => c.projectId === filter.projectId) || null;
+    return null;
+  },
+  update: async () => {},
+  remove: async (table, filter) => { removedConnectionIds.push(filter.id); },
+});
+
+let freeBusyImpl = async () => [];
+let insertEventImpl = async () => 'event-123';
+class StubGoogleAuthRevokedError extends Error {}
+stubFile('../services/googleCalendar', {
+  getValidAccessToken: async (connection) => {
+    if (connection.refreshToken === 'revoked-rt') throw new StubGoogleAuthRevokedError('revoked');
+    return connection.accessToken;
+  },
+  freeBusy: (...args) => freeBusyImpl(...args),
+  insertEvent: (...args) => insertEventImpl(...args),
+  GoogleAuthRevokedError: StubGoogleAuthRevokedError,
+});
+
+const { toolsForTier, tourBookingTools } = require('./tools');
 
 function getDispatch(tier) {
   const { dispatch } = toolsForTier(tier);
@@ -97,4 +139,104 @@ test('explain_visually: duplicate node ids are de-duplicated instead of collidin
   });
   const ids = result.board.nodes.map(n => n.id);
   assert.equal(new Set(ids).size, ids.length, 'ids must be unique');
+});
+
+const ADVANCED_PROJECT = {
+  id: 'proj-1', name: 'Acme Tours', capabilityTier: 'advanced',
+  tourSettings: {
+    enabled: true, durationMinutes: 30, bufferMinutes: 0, timezone: 'America/New_York', location: '123 Main St',
+    workingHours: { mon: [{ start: '09:00', end: '10:00' }], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+  },
+};
+
+test('tourBookingTools returns no tools below advanced tier', async () => {
+  resetTourBookingStubs();
+  const basicProject = { ...ADVANCED_PROJECT, capabilityTier: 'medium' };
+  const { declarations, dispatch } = await tourBookingTools(basicProject);
+  assert.deepEqual(declarations, []);
+  assert.deepEqual(dispatch, {});
+});
+
+test('tourBookingTools returns no tools when tourSettings.enabled is false', async () => {
+  resetTourBookingStubs();
+  const disabledProject = { ...ADVANCED_PROJECT, tourSettings: { ...ADVANCED_PROJECT.tourSettings, enabled: false } };
+  const { declarations } = await tourBookingTools(disabledProject);
+  assert.deepEqual(declarations, []);
+});
+
+test('tourBookingTools returns no tools when no calendar is connected', async () => {
+  resetTourBookingStubs();
+  calendarConnections = [];
+  const { declarations } = await tourBookingTools(ADVANCED_PROJECT);
+  assert.deepEqual(declarations, []);
+});
+
+test('tourBookingTools returns both tools when tier + settings + connection all check out', async () => {
+  resetTourBookingStubs();
+  const { declarations, dispatch } = await tourBookingTools(ADVANCED_PROJECT);
+  assert.deepEqual(declarations.map(d => d.name).sort(), ['book_tour', 'check_availability']);
+  assert.ok(dispatch.check_availability);
+  assert.ok(dispatch.book_tour);
+});
+
+test('check_availability returns open slots minus busy periods', async () => {
+  resetTourBookingStubs();
+  freeBusyImpl = async () => [];
+  const { dispatch } = await tourBookingTools(ADVANCED_PROJECT);
+  const result = await dispatch.check_availability({ preferredDate: '2026-09-14', rangeDays: 1 }); // Monday
+  assert.equal(result.slots.length, 2);
+  assert.ok(result.slots[0].startTime);
+  assert.ok(result.slots[0].label);
+});
+
+test('check_availability drops a slot Google reports as busy', async () => {
+  resetTourBookingStubs();
+  freeBusyImpl = async () => [{ start: '2026-09-14T13:00:00.000Z', end: '2026-09-14T13:30:00.000Z' }];
+  const { dispatch } = await tourBookingTools(ADVANCED_PROJECT);
+  const result = await dispatch.check_availability({ preferredDate: '2026-09-14', rangeDays: 1 });
+  assert.equal(result.slots.length, 1);
+});
+
+test('check_availability clears the stale connection and returns an error when Google access was revoked', async () => {
+  resetTourBookingStubs();
+  calendarConnections[0].refreshToken = 'revoked-rt';
+  const { dispatch } = await tourBookingTools(ADVANCED_PROJECT);
+  const result = await dispatch.check_availability({ preferredDate: '2026-09-14' });
+  assert.ok(result.error);
+  assert.deepEqual(removedConnectionIds, ['conn-1']);
+});
+
+test('book_tour rejects a missing name or invalid email', async () => {
+  resetTourBookingStubs();
+  const { dispatch } = await tourBookingTools(ADVANCED_PROJECT);
+  const noName = await dispatch.book_tour({ name: '', email: 'a@b.com', startTime: '2026-09-14T13:00:00.000Z' });
+  assert.ok(noName.error);
+  const badEmail = await dispatch.book_tour({ name: 'Jane', email: 'not-an-email', startTime: '2026-09-14T13:00:00.000Z' });
+  assert.ok(badEmail.error);
+});
+
+test('book_tour rejects an unparseable startTime', async () => {
+  resetTourBookingStubs();
+  const { dispatch } = await tourBookingTools(ADVANCED_PROJECT);
+  const result = await dispatch.book_tour({ name: 'Jane', email: 'jane@example.com', startTime: 'not-a-date' });
+  assert.ok(result.error);
+});
+
+test('book_tour books when the slot is free', async () => {
+  resetTourBookingStubs();
+  freeBusyImpl = async () => [];
+  insertEventImpl = async (token, evt) => { assert.equal(evt.attendeeEmail, 'jane@example.com'); return 'event-abc'; };
+  const { dispatch } = await tourBookingTools(ADVANCED_PROJECT);
+  const result = await dispatch.book_tour({ name: 'Jane', email: 'jane@example.com', startTime: '2026-09-14T13:00:00.000Z' });
+  assert.equal(result.booked, true);
+  assert.equal(result.calendarEventId, 'event-abc');
+});
+
+test('book_tour refuses to double-book a slot Google now reports as busy', async () => {
+  resetTourBookingStubs();
+  freeBusyImpl = async () => [{ start: '2026-09-14T13:00:00.000Z', end: '2026-09-14T13:30:00.000Z' }];
+  const { dispatch } = await tourBookingTools(ADVANCED_PROJECT);
+  const result = await dispatch.book_tour({ name: 'Jane', email: 'jane@example.com', startTime: '2026-09-14T13:00:00.000Z' });
+  assert.ok(result.error);
+  assert.match(result.error, /booked by someone else/);
 });
