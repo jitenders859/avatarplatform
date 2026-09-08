@@ -444,6 +444,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         // button looking "on" while it's actually silently not capturing,
         // so the visitor keeps talking into a dead mic with no feedback.
         if (micOn) { micOn = false; micBtn.classList.remove('active'); }
+        finishBotTurn();
       },
       onError: (msg) => { console.warn('[avatar]', msg); addMessage('bot', `⚠️ ${msg}`); },
       onToolCall: (name) => {
@@ -453,6 +454,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         if (role === 'model') { statusText.textContent = 'Online'; handleBotChunk(text); }
         else if (role === 'user') handleUserChunk(text);
       },
+      onTurnComplete: finishBotTurn,
     });
 
     // Reparent canvas once SDK builds it
@@ -868,16 +870,19 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     if (textOnly) return sendTextOnly(text);
     if (ttsMode) return sendTtsMessage(text);
 
-    addMessage('user', text);
     textInput.value = '';
     textInput.style.height = 'auto';
     sendBtn.disabled = true;
 
+    // No addMessage('user', text) here — avatar.sendText() below fires
+    // onTranscript('user', text) synchronously (see sendText() in
+    // lipsync-sdk.js), which handleUserChunk() turns into the user bubble
+    // (and, after its debounce, the logTurn() call). Rendering it here too
+    // used to double both the bubble and the logged turn.
     const proceed = () => {
       currentBotMsgEl = addMessage('bot', '');
       avatar.sendText(text);
       sendBtn.disabled = false;
-      logTurn('user', text);
     };
 
     avatar.connect();
@@ -1009,6 +1014,16 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   }
 
   // ── 4. Streaming bot replies ────────────────────────────────
+  // Finalization used to be guessed from a pause between transcript deltas
+  // (no new chunk for 1500ms => turn must be over), but Gemini Live can leave
+  // multi-second silent gaps *mid-turn* (e.g. while audio is buffering or a
+  // tool call is in flight). When that gap outlasted the timeout, the bubble
+  // got finalized early and the next delta — which arrives as the full
+  // cumulative text, not just the new part — opened a *second* bubble,
+  // producing a visible stack of growing duplicate messages. The SDK now
+  // fires a real onTurnComplete event (serverContent.turnComplete/interrupted)
+  // that finishBotTurn() below hooks instead; the timer here is just a safety
+  // net in case that event is ever missed (e.g. the connection drops mid-turn).
   let botBuffer = '';
   let botFlushTimer = null;
   function handleBotChunk(text) {
@@ -1028,27 +1043,31 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     if (!panelOpen) bumpUnread();
 
     clearTimeout(botFlushTimer);
-    botFlushTimer = setTimeout(() => {
-      if (pendingSources && pendingSources.length && currentBotMsgEl) {
-        attachSources(currentBotMsgEl, pendingSources);
-        pendingSources = null;
-      }
-      if (pendingFigures && pendingFigures.length) {
-        for (const fig of pendingFigures) renderFigureCard(fig);
-        pendingFigures = null;
-      }
-      if (pendingWebSources && pendingWebSources.length && currentBotMsgEl) {
-        attachSources(currentBotMsgEl, pendingWebSources);
-        pendingWebSources = null;
-      }
-      if (config.project.showQuickReplies && pendingOptions && currentBotMsgEl) {
-        attachOptionButtons(currentBotMsgEl, pendingOptions);
-      }
-      pendingOptions = null;
-      if (botBuffer) { logTurn('assistant', botBuffer); attachSatisfactionPrompt(currentBotMsgEl); }
-      botBuffer = '';
-      currentBotMsgEl = null;
-    }, 1500);
+    botFlushTimer = setTimeout(finishBotTurn, 8000);
+  }
+
+  function finishBotTurn() {
+    clearTimeout(botFlushTimer);
+    if (!currentBotMsgEl) return;
+    if (pendingSources && pendingSources.length) {
+      attachSources(currentBotMsgEl, pendingSources);
+      pendingSources = null;
+    }
+    if (pendingFigures && pendingFigures.length) {
+      for (const fig of pendingFigures) renderFigureCard(fig);
+      pendingFigures = null;
+    }
+    if (pendingWebSources && pendingWebSources.length) {
+      attachSources(currentBotMsgEl, pendingWebSources);
+      pendingWebSources = null;
+    }
+    if (config.project.showQuickReplies && pendingOptions) {
+      attachOptionButtons(currentBotMsgEl, pendingOptions);
+    }
+    pendingOptions = null;
+    if (botBuffer) { logTurn('assistant', botBuffer); attachSatisfactionPrompt(currentBotMsgEl); }
+    botBuffer = '';
+    currentBotMsgEl = null;
   }
 
   let userFlushTimer = null;

@@ -1226,7 +1226,12 @@
      * @param {Function}           [opts.onDisconnected]
      * @param {Function}           [opts.onSpeaking]
      * @param {Function}           [opts.onListening]
-     * @param {Function}           [opts.onTranscript]  - (role:'user'|'model', text:string)
+     * @param {Function}           [opts.onTranscript]  - (role:'user'|'model', text:string) - fired with the full
+     *   cumulative text on every delta; callers should replace (not append to) their displayed bubble.
+     * @param {Function}           [opts.onTurnComplete] - fired once the model's turn has actually ended
+     *   (serverContent.turnComplete or .interrupted) — the reliable signal for "no more transcript deltas are
+     *   coming for this bubble," as opposed to guessing from a pause between deltas (transcript chunks can arrive
+     *   in bursts with multi-second silent gaps mid-turn, e.g. while audio is buffering or a tool call is in flight).
      * @param {Function}           [opts.onViseme]      - (azId:number, label:string)
      * @param {Function}           [opts.onError]       - (message:string)
      * @param {Function}           [opts.onToolCall]    - (name:string) - fired synchronously right before dispatching
@@ -2333,6 +2338,7 @@ When answering, speak naturally and conversationally — do not read the knowled
             this._setAzureViseme(0, { immediate: true });
             if (this._behaviorCtrl) this._behaviorCtrl.setState('idle');
           }, 400);
+          this._fire('onTurnComplete');
         }
 
         if (content.interrupted) {
@@ -2349,6 +2355,7 @@ When answering, speak naturally and conversationally — do not read the knowled
           this._inputTranscriptBuf  = '';
           this._outputMsgEl         = null;
           if (this._behaviorCtrl) this._behaviorCtrl.setState('listening');
+          this._fire('onTurnComplete');
         }
       };
 
