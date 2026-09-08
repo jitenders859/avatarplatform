@@ -240,3 +240,45 @@ test('book_tour refuses to double-book a slot Google now reports as busy', async
   assert.ok(result.error);
   assert.match(result.error, /booked by someone else/);
 });
+
+test('check_availability clears the stale connection when GoogleAuthRevokedError is thrown by freeBusy itself, not just by token refresh', async () => {
+  resetTourBookingStubs();
+  freeBusyImpl = async () => { throw new StubGoogleAuthRevokedError('revoked mid-call'); };
+  const { dispatch } = await tourBookingTools(ADVANCED_PROJECT);
+  const result = await dispatch.check_availability({ preferredDate: '2026-09-14' });
+  assert.ok(result.error);
+  assert.deepEqual(removedConnectionIds, ['conn-1']);
+});
+
+test('book_tour clears the stale connection when GoogleAuthRevokedError is thrown by insertEvent itself', async () => {
+  resetTourBookingStubs();
+  freeBusyImpl = async () => [];
+  insertEventImpl = async () => { throw new StubGoogleAuthRevokedError('revoked mid-call'); };
+  const { dispatch } = await tourBookingTools(ADVANCED_PROJECT);
+  const result = await dispatch.book_tour({ name: 'Jane', email: 'jane@example.com', startTime: '2026-09-14T13:00:00.000Z' });
+  assert.ok(result.error);
+  assert.deepEqual(removedConnectionIds, ['conn-1']);
+});
+
+test('check_availability treats a calendar-invalid date (fails the round-trip check) the same as giving no date at all', async () => {
+  resetTourBookingStubs();
+  const { dispatch: withInvalidDate } = await tourBookingTools(ADVANCED_PROJECT);
+  resetTourBookingStubs();
+  const { dispatch: withNoDate } = await tourBookingTools(ADVANCED_PROJECT);
+  // "2026-13-45" matches the YYYY-MM-DD shape but isn't a real calendar
+  // date — Date.UTC would otherwise silently roll it into an unrelated
+  // real date instead of being treated as "no preference given".
+  const invalidResult = await withInvalidDate.check_availability({ preferredDate: '2026-13-45', rangeDays: 1 });
+  const noDateResult = await withNoDate.check_availability({ rangeDays: 1 });
+  assert.deepEqual(invalidResult, noDateResult);
+});
+
+test('check_availability clamps an out-of-range rangeDays to the 1-14 window', async () => {
+  resetTourBookingStubs();
+  const { dispatch: withHugeRange } = await tourBookingTools(ADVANCED_PROJECT);
+  resetTourBookingStubs();
+  const { dispatch: withClampedRange } = await tourBookingTools(ADVANCED_PROJECT);
+  const hugeResult = await withHugeRange.check_availability({ preferredDate: '2026-09-14', rangeDays: 999 });
+  const clampedResult = await withClampedRange.check_availability({ preferredDate: '2026-09-14', rangeDays: 14 });
+  assert.deepEqual(hugeResult, clampedResult);
+});

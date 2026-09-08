@@ -489,9 +489,14 @@ const BOOK_TOUR_DECLARATION = {
 };
 
 async function withAccessToken(connection, fn) {
-  let accessToken;
   try {
-    accessToken = await getValidAccessToken(connection, (id, patch) => db.update('calendarConnections', id, patch));
+    const accessToken = await getValidAccessToken(connection, (id, patch) => db.update('calendarConnections', id, patch));
+    // fn (freeBusy/insertEvent) is inside this try too, not just the token
+    // fetch above — Google can reject an access token that was valid at
+    // refresh time but got revoked before this next call (see
+    // googleCalendar.js's freeBusy/insertEvent 401 handling), and that needs
+    // the same stale-connection cleanup as a revoked refresh token does.
+    return await fn(accessToken);
   } catch (e) {
     if (e instanceof GoogleAuthRevokedError) {
       await db.remove('calendarConnections', { id: connection.id });
@@ -499,12 +504,25 @@ async function withAccessToken(connection, fn) {
     }
     return { error: 'Could not reach Google Calendar: ' + e.message };
   }
-  return fn(accessToken);
+}
+
+// Format-only regex accepts a calendar-invalid string like "2026-13-45".
+// Date.UTC(y, m, d) with numeric args never throws — it silently rolls an
+// out-of-range month/day forward into a real date instead — so comparing
+// the round-tripped result back against the original string catches
+// anything that isn't an actual calendar date, not just anything shaped
+// like one. (The ISO-string Date constructor was tried first here and
+// rejected: new Date("2026-13-45T00:00:00Z") produces an Invalid Date
+// whose .toISOString() throws instead of returning a comparable value.)
+function isValidDateStr(dateStr) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10) === dateStr;
 }
 
 async function handleCheckAvailability(args, project, tourSettings, connection) {
   const rangeDays = Math.min(Math.max(parseInt(args?.rangeDays, 10) || 3, 1), 14);
-  const fromDate = /^\d{4}-\d{2}-\d{2}$/.test(args?.preferredDate || '')
+  const fromDate = isValidDateStr(args?.preferredDate || '')
     ? args.preferredDate
     : new Date().toISOString().slice(0, 10);
 
@@ -519,7 +537,7 @@ async function handleCheckAvailability(args, project, tourSettings, connection) 
     );
     const open = subtractBusy(candidates, busy).slice(0, 8);
     return { slots: open.map(s => ({ startTime: s.startUTC.toISOString(), label: s.label })) };
-  }).catch(e => ({ error: 'Could not check calendar availability: ' + e.message }));
+  });
 }
 
 async function handleBookTour(args, project, tourSettings, connection) {
@@ -533,6 +551,12 @@ async function handleBookTour(args, project, tourSettings, connection) {
   const endUTC = new Date(startUTC.getTime() + tourSettings.durationMinutes * 60000);
 
   return withAccessToken(connection, async (accessToken) => {
+    // Re-checking here narrows but doesn't eliminate the race: a second
+    // visitor's book_tour could still slip in between this freeBusy call
+    // and insertEvent below. Google Calendar has no conditional-create
+    // primitive to close that fully; acceptable residual risk for two
+    // visitors independently booking the exact same slot within
+    // milliseconds of each other on a tour-booking chatbot.
     const busy = await freeBusy(accessToken, startUTC.toISOString(), endUTC.toISOString());
     if (busy.length) return { error: 'That slot was just booked by someone else — please check availability again.' };
 
@@ -545,7 +569,7 @@ async function handleBookTour(args, project, tourSettings, connection) {
       attendeeEmail: email,
     });
     return { booked: true, startTime: startUTC.toISOString(), calendarEventId };
-  }).catch(e => ({ error: 'Could not book the tour: ' + e.message }));
+  });
 }
 
 /**
