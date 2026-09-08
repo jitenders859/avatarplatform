@@ -17,7 +17,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 
 const { projectCache, invalidateProjectCache } = require('../cache');
 const { validate, schemas } = require('../middleware/validate');
-const { toolsForTier, projectActionTools } = require('../services/tools');
+const { toolsForTier, projectActionTools, tourBookingTools } = require('../services/tools');
 const { synthesizeSpeech, TtsError } = require('../services/tts');
 const { isWithinBusinessHours } = require('../services/hours');
 const { resolveLearnerKey, backfillLearnerKey } = require('../services/learner');
@@ -548,8 +548,9 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
     // owner-defined AI actions (see services/tools.js#projectActionTools).
     const tierTools = toolsForTier(project.capabilityTier);
     const actionTools = await projectActionTools(project);
-    const declarations = [...tierTools.declarations, ...actionTools.declarations];
-    const dispatch = { ...tierTools.dispatch, ...actionTools.dispatch };
+    const bookingTools = await tourBookingTools(project);
+    const declarations = [...tierTools.declarations, ...actionTools.declarations, ...bookingTools.declarations];
+    const dispatch = { ...tierTools.dispatch, ...actionTools.dispatch, ...bookingTools.dispatch };
     const toolCalls = [];
     let answer = '';
     try {
