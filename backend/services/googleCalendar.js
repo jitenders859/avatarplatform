@@ -31,7 +31,12 @@ const SCOPE = 'https://www.googleapis.com/auth/calendar.events openid email';
 const EXPIRY_SKEW_MS = 60 * 1000;
 const FETCH_TIMEOUT_MS = 8000;
 
-class GoogleAuthRevokedError extends Error {}
+class GoogleAuthRevokedError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'GoogleAuthRevokedError';
+  }
+}
 
 function isConfigured() {
   return !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_CALENDAR_REDIRECT_URI);
@@ -122,13 +127,24 @@ async function refreshAccessToken(refreshToken) {
  * — injected by the caller rather than importing db.js here, to keep this
  * module's only real dependency the built-in fetch, matching oidc.js's
  * minimal-surface style.
+ *
+ * A failure to persist the refreshed token does NOT fail this call — Google
+ * already handed back a good access token, and the caller (a synchronous
+ * AI tool-calling turn) shouldn't fail for a reason that has nothing to do
+ * with Google. The next call just refreshes again (refresh tokens are
+ * reusable), so a transient DB write failure only costs an extra refresh
+ * later, not a broken response now.
  */
 async function getValidAccessToken(connection, updateTokens) {
   if (connection.accessToken && connection.accessTokenExpiresAt > Date.now() + EXPIRY_SKEW_MS) {
     return connection.accessToken;
   }
   const { accessToken, expiresAt } = await refreshAccessToken(connection.refreshToken);
-  await updateTokens(connection.id, { accessToken, accessTokenExpiresAt: expiresAt });
+  try {
+    await updateTokens(connection.id, { accessToken, accessTokenExpiresAt: expiresAt });
+  } catch (_) {
+    // Persistence failed but Google's refresh succeeded — fail open (see above).
+  }
   return accessToken;
 }
 
@@ -140,7 +156,14 @@ async function freeBusy(accessToken, timeMinISO, timeMaxISO) {
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error?.message || `freebusy failed: HTTP ${res.status}`);
+  if (!res.ok) {
+    // A 401 here means the access token was rejected outright (e.g. access
+    // revoked in the window between refresh and this call) — same
+    // "reconnect required" condition refreshAccessToken's invalid_grant
+    // maps to, just detected at API-call time instead of refresh time.
+    if (res.status === 401) throw new GoogleAuthRevokedError('Google Calendar access was revoked');
+    throw new Error(body.error?.message || `freebusy failed: HTTP ${res.status}`);
+  }
   return body.calendars?.primary?.busy || [];
 }
 
@@ -159,7 +182,11 @@ async function insertEvent(accessToken, { summary, description, location, startI
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error?.message || `event creation failed: HTTP ${res.status}`);
+  if (!res.ok) {
+    // See freeBusy's matching comment above.
+    if (res.status === 401) throw new GoogleAuthRevokedError('Google Calendar access was revoked');
+    throw new Error(body.error?.message || `event creation failed: HTTP ${res.status}`);
+  }
   return body.id;
 }
 

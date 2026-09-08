@@ -99,6 +99,30 @@ test('getValidAccessToken throws GoogleAuthRevokedError on invalid_grant', async
   );
 });
 
+test('GoogleAuthRevokedError has a correctly-set name, not the generic "Error"', () => {
+  const err = new GoogleAuthRevokedError('revoked');
+  assert.equal(err.name, 'GoogleAuthRevokedError');
+  assert.equal(err.toString(), 'GoogleAuthRevokedError: revoked');
+});
+
+test('getValidAccessToken throws a plain Error (not GoogleAuthRevokedError) for a non-invalid_grant refresh failure', async () => {
+  fetchImpl = async () => ({ ok: false, json: async () => ({ error: 'server_error', error_description: 'Google is having issues' }) });
+  const connection = { id: 'conn-1', accessToken: null, accessTokenExpiresAt: 0, refreshToken: 'rt-1' };
+  await assert.rejects(() => getValidAccessToken(connection, async () => {}), (err) => {
+    assert.ok(err instanceof Error);
+    assert.ok(!(err instanceof GoogleAuthRevokedError));
+    assert.match(err.message, /Google is having issues/);
+    return true;
+  });
+});
+
+test('getValidAccessToken still returns the refreshed token when persisting it fails (fails open)', async () => {
+  fetchImpl = async () => ({ ok: true, json: async () => ({ access_token: 'new-token', expires_in: 3600 }) });
+  const connection = { id: 'conn-1', accessToken: 'old-token', accessTokenExpiresAt: Date.now() - 1000, refreshToken: 'rt-1' };
+  const token = await getValidAccessToken(connection, async () => { throw new Error('DB is down'); });
+  assert.equal(token, 'new-token');
+});
+
 test('freeBusy posts the time window and returns the primary calendar busy list', async () => {
   fetchImpl = async () => ({ ok: true, json: async () => ({ calendars: { primary: { busy: [{ start: 'a', end: 'b' }] } } }) });
   const busy = await freeBusy('access-token', '2026-09-14T00:00:00Z', '2026-09-15T00:00:00Z');
@@ -111,6 +135,22 @@ test('freeBusy returns an empty array when the calendar has no busy periods', as
   fetchImpl = async () => ({ ok: true, json: async () => ({ calendars: { primary: {} } }) });
   const busy = await freeBusy('access-token', '2026-09-14T00:00:00Z', '2026-09-15T00:00:00Z');
   assert.deepEqual(busy, []);
+});
+
+test('freeBusy throws with Google\'s error message on a non-401 failure', async () => {
+  fetchImpl = async () => ({ ok: false, status: 500, json: async () => ({ error: { message: 'Backend error' } }) });
+  await assert.rejects(
+    () => freeBusy('access-token', '2026-09-14T00:00:00Z', '2026-09-15T00:00:00Z'),
+    /Backend error/
+  );
+});
+
+test('freeBusy throws GoogleAuthRevokedError on a 401 (access revoked mid-call)', async () => {
+  fetchImpl = async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'Invalid Credentials' } }) });
+  await assert.rejects(
+    () => freeBusy('access-token', '2026-09-14T00:00:00Z', '2026-09-15T00:00:00Z'),
+    GoogleAuthRevokedError
+  );
 });
 
 test('insertEvent posts the event and returns its id', async () => {
@@ -131,4 +171,17 @@ test('insertEvent throws with Google\'s error message on failure', async () => {
     () => insertEvent('access-token', { summary: 's', startISO: 'a', endISO: 'b', attendeeEmail: 'x@example.com' }),
     /Invalid attendee/
   );
+});
+
+test('insertEvent throws GoogleAuthRevokedError on a 401 (access revoked mid-call)', async () => {
+  fetchImpl = async () => ({ ok: false, status: 401, json: async () => ({ error: { message: 'Invalid Credentials' } }) });
+  await assert.rejects(
+    () => insertEvent('access-token', { summary: 's', startISO: 'a', endISO: 'b', attendeeEmail: 'x@example.com' }),
+    GoogleAuthRevokedError
+  );
+});
+
+test('exchangeCode throws Google\'s error description on an actual HTTP failure (not just a missing refresh_token)', async () => {
+  fetchImpl = async () => ({ ok: false, json: async () => ({ error: 'invalid_grant', error_description: 'Malformed auth code' }) });
+  await assert.rejects(() => exchangeCode('bad-code'), /Malformed auth code/);
 });
