@@ -970,6 +970,14 @@ ALTER TABLE usage ADD COLUMN IF NOT EXISTS notified_over_at    BIGINT;
 -- supabase/migrations/2026-09-08_add_tour_booking.sql and
 -- backend/services/googleCalendar.js's header comment).
 -- ═══════════════════════════════════════════════════════════════════
+-- refresh_token/access_token are plaintext columns — there is no
+-- app-level encryption-at-rest anywhere in this codebase yet (same
+-- precedent as projects.webhook_secret), and this is a deliberate,
+-- documented choice, not an oversight: see the security note in
+-- docs/superpowers/specs/2026-09-08-google-calendar-tour-booking-design.md.
+-- A Google refresh token is a materially more sensitive credential than
+-- anything else stored this way — it is standing access to the owner's
+-- real Google account, scoped to calendar.events only.
 CREATE TABLE IF NOT EXISTS calendar_connections (
   id                       UUID    PRIMARY KEY,
   project_id               UUID    NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
