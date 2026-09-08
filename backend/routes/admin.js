@@ -11,6 +11,7 @@ const { getUsageSnapshot, isAdminPlanOverrideActive } = require('../services/usa
 const { PLANS } = require('../plans');
 const { getStripe } = require('../services/stripe');
 const { invalidateProjectCache } = require('../cache');
+const { synthesizeInworldSpeech, InworldTtsError, MODELS: INWORLD_MODELS } = require('../services/inworldTts');
 
 const router = express.Router();
 
@@ -568,6 +569,33 @@ router.get('/audit-log', adminAuthRequired, async (req, res) => {
     db.query(`SELECT array_agg(DISTINCT action ORDER BY action) AS actions FROM admin_audit_log`),
   ]);
   res.json({ entries, page, pageSize, total: count, actions: actions || [] });
+});
+
+/**
+ * POST /inworld-tts-test — manual test route for backend/services/
+ * inworldTts.js (Inworld TTS-2 / TTS-2 Flash). Not part of the product's
+ * voice-engine selector (see backend/services/tts.js's synthesizeSpeech()
+ * and VOICE_ENGINES in middleware/validate.js) — this exists only so the
+ * new library can be exercised against a real Inworld account before it's
+ * wired into anything real. Admin-only since each call spends real API
+ * credits.
+ */
+router.post('/inworld-tts-test', adminAuthRequired, async (req, res) => {
+  const { model, voiceId, text } = req.body || {};
+  if (!INWORLD_MODELS.includes(model)) {
+    return res.status(400).json({ error: `model must be one of: ${INWORLD_MODELS.join(', ')}` });
+  }
+  if (!text || !String(text).trim()) {
+    return res.status(400).json({ error: 'text is required' });
+  }
+
+  try {
+    const result = await synthesizeInworldSpeech({ model, voiceId, text });
+    res.json(result);
+  } catch (e) {
+    if (e instanceof InworldTtsError) return res.status(502).json({ error: e.message });
+    throw e;
+  }
 });
 
 module.exports = router;
