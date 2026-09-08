@@ -10,7 +10,7 @@ const { userPlanId } = require('../services/usage');
 const { sendTeamInviteEmail } = require('../services/email');
 const storage = require('../services/storage');
 const { synthesizeSpeech, TtsError } = require('../services/tts');
-const { rateLimit } = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 
 const router = express.Router();
 
@@ -23,7 +23,7 @@ const voicePreviewLimiter = rateLimit({
   max: 20,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.user?.id || req.ip,
+  keyGenerator: (req) => req.user?.id || ipKeyGenerator(req.ip || 'unknown'),
   handler: (_req, res) => res.status(429).json({ error: 'Too many preview requests — please slow down a little.' }),
 });
 
