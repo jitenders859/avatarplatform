@@ -89,11 +89,12 @@ function formatSlotLabel(startUTC, timeZone) {
 function computeCandidateSlots({ tourSettings, fromDate, rangeDays, now = new Date() }) {
   const { durationMinutes, bufferMinutes = 0, timezone, workingHours = {} } = tourSettings;
   const step = durationMinutes + bufferMinutes;
-  // Zod validation upstream (backend/middleware/validate.js) keeps
-  // durationMinutes >= 5 in production, but this function is also callable
-  // directly (e.g. from tests) — without this guard, a non-advancing step
-  // combined with every candidate slot being in the past hangs forever,
-  // since `cursor` never reaches `window.end` and MAX_SLOTS is never hit.
+  // A later task adds Zod validation (backend/middleware/validate.js) that
+  // keeps durationMinutes >= 5 wherever tour_settings is saved, but this
+  // function is also callable directly (e.g. from tests) — without this
+  // guard, a non-advancing step combined with every candidate slot being
+  // in the past hangs forever, since `cursor` never reaches `window.end`
+  // and MAX_SLOTS is never hit.
   if (step <= 0) return [];
   const slots = [];
 
