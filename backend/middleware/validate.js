@@ -111,6 +111,24 @@ const awayMessage = z.string().trim().max(500, 'awayMessage too long').nullable(
 const fallbackMessage = z.string().trim().max(500, 'fallbackMessage too long').nullable().optional();
 const conversationStarters = z.array(z.string().trim().min(1).max(200)).max(6, 'Up to 6 conversation starters').nullable().optional();
 
+// Built-in function-calling tool names (backend/services/tools.js's
+// TOOL_DEFS plus check_availability/book_tour) — kept in sync manually,
+// same as this file's own VOICES list. An owner-defined action sharing one
+// of these names would silently collide in the /study tool loop's
+// declarations array/dispatch object (backend/routes/embed.js): the model
+// would see two identically-named function declarations, and dispatch's
+// object-spread merge order means the built-in handler silently wins, so
+// the owner's webhook would simply stop firing with no error surfaced
+// anywhere — worse for book_tour/check_availability specifically, since
+// that means a real Google Calendar booking silently replaces what the
+// owner expected to be their own webhook call.
+const RESERVED_ACTION_NAMES = new Set([
+  'get_project_topics', 'generate_quiz', 'generate_flashcards', 'recommend_video', 'explain_visually',
+  'check_availability', 'book_tour',
+]);
+const notReservedActionName = (name) => !RESERVED_ACTION_NAMES.has(name);
+const RESERVED_ACTION_NAME_MESSAGE = `name must not be one of the built-in tool names: ${[...RESERVED_ACTION_NAMES].join(', ')}`;
+
 const schemas = {
   signup: z.object({
     email,
@@ -552,7 +570,8 @@ const schemas = {
   }),
 
   projectActionCreate: z.object({
-    name: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/, 'name must be snake_case, starting with a letter'),
+    name: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/, 'name must be snake_case, starting with a letter')
+      .refine(notReservedActionName, { message: RESERVED_ACTION_NAME_MESSAGE }),
     description: z.string().trim().min(1, 'description is required').max(500, 'description too long'),
     parameters: z.record(z.string(), z.unknown()).optional(),
     webhookUrl: z.string().url('webhookUrl must be a valid URL'),
@@ -560,7 +579,8 @@ const schemas = {
   }),
 
   projectActionPatch: z.object({
-    name: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/, 'name must be snake_case, starting with a letter').optional(),
+    name: z.string().trim().regex(/^[a-z][a-z0-9_]{1,63}$/, 'name must be snake_case, starting with a letter')
+      .refine(notReservedActionName, { message: RESERVED_ACTION_NAME_MESSAGE }).optional(),
     description: z.string().trim().min(1).max(500).optional(),
     parameters: z.record(z.string(), z.unknown()).optional(),
     webhookUrl: z.string().url('webhookUrl must be a valid URL').optional(),

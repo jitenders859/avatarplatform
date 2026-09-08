@@ -518,3 +518,36 @@ test('characterTriggerPatch accepts keywords alone', () => {
   const result = schemas.characterTriggerPatch.safeParse({ keywords: 'joke, funny' });
   assert.equal(result.success, true);
 });
+
+test('projectActionCreate rejects a name that collides with a built-in tool (book_tour)', () => {
+  const result = schemas.projectActionCreate.safeParse({
+    name: 'book_tour', description: 'My own booking webhook', webhookUrl: 'https://example.com/hook',
+  });
+  assert.equal(result.success, false);
+});
+
+test('projectActionCreate rejects a name that collides with a built-in tool (check_availability)', () => {
+  const result = schemas.projectActionCreate.safeParse({
+    name: 'check_availability', description: 'desc', webhookUrl: 'https://example.com/hook',
+  });
+  assert.equal(result.success, false);
+});
+
+test('projectActionCreate rejects a name colliding with a pre-existing built-in tool (generate_quiz)', () => {
+  const result = schemas.projectActionCreate.safeParse({
+    name: 'generate_quiz', description: 'desc', webhookUrl: 'https://example.com/hook',
+  });
+  assert.equal(result.success, false);
+});
+
+test('projectActionCreate accepts a non-colliding snake_case name', () => {
+  const result = schemas.projectActionCreate.safeParse({
+    name: 'check_order_status', description: 'Looks up an order', webhookUrl: 'https://example.com/hook',
+  });
+  assert.equal(result.success, true);
+});
+
+test('projectActionPatch rejects renaming an action to a reserved built-in tool name', () => {
+  const result = schemas.projectActionPatch.safeParse({ name: 'book_tour' });
+  assert.equal(result.success, false);
+});
