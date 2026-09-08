@@ -75,6 +75,28 @@ const businessHours = z.object({
   closeTime: z.string().regex(HHMM_RE, 'closeTime must be HH:MM'),
 }).nullable().optional();
 
+// Per-weekday, multiple-windows-per-day working hours for tour booking
+// (see backend/services/tourSlots.js) — richer than businessHours above
+// (which is a single daily window applied across a set of days), since
+// tour availability may genuinely differ day-to-day or have a midday gap.
+const tourWindow = z.object({
+  start: z.string().regex(HHMM_RE, 'start must be HH:MM'),
+  end: z.string().regex(HHMM_RE, 'end must be HH:MM'),
+}).refine(w => w.start < w.end, { message: 'start must be before end' });
+
+const tourWorkingHours = z.object(
+  Object.fromEntries(WEEKDAYS.map(day => [day, z.array(tourWindow).max(4)]))
+);
+
+const tourSettings = z.object({
+  enabled: z.boolean(),
+  durationMinutes: z.number().int().min(5).max(240),
+  timezone: z.string().trim().min(1, 'timezone is required').max(100),
+  bufferMinutes: z.number().int().min(0).max(120),
+  location: z.string().trim().max(300).optional(),
+  workingHours: tourWorkingHours,
+}).nullable().optional();
+
 const awayMessage = z.string().trim().max(500, 'awayMessage too long').nullable().optional();
 const fallbackMessage = z.string().trim().max(500, 'fallbackMessage too long').nullable().optional();
 const conversationStarters = z.array(z.string().trim().min(1).max(200)).max(6, 'Up to 6 conversation starters').nullable().optional();
@@ -197,6 +219,7 @@ const schemas = {
     awayMessage,
     conversationStarters,
     fallbackMessage,
+    tourSettings,
     // Owner-editable overrides for widget copy that's otherwise hardcoded
     // English — see improvement-prompts.md Prompt F4 item 4. Both keys
     // optional/independent; an unset key falls back to the widget default.

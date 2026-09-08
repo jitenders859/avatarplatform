@@ -200,6 +200,55 @@ test('patchProject rejects a capabilityTier outside basic/medium/advanced', () =
   assert.equal(result.success, false);
 });
 
+test('patchProject: accepts a full valid tourSettings object', () => {
+  const result = schemas.patchProject.safeParse({
+    tourSettings: {
+      enabled: true,
+      durationMinutes: 30,
+      timezone: 'America/New_York',
+      bufferMinutes: 15,
+      location: '123 Main St',
+      workingHours: { mon: [{ start: '09:00', end: '17:00' }], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+    },
+  });
+  assert.equal(result.success, true);
+});
+
+test('patchProject: rejects tourSettings with an inverted time window', () => {
+  const result = schemas.patchProject.safeParse({
+    tourSettings: {
+      enabled: true, durationMinutes: 30, timezone: 'UTC', bufferMinutes: 0, location: '',
+      workingHours: { mon: [{ start: '17:00', end: '09:00' }], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+    },
+  });
+  assert.equal(result.success, false);
+});
+
+test('patchProject: rejects a malformed HH:MM time', () => {
+  const result = schemas.patchProject.safeParse({
+    tourSettings: {
+      enabled: true, durationMinutes: 30, timezone: 'UTC', bufferMinutes: 0, location: '',
+      workingHours: { mon: [{ start: '9am', end: '17:00' }], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+    },
+  });
+  assert.equal(result.success, false);
+});
+
+test('patchProject: rejects durationMinutes outside 5-240', () => {
+  const result = schemas.patchProject.safeParse({
+    tourSettings: {
+      enabled: true, durationMinutes: 500, timezone: 'UTC', bufferMinutes: 0, location: '',
+      workingHours: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+    },
+  });
+  assert.equal(result.success, false);
+});
+
+test('patchProject: tourSettings is optional (omitting it is valid)', () => {
+  const result = schemas.patchProject.safeParse({ name: 'Renamed bot' });
+  assert.equal(result.success, true);
+});
+
 // ── filesInit ─────────────────────────────────────────────────
 
 test('filesInit rejects an empty files array', () => {
