@@ -29,6 +29,11 @@ CREATE TABLE IF NOT EXISTS users (
   stripe_customer_id    TEXT,
   reset_token           TEXT,
   reset_token_expiry    BIGINT,
+  -- SMS destination for usage-limit alerts (see the "Usage-limit
+  -- email/SMS alerts" evolution block below) — SMS only sends when both
+  -- this and sms_alerts_enabled are set.
+  phone                 TEXT,
+  sms_alerts_enabled    BOOLEAN     NOT NULL DEFAULT false,
   created_at            BIGINT      NOT NULL,
   updated_at            BIGINT
 );
@@ -234,14 +239,19 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 
 -- ── usage ─────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS usage (
-  id               TEXT   PRIMARY KEY,  -- format: userId:YYYY-MM
-  user_id          UUID   NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  period           TEXT   NOT NULL,     -- format: YYYY-MM
-  messages         INTEGER DEFAULT 0,
-  embedding_chars  BIGINT  DEFAULT 0,
-  web_searches     INTEGER DEFAULT 0,
-  created_at       BIGINT  NOT NULL,
-  updated_at       BIGINT,
+  id                   TEXT   PRIMARY KEY,  -- format: userId:YYYY-MM
+  user_id              UUID   NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  period               TEXT   NOT NULL,     -- format: YYYY-MM
+  messages             INTEGER DEFAULT 0,
+  embedding_chars      BIGINT  DEFAULT 0,
+  web_searches         INTEGER DEFAULT 0,
+  -- Set the first time each usage-limit alert is sent for this period row
+  -- (see backend/services/usage.js#runUsageAlertSweep) so a user is
+  -- emailed/texted at most once per threshold per billing period.
+  notified_warning_at  BIGINT,
+  notified_over_at     BIGINT,
+  created_at           BIGINT  NOT NULL,
+  updated_at           BIGINT,
   UNIQUE (user_id, period)
 );
 
@@ -899,3 +909,58 @@ CREATE INDEX IF NOT EXISTS idx_chatbot_categories_user ON chatbot_categories(use
 -- chatbots instead of deleting them.
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES chatbot_categories(id) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_projects_category_id ON projects(category_id);
+
+-- Multi-voice-provider support (see supabase/migrations/2026-09-07_add_voice_engine.sql)
+-- This was only ever written into the CREATE TABLE block above, which
+-- CREATE TABLE IF NOT EXISTS silently skips for an already-existing
+-- projects table — leaving it entirely missing on any database whose
+-- table predates this feature, until this ADD COLUMN was added.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS voice_engine TEXT NOT NULL DEFAULT 'gemini-live';
+
+-- Same gap, six more columns (see supabase/migrations/2026-09-07b_add_missing_projects_columns.sql)
+-- — each of these was also only ever written into the CREATE TABLE block
+-- above, never given a matching ADD COLUMN here, until this audit found them.
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS allowed_domains        TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS business_hours         JSONB;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS away_message           TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS conversation_starters  JSONB   DEFAULT '[]';
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS fallback_message       TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS admin_suspended        BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS admin_suspended_reason TEXT;
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Let a tier override point at a built-in plan, not just a custom one
+-- (see supabase/migrations/2026-09-07c_allow_builtin_plan_tier_override.sql)
+--
+-- admin_plan_id's FK forced every override to be a plan_tiers row, so
+-- the admin panel's "Set tier override" could only grant a custom tier —
+-- there was no way to just flip a test account to the real Pro/Business
+-- plan (backend/plans.js's static PLANS array) without first creating a
+-- throwaway plan_tiers row that duplicates its limits. userPlanId()/
+-- getPlan() (backend/services/usage.js, backend/plans.js) already resolve
+-- admin_plan_id against PLANS before falling back to plan_tiers, so the
+-- column only ever needed to be a free-form id; the FK was the blocker.
+-- Validity is now checked in the app layer (backend/routes/admin.js)
+-- against PLANS or plan_tiers instead.
+-- ═══════════════════════════════════════════════════════════════════
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_admin_plan_id_fkey;
+
+-- ═══════════════════════════════════════════════════════════════════
+-- Usage-limit email/SMS alerts (see
+-- supabase/migrations/2026-09-07d_add_usage_limit_alerts.sql and
+-- backend/services/usage.js#runUsageAlertSweep).
+--
+-- `phone` / `sms_alerts_enabled` — opt-in destination for the SMS alert;
+-- SMS is only sent when both are set (see backend/services/sms.js, no-op
+-- without Twilio env vars either way).
+--
+-- `notified_warning_at` / `notified_over_at` on `usage` record when each
+-- alert was last sent FOR THAT BILLING PERIOD ROW — since `usage` is
+-- already one row per user per YYYY-MM period, this makes "send each
+-- alert at most once per period" fall out for free with no extra period
+-- bookkeeping: a new period means a new row means both columns start NULL.
+-- ═══════════════════════════════════════════════════════════════════
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone               TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS sms_alerts_enabled  BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE usage ADD COLUMN IF NOT EXISTS notified_warning_at BIGINT;
+ALTER TABLE usage ADD COLUMN IF NOT EXISTS notified_over_at    BIGINT;

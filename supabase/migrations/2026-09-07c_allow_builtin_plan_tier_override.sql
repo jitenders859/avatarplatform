@@ -1,0 +1,26 @@
+-- ═══════════════════════════════════════════════════════════════════
+-- Migration: let admin tier overrides point at a built-in plan
+-- (backend/plans.js's PLANS array — 'starter' | 'pro' | 'business'),
+-- not just a custom plan_tiers row.
+--
+-- users.admin_plan_id was declared `TEXT REFERENCES plan_tiers(id)`, so
+-- the admin panel's "Set tier override" could only assign a custom tier
+-- created via the Tiers tab — there was no way to just flip a test
+-- account to the real Pro/Business plan without first creating a
+-- throwaway plan_tiers row that duplicates its limits by hand.
+--
+-- backend/services/usage.js's userPlanId() and backend/plans.js's
+-- getPlan() already resolve admin_plan_id against the static PLANS
+-- array before falling back to plan_tiers, so the column only ever
+-- needed to be a free-form id — the FK was the actual blocker.
+-- Validity is now checked in the app layer (backend/routes/admin.js's
+-- PATCH /admin/users/:id) against PLANS or plan_tiers instead.
+--
+-- This project has no migration runner — supabase/schema.sql is the
+-- single idempotent source of truth, re-run in full against an existing
+-- database to apply new changes. This file is a standalone, dated
+-- record, and can also be run directly:
+--   psql $DATABASE_URL -f supabase/migrations/2026-09-07c_allow_builtin_plan_tier_override.sql
+-- ═══════════════════════════════════════════════════════════════════
+
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_admin_plan_id_fkey;
