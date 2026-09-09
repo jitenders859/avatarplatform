@@ -987,7 +987,7 @@
           </div>
           <div class="row">
             <button class="btn btn-primary" id="tours-save-btn" type="button">Save tour settings</button>
-            <span id="tours-save-error" class="error-text" style="display:none"></span>
+            <span id="tours-save-error" class="text-sm" style="color:var(--danger);display:none"></span>
           </div>
         </div>
       </div>
@@ -2583,7 +2583,7 @@
       return `
         <div class="row" style="gap:10px;align-items:flex-start">
           <div style="width:40px;padding-top:8px;font-weight:600">${label}</div>
-          <div class="col gap-xs" style="flex:1">
+          <div class="col gap-sm" style="flex:1">
             ${rows || '<span class="help">No hours set</span>'}
             <button class="btn btn-sm btn-ghost" type="button" data-action="add-window" data-day="${code}">+ Add hours</button>
           </div>
@@ -2595,6 +2595,10 @@
   document.getElementById('f-tour-hours').addEventListener('click', (e) => {
     const addBtn = e.target.closest('[data-action="add-window"]');
     if (addBtn) {
+      // Mirrors the server's per-day cap (backend/middleware/validate.js's
+      // tourWindow array .max(4)) so a 5th click fails fast here instead of
+      // round-tripping to the server for a raw Zod array-length message.
+      if (tourWorkingHours[addBtn.dataset.day].length >= 4) return;
       tourWorkingHours[addBtn.dataset.day].push({ start: '09:00', end: '17:00' });
       renderTourHours();
       return;
@@ -2683,18 +2687,20 @@
   // Landed here from the Google OAuth callback redirect (see
   // backend/routes/googleCalendarAuth.js#callbackHandler) — surface the
   // result and clean the query string so a refresh doesn't re-show the toast.
+  // Set by handleCalendarOAuthReturn below, consumed once load() resolves
+  // (see the bottom of this script) — NOT the browser's own `load` event,
+  // which only waits for page subresources and can fire well before the
+  // app's async project fetch does. Queuing on the wrong signal meant
+  // switchTab('tours')/loadTourSettings() could run while `project` was
+  // still null, right after a real OAuth redirect returns.
+  let pendingCalendarOAuthResult = null;
+  let pendingCalendarOAuthSwitchToTours = false;
+
   (function handleCalendarOAuthReturn() {
     const calendarResult = params.get('calendar');
     if (!calendarResult) return;
-    if (params.get('tab') === 'tours') {
-      // Deferred: the Tours tab (and its tier-gated visibility) isn't
-      // built yet at this point in the script — applyTierVisibility runs
-      // after project data loads, later below. Queue the switch for then.
-      window.addEventListener('load', () => switchTab('tours'));
-    }
-    window.addEventListener('load', () => {
-      showToast(calendarResult === 'connected' ? 'Google Calendar connected' : 'Could not connect Google Calendar', calendarResult === 'connected' ? '' : 'error');
-    });
+    pendingCalendarOAuthResult = calendarResult;
+    pendingCalendarOAuthSwitchToTours = params.get('tab') === 'tours';
     const url = new URL(location.href);
     url.searchParams.delete('calendar');
     url.searchParams.delete('tab');
@@ -3056,6 +3062,15 @@
   load().then(() => {
     settingsSaveBar = setupSaveBar('panel-settings', 'settings-savebar', 'settings-discard-btn', load);
     widgetSaveBar = setupSaveBar('panel-widget', 'widget-savebar', 'widget-discard-btn', load);
+    // project is populated and applyTierVisibility has already run by this
+    // point, so the Tours tab's hidden state is correct before we touch it.
+    if (pendingCalendarOAuthResult) {
+      if (pendingCalendarOAuthSwitchToTours) switchTab('tours');
+      showToast(
+        pendingCalendarOAuthResult === 'connected' ? 'Google Calendar connected' : 'Could not connect Google Calendar',
+        pendingCalendarOAuthResult === 'connected' ? '' : 'error'
+      );
+    }
   });
   </script>
 </body>
