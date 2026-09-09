@@ -952,6 +952,27 @@
       </div>
 
       <div class="card mt-md">
+        <h2 class="card-title mb-md">Calendly</h2>
+        <div class="col gap-md">
+          <div class="field">
+            <label>Calendly scheduling</label>
+            <select class="select" id="f-calendly-enabled">
+              <option value="false">Disabled (default)</option>
+              <option value="true">Enabled — the AI can open a Calendly scheduler for the visitor</option>
+            </select>
+          </div>
+          <div id="calendly-settings-detail" style="display:none" class="col gap-md">
+            <div class="field">
+              <label>Event types</label>
+              <span class="help">The first one is the default; the AI uses a later one when the visitor names it (e.g. "demo").</span>
+              <div class="col gap-sm" id="f-calendly-types"></div>
+              <button class="btn btn-sm btn-ghost" type="button" id="calendly-add-type-btn">+ Add event type</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-md">
         <h2 class="card-title mb-md">Tour settings</h2>
         <div class="col gap-md">
           <div class="field">
@@ -2556,6 +2577,42 @@
   const TOUR_WEEKDAYS = [['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
   let tourWorkingHours = { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] };
 
+  let calendlyEventTypes = [];
+
+  function renderCalendlyTypes() {
+    const wrap = document.getElementById('f-calendly-types');
+    wrap.innerHTML = calendlyEventTypes.map((et, i) => `
+      <div class="row" style="gap:8px;align-items:center" data-idx="${i}">
+        <input class="input" data-role="label" placeholder="Label, e.g. Demo" style="width:160px" value="${(et.label || '').replace(/"/g, '&quot;')}" />
+        <input class="input" data-role="url" placeholder="https://calendly.com/you/event" style="flex:1" value="${(et.url || '').replace(/"/g, '&quot;')}" />
+        <button class="btn btn-sm btn-ghost" type="button" data-action="remove-calendly-type" data-idx="${i}">Remove</button>
+      </div>
+    `).join('') || '<span class="help">No event types added</span>';
+  }
+
+  document.getElementById('calendly-add-type-btn').addEventListener('click', () => {
+    if (calendlyEventTypes.length >= 10) return;
+    calendlyEventTypes.push({ label: '', url: '' });
+    renderCalendlyTypes();
+  });
+
+  document.getElementById('f-calendly-types').addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('[data-action="remove-calendly-type"]');
+    if (!removeBtn) return;
+    calendlyEventTypes.splice(Number(removeBtn.dataset.idx), 1);
+    renderCalendlyTypes();
+  });
+
+  document.getElementById('f-calendly-types').addEventListener('change', (e) => {
+    const row = e.target.closest('[data-idx]');
+    if (!row || !e.target.dataset.role) return;
+    calendlyEventTypes[Number(row.dataset.idx)][e.target.dataset.role] = e.target.value.trim();
+  });
+
+  document.getElementById('f-calendly-enabled').addEventListener('change', (e) => {
+    document.getElementById('calendly-settings-detail').style.display = e.target.value === 'true' ? '' : 'none';
+  });
+
   function populateTourTimezones(selected) {
     const sel = document.getElementById('f-tour-tz');
     let zones;
@@ -2660,6 +2717,13 @@
       ...(ts.workingHours || {}),
     };
     renderTourHours();
+
+    const calendly = ts.calendly || {};
+    document.getElementById('f-calendly-enabled').value = String(calendly.enabled === true);
+    document.getElementById('calendly-settings-detail').style.display = calendly.enabled === true ? '' : 'none';
+    calendlyEventTypes = (calendly.eventTypes || []).map(et => ({ label: et.label, url: et.url }));
+    renderCalendlyTypes();
+
     await refreshCalendarStatus();
   }
 
@@ -2673,6 +2737,10 @@
       timezone: document.getElementById('f-tour-tz').value,
       location: document.getElementById('f-tour-location').value.trim(),
       workingHours: tourWorkingHours,
+      calendly: {
+        enabled: document.getElementById('f-calendly-enabled').value === 'true',
+        eventTypes: calendlyEventTypes.filter(et => et.label.trim() && et.url.trim()),
+      },
     };
     try {
       const { project: updated } = await API.updateProject(projectId, { tourSettings });
