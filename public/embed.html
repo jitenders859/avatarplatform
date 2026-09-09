@@ -1300,6 +1300,9 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         if (call.name === 'explain_visually' && call.result && call.result.board) {
           renderWhiteboardCard(call.result.board);
         }
+        if (call.name === 'open_calendly_scheduler' && call.result && call.result.url) {
+          renderCalendlySchedulerCard(call.result);
+        }
       }
     } catch (e) {
       addMessage('bot', 'Something went wrong loading your study material.');
@@ -1372,6 +1375,63 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     messagesEl.appendChild(card);
     requestAnimationFrame(() => card.classList.add('visible'));
     scrollToBottom();
+  }
+
+  // Lazy-loads Calendly's inline-widget script/stylesheet once per widget
+  // session (not unconditionally in <head> — only a visitor who actually
+  // triggers open_calendly_scheduler ever fetches these). The cached
+  // promise means a second scheduler card in the same conversation reuses
+  // the same load instead of re-fetching or double-injecting the script.
+  let calendlyLoadPromise = null;
+  function loadCalendlyAssets() {
+    if (calendlyLoadPromise) return calendlyLoadPromise;
+    calendlyLoadPromise = new Promise((resolve, reject) => {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'https://assets.calendly.com/assets/external/widget.css';
+      document.head.appendChild(link);
+
+      const script = document.createElement('script');
+      script.src = 'https://assets.calendly.com/assets/external/widget.js';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Failed to load Calendly'));
+      document.head.appendChild(script);
+    });
+    return calendlyLoadPromise;
+  }
+
+  // Renders an embedded Calendly scheduler for the open_calendly_scheduler
+  // tool result. Follows renderWhiteboardCard's card structure, but the
+  // body is an empty container Calendly's own widget draws into, rather
+  // than content built from the model's response.
+  async function renderCalendlySchedulerCard({ url, label, name, email }) {
+    const card = document.createElement('div');
+    card.className = 'quiz-card calendly-card';
+
+    const tag = document.createElement('div');
+    tag.className = 'quiz-origin';
+    tag.textContent = '📅 Scheduler';
+    card.appendChild(tag);
+
+    const title = document.createElement('div');
+    title.className = 'quiz-question';
+    title.textContent = label ? `Scheduler: ${label}` : 'Scheduler';
+    card.appendChild(title);
+
+    const container = document.createElement('div');
+    container.className = 'calendly-inline-container';
+    card.appendChild(container);
+
+    messagesEl.appendChild(card);
+    requestAnimationFrame(() => card.classList.add('visible'));
+    scrollToBottom();
+
+    try {
+      await loadCalendlyAssets();
+      window.Calendly.initInlineWidget({ url, parentElement: container, prefill: { name, email } });
+    } catch (e) {
+      container.textContent = 'Could not load the scheduler — please try again in a moment.';
+    }
   }
 
   function renderQuizCard(q, topic, turnSources) {

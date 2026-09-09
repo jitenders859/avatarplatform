@@ -554,6 +554,10 @@ a.source-card:hover {
 [dir="rtl"] .board-node { flex-direction: row-reverse; }
 [dir="rtl"] .board-arrow { padding: 2px 11px 2px 0; }
 
+/* ── Calendly scheduler card (the open_calendly_scheduler tool) ──── */
+.calendly-card { width: 100%; max-width: 100%; }
+.calendly-inline-container { width: 100%; min-width: 280px; height: 630px; margin-top: 4px; }
+
 /* ── Quick-reply buttons ───────────────────────────────────── */
 .quick-replies {
   display: flex;
