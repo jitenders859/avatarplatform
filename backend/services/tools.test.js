@@ -296,3 +296,95 @@ test('check_availability clamps an out-of-range rangeDays to the 1-14 window', a
   const clampedResult = await withClampedRange.check_availability({ preferredDate: '2026-09-14', rangeDays: 14 });
   assert.deepEqual(hugeResult, clampedResult);
 });
+
+const CALENDLY_EVENT_TYPES = [
+  { label: '15 min intro', url: 'https://calendly.com/acme/intro' },
+  { label: 'Demo', url: 'https://calendly.com/acme/demo' },
+];
+
+const CALENDLY_PROJECT = {
+  id: 'proj-2', name: 'Acme Meetings', capabilityTier: 'advanced',
+  tourSettings: {
+    enabled: false, durationMinutes: 30, bufferMinutes: 0, timezone: 'UTC', location: '',
+    workingHours: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+    calendly: { enabled: true, eventTypes: CALENDLY_EVENT_TYPES },
+  },
+};
+
+test('tourBookingTools returns only open_calendly_scheduler when Calendly is enabled and Google tour booking is off', async () => {
+  resetTourBookingStubs();
+  const { declarations, dispatch } = await tourBookingTools(CALENDLY_PROJECT);
+  assert.deepEqual(declarations.map(d => d.name), ['open_calendly_scheduler']);
+  assert.ok(dispatch.open_calendly_scheduler);
+  assert.equal(dispatch.check_availability, undefined);
+});
+
+test('tourBookingTools returns no tools when Calendly is enabled but has no event types configured', async () => {
+  resetTourBookingStubs();
+  const emptyCalendly = {
+    ...CALENDLY_PROJECT,
+    tourSettings: { ...CALENDLY_PROJECT.tourSettings, calendly: { enabled: true, eventTypes: [] } },
+  };
+  const { declarations } = await tourBookingTools(emptyCalendly);
+  assert.deepEqual(declarations, []);
+});
+
+test('tourBookingTools merges both providers and adds an ask-preference note to each description when both are active', async () => {
+  resetTourBookingStubs();
+  const bothProject = {
+    ...ADVANCED_PROJECT,
+    tourSettings: { ...ADVANCED_PROJECT.tourSettings, calendly: { enabled: true, eventTypes: CALENDLY_EVENT_TYPES } },
+  };
+  const { declarations, dispatch } = await tourBookingTools(bothProject);
+  assert.deepEqual(declarations.map(d => d.name).sort(), ['book_tour', 'check_availability', 'open_calendly_scheduler']);
+  assert.ok(dispatch.book_tour && dispatch.check_availability && dispatch.open_calendly_scheduler);
+  for (const d of declarations) {
+    assert.match(d.description, /ask the visitor which they'd prefer/);
+  }
+});
+
+test('tourBookingTools does not mutate the shared declaration consts when adding the both-providers note', async () => {
+  resetTourBookingStubs();
+  const bothProject = {
+    ...ADVANCED_PROJECT,
+    tourSettings: { ...ADVANCED_PROJECT.tourSettings, calendly: { enabled: true, eventTypes: CALENDLY_EVENT_TYPES } },
+  };
+  await tourBookingTools(bothProject);
+  const { declarations: googleOnly } = await tourBookingTools(ADVANCED_PROJECT);
+  const bookTour = googleOnly.find(d => d.name === 'book_tour');
+  assert.doesNotMatch(bookTour.description, /ask the visitor which they'd prefer/);
+});
+
+test('open_calendly_scheduler rejects a missing name or invalid email', async () => {
+  resetTourBookingStubs();
+  const { dispatch } = await tourBookingTools(CALENDLY_PROJECT);
+  const noName = await dispatch.open_calendly_scheduler({ name: '', email: 'a@b.com' });
+  assert.ok(noName.error);
+  const badEmail = await dispatch.open_calendly_scheduler({ name: 'Jane', email: 'not-an-email' });
+  assert.ok(badEmail.error);
+});
+
+test('open_calendly_scheduler returns the default (first) event type when none is requested', async () => {
+  resetTourBookingStubs();
+  const { dispatch } = await tourBookingTools(CALENDLY_PROJECT);
+  const result = await dispatch.open_calendly_scheduler({ name: 'Jane', email: 'jane@example.com' });
+  assert.equal(result.url, 'https://calendly.com/acme/intro');
+  assert.equal(result.label, '15 min intro');
+  assert.equal(result.name, 'Jane');
+  assert.equal(result.email, 'jane@example.com');
+});
+
+test('open_calendly_scheduler matches event_type by a case-insensitive substring of the label', async () => {
+  resetTourBookingStubs();
+  const { dispatch } = await tourBookingTools(CALENDLY_PROJECT);
+  const result = await dispatch.open_calendly_scheduler({ name: 'Jane', email: 'jane@example.com', event_type: 'DEMO' });
+  assert.equal(result.url, 'https://calendly.com/acme/demo');
+  assert.equal(result.label, 'Demo');
+});
+
+test('open_calendly_scheduler falls back to the default event type when event_type matches nothing configured', async () => {
+  resetTourBookingStubs();
+  const { dispatch } = await tourBookingTools(CALENDLY_PROJECT);
+  const result = await dispatch.open_calendly_scheduler({ name: 'Jane', email: 'jane@example.com', event_type: 'nonexistent' });
+  assert.equal(result.label, '15 min intro');
+});

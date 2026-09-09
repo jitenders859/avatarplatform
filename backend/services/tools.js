@@ -489,6 +489,44 @@ const BOOK_TOUR_DECLARATION = {
   },
 };
 
+const OPEN_CALENDLY_SCHEDULER_DECLARATION = {
+  name: 'open_calendly_scheduler',
+  description:
+    'Open an embedded Calendly scheduler so the visitor can pick a meeting time themselves. ' +
+    "Call this only after you have the visitor's name and email — ask for both in one natural " +
+    "message first if you don't have them yet. Never guess at availability or claim a specific " +
+    'time is open; the scheduler is the source of truth.',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: "The visitor's full name." },
+      email: { type: 'string', description: "The visitor's email address, to prefill the scheduler." },
+      event_type: {
+        type: 'string',
+        description:
+          'Which configured meeting type to open, matched by label (e.g. "demo"). Omit to use ' +
+          "the tenant's default.",
+      },
+    },
+    required: ['name', 'email'],
+  },
+};
+
+function handleOpenCalendlyScheduler(args, calendly) {
+  const name = String(args?.name || '').trim();
+  const email = String(args?.email || '').trim();
+  if (!name) return { error: 'name is required' };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'A valid email is required' };
+
+  const eventTypes = calendly?.eventTypes || [];
+  if (!eventTypes.length) return { error: 'Scheduling is not available right now.' };
+
+  const requested = String(args?.event_type || '').trim().toLowerCase();
+  const match = (requested && eventTypes.find(e => e.label.toLowerCase().includes(requested))) || eventTypes[0];
+
+  return { url: match.url, label: match.label, name, email };
+}
+
 async function withAccessToken(connection, fn) {
   try {
     const accessToken = await getValidAccessToken(connection, (id, patch) => db.update('calendarConnections', id, patch));
@@ -573,25 +611,54 @@ async function handleBookTour(args, project, tourSettings, connection) {
   });
 }
 
+const BOTH_PROVIDERS_NOTE =
+  " This project also offers another booking method — ask the visitor which they'd prefer before calling either tool.";
+
 /**
- * Returns { declarations, dispatch } for check_availability/book_tour —
- * empty unless the project is advanced tier, has tour_settings.enabled,
- * AND has a connected Google Calendar. Async and DB-backed like
- * projectActionTools above, unlike the static, tier-only toolsForTier.
+ * Returns { declarations, dispatch } for this project's active booking
+ * tools. Google Calendar (check_availability/book_tour) and Calendly
+ * (open_calendly_scheduler) are independent — a project can have either,
+ * both, or neither. Both still require the advanced tier. When both are
+ * active, each declaration gets one extra sentence appended to its
+ * description steering the model to ask the visitor's preference; that's
+ * done on COPIES of the shared declaration consts (never in-place
+ * mutation), since those consts are shared across every project's calls
+ * into this function.
  */
 async function tourBookingTools(project) {
   if (!meetsTier(project.capabilityTier, 'advanced')) return { declarations: [], dispatch: {} };
-  const tourSettings = project.tourSettings;
-  if (!tourSettings || !tourSettings.enabled) return { declarations: [], dispatch: {} };
-  const connection = await db.findOne('calendarConnections', { projectId: project.id });
-  if (!connection) return { declarations: [], dispatch: {} };
+  const tourSettings = project.tourSettings || {};
+  const parts = [];
+
+  if (tourSettings.enabled) {
+    const connection = await db.findOne('calendarConnections', { projectId: project.id });
+    if (connection) {
+      parts.push({
+        declarations: [CHECK_AVAILABILITY_DECLARATION, BOOK_TOUR_DECLARATION],
+        dispatch: {
+          check_availability: (args) => handleCheckAvailability(args, project, tourSettings, connection),
+          book_tour: (args) => handleBookTour(args, project, tourSettings, connection),
+        },
+      });
+    }
+  }
+
+  const calendly = tourSettings.calendly;
+  if (calendly?.enabled && calendly.eventTypes?.length) {
+    parts.push({
+      declarations: [OPEN_CALENDLY_SCHEDULER_DECLARATION],
+      dispatch: { open_calendly_scheduler: (args) => handleOpenCalendlyScheduler(args, calendly) },
+    });
+  }
+
+  let declarations = parts.flatMap(p => p.declarations);
+  if (parts.length === 2) {
+    declarations = declarations.map(d => ({ ...d, description: d.description + BOTH_PROVIDERS_NOTE }));
+  }
 
   return {
-    declarations: [CHECK_AVAILABILITY_DECLARATION, BOOK_TOUR_DECLARATION],
-    dispatch: {
-      check_availability: (args) => handleCheckAvailability(args, project, tourSettings, connection),
-      book_tour: (args) => handleBookTour(args, project, tourSettings, connection),
-    },
+    declarations,
+    dispatch: Object.assign({}, ...parts.map(p => p.dispatch)),
   };
 }
 
