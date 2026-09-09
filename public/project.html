@@ -344,10 +344,6 @@
         <div class="card" style="min-height:400px">
           <h3 class="card-title mb-md" id="transcript-title">Select a session</h3>
           <div id="transcript-body" style="display:flex;flex-direction:column;gap:8px"></div>
-          <div id="transcript-reply" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);gap:8px;flex-direction:column">
-            <textarea id="transcript-reply-text" rows="2" placeholder="Reply as the human agent…" style="width:100%;resize:vertical;font-family:inherit;font-size:13px;padding:8px;border-radius:8px;border:1px solid var(--border);background:var(--bg-2);color:var(--text)"></textarea>
-            <button class="btn btn-sm" id="transcript-reply-btn" style="align-self:flex-end">Send reply</button>
-          </div>
         </div>
       </div>
     </section>
@@ -1492,6 +1488,9 @@
     document.getElementById('livechat-tab').hidden = !isBusiness;
     document.getElementById('team-upgrade-note').style.display = isBusiness ? 'none' : 'block';
     document.getElementById('team-body').style.display = isBusiness ? '' : 'none';
+    // Deep link from a handoff notification (dashboard websocket, mobile
+    // push, or the Chrome extension) — see extension/background.js.
+    if (isBusiness && params.get('tab') === 'livechat') switchTab('livechat');
     if (!isBusiness) return;
     try {
       const { members } = await API.listMembers(projectId);
@@ -2089,29 +2088,19 @@
             <div style="font-size:13px;font-weight:500">${new Date(s.createdAt).toLocaleString()}</div>
             <div class="muted text-sm">${s.messageCount} message${s.messageCount === 1 ? '' : 's'}</div>
           </div>
-          ${s.status === 'handoff_requested' ? '<span class="badge" style="background:#f59e0b;color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap">Needs reply</span>' : ''}
-          ${s.status === 'human' ? '<span class="badge" style="background:var(--accent);color:#fff;font-size:10px;padding:2px 7px;border-radius:10px;white-space:nowrap">Human</span>' : ''}
           <span style="color:var(--text-dim);font-size:12px">→</span>
         </div>`).join('');
     } catch (e) { toast(e.message, 'error'); }
   }
 
-  let transcriptSessionId = null;
-
   window.loadTranscript = async (sessionId) => {
     const title = document.getElementById('transcript-title');
     const body  = document.getElementById('transcript-body');
-    const replyBox = document.getElementById('transcript-reply');
     title.textContent = 'Loading…';
     body.innerHTML = '';
-    replyBox.style.display = 'none';
-    transcriptSessionId = sessionId;
     try {
       const { session, messages } = await API.getSession(projectId, sessionId);
       title.textContent = new Date(session.createdAt).toLocaleString();
-      // 1a — a session that requested (or already got) a human reply gets a
-      // reply box here; see docs/competitor-feature-implementation-plan.md.
-      replyBox.style.display = (session.status === 'handoff_requested' || session.status === 'human') ? 'flex' : 'none';
       if (messages.length === 0) {
         body.innerHTML = '<p class="muted text-sm">No messages in this session.</p>';
         return;
@@ -2124,22 +2113,6 @@
         </div>`).join('');
     } catch (e) { toast(e.message, 'error'); }
   };
-
-  document.getElementById('transcript-reply-btn').addEventListener('click', async () => {
-    const textEl = document.getElementById('transcript-reply-text');
-    const text = textEl.value.trim();
-    if (!text || !transcriptSessionId) return;
-    const btn = document.getElementById('transcript-reply-btn');
-    btn.disabled = true;
-    try {
-      await API.replySession(projectId, transcriptSessionId, text);
-      textEl.value = '';
-      toast('Reply sent', 'success');
-      loadTranscript(transcriptSessionId);
-      loadSessions();
-    } catch (e) { toast(e.message, 'error'); }
-    finally { btn.disabled = false; }
-  });
 
   document.getElementById('export-csv-btn').addEventListener('click', () => {
     if (allSessions.length === 0) return toast('No sessions to export', 'error');

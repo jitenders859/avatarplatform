@@ -42,6 +42,11 @@ panel) are not re-listed as gaps — see `README.md` / `project.md` for what alr
 ## Phase 1: Support-quality features on existing infrastructure
 
 ### 1a. Live agent handoff (human takeover)
+**Superseded:** the async/polling version below shipped first, but was fully replaced by a
+real-time WebSocket handoff — see `docs/superpowers/specs/2026-08-28-human-handoff-design.md`
+and `supabase/migrations/2026-09-08b_remove_async_handoff.sql`. `sessions.status`, `POST
+/embed/:publicId/handoff`, `GET /embed/:publicId/messages`, and `POST
+/api/projects/:id/sessions/:sessionId/reply` (described below) no longer exist.
 **Why it matters:** Cited across Chatbase, Intercom Fin, Crisp, Tidio, Landbot — the single most
 common gap. Buyers evaluating any support-facing bot expect an escalation path when the AI can't
 resolve something.

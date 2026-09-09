@@ -853,11 +853,9 @@ CREATE TABLE IF NOT EXISTS feature_flags (
 -- supabase/migrations/2026-08-29_add_phase1_engagement_features.sql and
 -- docs/competitor-feature-implementation-plan.md.
 -- ═══════════════════════════════════════════════════════════════════
-ALTER TABLE sessions ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'bot'; -- 'bot' | 'handoff_requested' | 'human'
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS updated_at BIGINT;
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS satisfaction TEXT; -- 'up' | 'down'
 ALTER TABLE sessions ADD COLUMN IF NOT EXISTS sentiment TEXT;   -- 'positive' | 'neutral' | 'negative'
-CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(project_id, status) WHERE status <> 'bot';
 
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS no_answer_found BOOLEAN NOT NULL DEFAULT false;
 
