@@ -140,6 +140,11 @@ const API = {
   deleteAction:  (pid, aid) => apiCall(`/api/projects/${pid}/actions/${aid}`, { method: 'DELETE' }),
   cloneVoice:    (pid, formData) => apiCall(`/api/projects/${pid}/voice-clone`, { method: 'POST', body: formData }),
 
+  // Google Calendar (tour booking)
+  getCalendarStatus:     (pid) => apiCall(`/api/projects/${pid}/calendar/status`),
+  connectGoogleCalendar: (pid) => apiCall(`/api/projects/${pid}/calendar/connect`),
+  disconnectGoogleCalendar: (pid) => apiCall(`/api/projects/${pid}/calendar`, { method: 'DELETE' }),
+
   // Team members
   listMembers:   (pid) => apiCall(`/api/projects/${pid}/members`),
   inviteMember:  (pid, email) => apiCall(`/api/projects/${pid}/members`, { method: 'POST', body: { email } }),
