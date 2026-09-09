@@ -224,13 +224,16 @@ Calendly.initInlineWidget({
 });
 ```
 
-This requires Calendly's widget script/stylesheet loaded once in
-`embed.html`'s `<head>` (`https://assets.calendly.com/assets/external/widget.js`
-+ `widget.css`) — the same kind of one-time external-asset addition as
-any other third-party widget this page already loads, gated so it's only
-fetched when a project actually has Calendly enabled (checked the same
-way `whiteboardBtn`'s visibility is gated on tier, around embed.html line
-234) rather than unconditionally on every embed load.
+This requires Calendly's widget script/stylesheet
+(`https://assets.calendly.com/assets/external/widget.js` + `widget.css`).
+Rather than adding a new field to `/embed/:publicId/config` just to gate a
+`<head>`-level `<script>` tag (`tourSettings` isn't exposed there today,
+and nothing else about this feature needs it to be), `renderCalendlySchedulerCard`
+lazy-loads both files itself the first time it's ever called in a given
+widget session, caching the loading promise so a second `open_calendly_scheduler`
+call in the same conversation reuses it instead of re-fetching. Simpler
+than a config round-trip, and it only ever fetches Calendly's assets for a
+visitor who actually triggers the tool.
 
 ## 5. Dashboard UI
 
