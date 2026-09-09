@@ -27,6 +27,7 @@ const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const { getRateLimitStore } = require('../services/rateLimitStore');
 const { safeFetch } = require('../services/safeFetch');
 const { queueWebhookDelivery } = require('../services/webhookDelivery');
+const { notifyLeadCaptured } = require('../services/ownerAlerts');
 const settings = require('../services/settings');
 const { searchWebForProject } = require('../services/searchWeb');
 const router = express.Router();
@@ -937,6 +938,14 @@ router.post('/:publicId/lead', validate(schemas.embedLead), async (req, res) => 
         data: lead.data,
         timestamp: Date.now(),
       }).catch((e) => logger.warn({ err: e.message }, 'webhook delivery failed to queue'));
+    });
+  }
+
+  // Email/SMS the project owner the moment a lead becomes complete, so they
+  // can follow up without watching the dashboard — see services/ownerAlerts.js.
+  if (justCompleted) {
+    setImmediate(() => {
+      notifyLeadCaptured(project, lead).catch((e) => logger.warn({ err: e.message }, 'lead notification failed'));
     });
   }
 

@@ -229,7 +229,65 @@ async function sendUsageLimitReached(toEmail, { planName, label, current, limit 
   });
 }
 
+/**
+ * Notify the project owner that a visitor just completed a lead-capture
+ * form (all required capture_fields filled in) on their chatbot.
+ * @param {string} toEmail
+ * @param {{ projectName: string, leadData: Record<string,string> }} info
+ */
+async function sendLeadNotification(toEmail, { projectName, leadData }) {
+  const entries = Object.entries(leadData || {});
+  const rowsHtml = entries
+    .map(([k, v]) => `<tr><td style="padding:4px 12px 4px 0;color:#999;white-space:nowrap">${escapeHtml(k)}</td><td style="padding:4px 0;color:#333">${escapeHtml(String(v))}</td></tr>`)
+    .join('');
+  const rowsText = entries.map(([k, v]) => `${k}: ${v}`).join('\n');
+  const { subject, body } = await getTemplate('lead_notification');
+  const replacements = {
+    '${escapeHtml(projectName)}': escapeHtml(projectName),
+    '${rowsHtml}': rowsHtml,
+    '${BASE_URL()}': BASE_URL(),
+  };
+  await send({
+    to: toEmail,
+    subject: interpolate(subject, replacements),
+    text: `New lead captured on "${projectName}":\n\n${rowsText}\n\nView it in your dashboard: ${BASE_URL()}/dashboard`,
+    html: interpolate(body, replacements),
+  });
+}
+
+/**
+ * Notify the project owner that a visitor just booked a tour. This is in
+ * addition to Google's own calendar-invite email (sent to the owner and
+ * visitor directly by Google when the event is created — see
+ * services/googleCalendar.js's insertEvent), so the owner also gets an
+ * app-branded heads-up that reaches them even if the calendar invite ends
+ * up in a folder they don't watch closely.
+ * @param {string} toEmail
+ * @param {{ projectName: string, visitorName: string, visitorEmail: string, when: string, meetLink?: string }} info
+ */
+async function sendTourBookedNotification(toEmail, { projectName, visitorName, visitorEmail, when, meetLink }) {
+  const { subject, body } = await getTemplate('tour_booked_notification');
+  const filledSubject = interpolate(subject, { '${escapeHtml(projectName)}': escapeHtml(projectName) });
+  const meetLinkHtml = meetLink
+    ? `<p style="color:#555;line-height:1.6">Video call link: <a href="${meetLink}" style="color:#7c6af5">${escapeHtml(meetLink)}</a></p>`
+    : '';
+  const replacements = {
+    '${escapeHtml(projectName)}': escapeHtml(projectName),
+    '${escapeHtml(visitorName)}': escapeHtml(visitorName),
+    '${escapeHtml(visitorEmail)}': escapeHtml(visitorEmail),
+    '${escapeHtml(when)}': escapeHtml(when),
+    '${meetLinkHtml}': meetLinkHtml,
+    '${BASE_URL()}': BASE_URL(),
+  };
+  await send({
+    to: toEmail,
+    subject: filledSubject,
+    text: `${visitorName} <${visitorEmail}> booked a tour on "${projectName}" for ${when}.${meetLink ? `\nVideo call link: ${meetLink}` : ''}`,
+    html: interpolate(body, replacements),
+  });
+}
+
 module.exports = {
   sendPasswordReset, sendWelcome, sendContactMessage, sendVerificationEmail, sendTeamInviteEmail,
-  sendUsageLimitWarning, sendUsageLimitReached,
+  sendUsageLimitWarning, sendUsageLimitReached, sendLeadNotification, sendTourBookedNotification,
 };

@@ -17,8 +17,10 @@ const { embedOne } = require('./embed');
 const { searchProject } = require('./vector');
 const { safeFetch } = require('./safeFetch');
 const settings = require('./settings');
-const { computeCandidateSlots, subtractBusy } = require('./tourSlots');
+const { computeCandidateSlots, subtractBusy, formatSlotLabel } = require('./tourSlots');
 const { getValidAccessToken, freeBusy, insertEvent, GoogleAuthRevokedError } = require('./googleCalendar');
+const { notifyTourBooked } = require('./ownerAlerts');
+const logger = require('../logger').child({ module: 'services/tools' });
 
 // Quiz/flashcard synthesis is the accuracy-critical task (it's exam
 // content), so it gets the fuller flash model, not flash-lite.
@@ -607,6 +609,17 @@ async function handleBookTour(args, project, tourSettings, connection) {
       endISO: endUTC.toISOString(),
       attendeeEmail: email,
     });
+
+    // Email/SMS the project owner in addition to Google's own calendar
+    // invite (which already emails the owner + visitor) — see
+    // services/ownerAlerts.js. Fire-and-forget so a slow send never delays
+    // the chat response confirming the booking to the visitor.
+    const when = formatSlotLabel(startUTC, tourSettings.timezone);
+    setImmediate(() => {
+      notifyTourBooked(project, { visitorName: name, visitorEmail: email, when, meetLink })
+        .catch((e) => logger.warn({ err: e.message }, 'tour notification failed to queue'));
+    });
+
     return { booked: true, startTime: startUTC.toISOString(), calendarEventId, meetLink };
   });
 }
