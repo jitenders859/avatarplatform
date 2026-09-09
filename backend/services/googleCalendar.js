@@ -23,6 +23,8 @@
  * 8s timeout backend/services/tools.js#callProjectAction already uses for
  * synchronous external calls inside this same tool loop.
  */
+const crypto = require('crypto');
+
 const AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const FREEBUSY_URL = 'https://www.googleapis.com/calendar/v3/freeBusy';
@@ -168,7 +170,7 @@ async function freeBusy(accessToken, timeMinISO, timeMaxISO) {
 }
 
 async function insertEvent(accessToken, { summary, description, location, startISO, endISO, attendeeEmail }) {
-  const res = await fetch(`${EVENTS_URL}?sendUpdates=all`, {
+  const res = await fetch(`${EVENTS_URL}?sendUpdates=all&conferenceDataVersion=1`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
     body: JSON.stringify({
@@ -178,6 +180,9 @@ async function insertEvent(accessToken, { summary, description, location, startI
       start: { dateTime: startISO },
       end: { dateTime: endISO },
       attendees: [{ email: attendeeEmail }],
+      conferenceData: {
+        createRequest: { requestId: crypto.randomUUID(), conferenceSolutionKey: { type: 'hangoutsMeet' } },
+      },
     }),
     signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
@@ -187,7 +192,7 @@ async function insertEvent(accessToken, { summary, description, location, startI
     if (res.status === 401) throw new GoogleAuthRevokedError('Google Calendar access was revoked');
     throw new Error(body.error?.message || `event creation failed: HTTP ${res.status}`);
   }
-  return body.id;
+  return { id: body.id, meetLink: body.hangoutLink || null };
 }
 
 module.exports = {

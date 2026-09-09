@@ -153,16 +153,29 @@ test('freeBusy throws GoogleAuthRevokedError on a 401 (access revoked mid-call)'
   );
 });
 
-test('insertEvent posts the event and returns its id', async () => {
-  fetchImpl = async () => ({ ok: true, json: async () => ({ id: 'event-123' }) });
-  const id = await insertEvent('access-token', {
+test('insertEvent requests a Google Meet conference link and returns id + meetLink', async () => {
+  fetchImpl = async () => ({ ok: true, json: async () => ({ id: 'event-123', hangoutLink: 'https://meet.google.com/abc-defg-hij' }) });
+  const result = await insertEvent('access-token', {
     summary: 'Tour: Acme — Jane', description: 'desc', location: '123 Main St',
     startISO: '2026-09-14T13:00:00.000Z', endISO: '2026-09-14T13:30:00.000Z', attendeeEmail: 'jane@example.com',
   });
-  assert.equal(id, 'event-123');
+  assert.equal(result.id, 'event-123');
+  assert.equal(result.meetLink, 'https://meet.google.com/abc-defg-hij');
   assert.match(fetchCalls[0].url, /sendUpdates=all/);
+  assert.match(fetchCalls[0].url, /conferenceDataVersion=1/);
   const body = JSON.parse(fetchCalls[0].opts.body);
   assert.equal(body.attendees[0].email, 'jane@example.com');
+  assert.equal(body.conferenceData.createRequest.conferenceSolutionKey.type, 'hangoutsMeet');
+  assert.ok(body.conferenceData.createRequest.requestId, 'requestId must be set');
+});
+
+test('insertEvent returns meetLink: null when Google does not include a hangoutLink', async () => {
+  fetchImpl = async () => ({ ok: true, json: async () => ({ id: 'event-999' }) });
+  const result = await insertEvent('access-token', {
+    summary: 's', startISO: 'a', endISO: 'b', attendeeEmail: 'x@example.com',
+  });
+  assert.equal(result.id, 'event-999');
+  assert.equal(result.meetLink, null);
 });
 
 test('insertEvent throws with Google\'s error message on failure', async () => {
