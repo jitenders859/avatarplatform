@@ -34,7 +34,7 @@ const CAPTURE_FIELD_TYPES = ['text', 'email', 'phone', 'number', 'date', 'time',
 
 const VOICE_ENGINES = ['gemini-live', 'fish-audio', 'cartesia', 'elevenlabs'];
 
-const systemPrompt = z.string().max(20000, 'systemPrompt too long').optional();
+const systemPrompt = z.string().max(100000, 'systemPrompt too long').optional();
 // Gemini Live projects must use one of the 30 prebuilt voice names; Fish
 // Audio / Cartesia projects use a provider-issued voice/reference id, which
 // is an arbitrary string we can't enumerate here. The enum check against

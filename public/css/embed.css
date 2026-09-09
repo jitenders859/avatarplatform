@@ -687,10 +687,13 @@ a.source-card:hover {
   position: relative;
   overflow: hidden;
   border-radius: 12px 12px 0 0;
+  background: transparent;
 }
 
-/* The Rive canvas reparented here */
+/* The Rive canvas reparented here — force transparent so the character
+   never paints an opaque box over the message list behind it. */
 .avatar-stage canvas {
+  background: transparent !important;
   width: 100% !important;
   height: 100% !important;
   display: block;

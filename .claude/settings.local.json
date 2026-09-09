@@ -6,7 +6,13 @@
       "Bash(node -e \"console.log\\(JSON.parse\\(require\\('fs'\\).readFileSync\\('/tmp/login.json'\\)\\).token\\)\")",
       "Bash(node -e \"console.log\\(JSON.parse\\(require\\('fs'\\).readFileSync\\('/tmp/project.json'\\)\\).project.id\\)\")",
       "Bash(node -e \"console.log\\(JSON.parse\\(require\\('fs'\\).readFileSync\\('/tmp/init.json'\\)\\).files[0].id\\)\")",
-      "Bash(curl -s -D - -o /dev/null http://localhost:8080/api/projects/__TRACKED_VAR__/files/__TRACKED_VAR__/blob -H 'Authorization: Bearer __TRACKED_VAR__')"
+      "Bash(curl -s -D - -o /dev/null http://localhost:8080/api/projects/__TRACKED_VAR__/files/__TRACKED_VAR__/blob -H 'Authorization: Bearer __TRACKED_VAR__')",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(lsof -nP -iTCP:8081 -sTCP:LISTEN)",
+      "Bash(npm test *)",
+      "Bash(node backend/scripts/migrate-legacy-characters.js)",
+      "Bash(curl -s -o /dev/null -w \"server health: %{http_code}\\\\n\" http://localhost:8081/admin --max-time 5)"
     ]
   }
 }
