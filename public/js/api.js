@@ -133,7 +133,6 @@ const API = {
   // Conversations
   listSessions:  (pid) => apiCall(`/api/projects/${pid}/sessions`),
   getSession:    (pid, sid) => apiCall(`/api/projects/${pid}/sessions/${sid}`),
-  replySession:  (pid, sid, text) => apiCall(`/api/projects/${pid}/sessions/${sid}/reply`, { method: 'POST', body: { text } }),
   listActions:   (pid) => apiCall(`/api/projects/${pid}/actions`),
   createAction:  (pid, body) => apiCall(`/api/projects/${pid}/actions`, { method: 'POST', body }),
   patchAction:   (pid, aid, body) => apiCall(`/api/projects/${pid}/actions/${aid}`, { method: 'PATCH', body }),

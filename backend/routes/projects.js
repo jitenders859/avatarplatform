@@ -332,11 +332,11 @@ router.get('/:id/sessions', authRequired, async (req, res) => {
 
   // Use SQL to avoid N+1 message-count queries
   const sessions = await db.query(
-    `SELECT s.id, s.created_at, s.status, COUNT(m.id) AS message_count
+    `SELECT s.id, s.created_at, COUNT(m.id) AS message_count
      FROM sessions s
      LEFT JOIN messages m ON m.session_id = s.id
      WHERE s.project_id = $1
-     GROUP BY s.id, s.created_at, s.status
+     GROUP BY s.id, s.created_at
      ORDER BY s.created_at DESC`,
     [project.id]
   );
@@ -344,7 +344,6 @@ router.get('/:id/sessions', authRequired, async (req, res) => {
     sessions: sessions.map(s => ({
       id: s.id,
       createdAt: s.createdAt,
-      status: s.status,
       messageCount: Number(s.messageCount),
     })),
   });
@@ -360,29 +359,9 @@ router.get('/:id/sessions/:sessionId', authRequired, async (req, res) => {
 
   const messages = await db.findAll('messages', { sessionId: session.id }, { orderBy: 'createdAt', order: 'asc' });
   res.json({
-    session: { id: session.id, createdAt: session.createdAt, status: session.status, satisfaction: session.satisfaction, sentiment: session.sentiment },
+    session: { id: session.id, createdAt: session.createdAt, satisfaction: session.satisfaction, sentiment: session.sentiment },
     messages: messages.map(m => ({ id: m.id, role: m.role, content: m.text, createdAt: m.createdAt })),
   });
-});
-
-// Live agent handoff reply (see docs/competitor-feature-implementation-plan.md
-// 1a) — owner-only (project_members are read-only, per findProjectForRead's
-// header comment), so this checks isOwner explicitly rather than reusing
-// findProjectForRead's member-inclusive read path.
-router.post('/:id/sessions/:sessionId/reply', authRequired, validate(schemas.sessionReply), async (req, res) => {
-  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
-  if (!project) return res.status(404).json({ error: 'Project not found' });
-
-  const session = await db.findOne('sessions', { id: req.params.sessionId, projectId: project.id });
-  if (!session) return res.status(404).json({ error: 'Session not found' });
-
-  const message = await db.insert('messages', {
-    id: uuid(), sessionId: session.id, projectId: project.id,
-    role: 'owner', text: req.body.text.slice(0, 2000), createdAt: Date.now(),
-  });
-  await db.update('sessions', session.id, { status: 'human', updatedAt: Date.now() });
-
-  res.json({ message: { id: message.id, role: message.role, content: message.text, createdAt: message.createdAt } });
 });
 
 router.get('/:id/leads', authRequired, async (req, res) => {
@@ -395,7 +374,7 @@ router.get('/:id/leads', authRequired, async (req, res) => {
   const offset   = (pageNum - 1) * pageSize;
 
   const fields = await db.findAll('captureFields', { projectId: project.id });
-  const fieldMap = Object.fromEntries(fields.map(f => [f.key, f.label]));
+  const fieldMap = { name: 'Name', email: 'Email', ...Object.fromEntries(fields.map(f => [f.key, f.label])) };
 
   // Build WHERE clause for complete filter
   let completeClause = '';
@@ -430,7 +409,7 @@ router.get('/:id/leads/:leadId', authRequired, async (req, res) => {
   if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
   const fields = await db.findAll('captureFields', { projectId: project.id });
-  const fieldMap = Object.fromEntries(fields.map(f => [f.key, f.label]));
+  const fieldMap = { name: 'Name', email: 'Email', ...Object.fromEntries(fields.map(f => [f.key, f.label])) };
 
   const session = await db.findOne('sessions', { id: lead.sessionId });
   const messages = session

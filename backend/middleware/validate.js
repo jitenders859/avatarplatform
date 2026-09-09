@@ -570,14 +570,6 @@ const schemas = {
     }).strict(),
   }),
 
-  embedHandoff: z.object({
-    sessionId: z.string().min(1, 'sessionId required'),
-  }),
-
-  sessionReply: z.object({
-    text: z.string().trim().min(1, 'text is required').max(2000, 'text too long'),
-  }),
-
   sessionSatisfaction: z.object({
     sessionId: z.string().min(1, 'sessionId required'),
     satisfaction: z.enum(['up', 'down'], { error: 'satisfaction must be up or down' }),

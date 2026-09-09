@@ -120,6 +120,7 @@ test('server-key-only config never leaks GEMINI_API_KEY', async (t) => {
     assert.equal(res.body.voiceEnabled, false);
     assert.equal(res.body.limitReached, false);
     assert.notEqual(res.body.limitMessage, undefined);
+    assert.equal(res.body.handoffEnabled, false, 'free-plan project must not expose handoff');
   });
 
   await t.test('log below the quota records the turn and bumps usage', async () => {
@@ -275,6 +276,146 @@ test('widgetMessages overrides the default limit-reached copy and exposes an inp
     assert.equal(res.body.limitMessage, "We're out of chat credits this month — email us!");
     checkLimitResult = { ok: true };
   });
+});
+
+// ── Case E: an active handoff pauses /ask instead of calling Gemini ─────
+test('/ask short-circuits without calling Gemini when the session has an active handoff', async () => {
+  process.env.GEMINI_API_KEY = SERVER_KEY;
+  delete process.env.PUBLIC_GEMINI_API_KEY;
+  delete require.cache[require.resolve('./embed')];
+
+  let geminiConstructed = false;
+  stubFile('@google/generative-ai', {
+    GoogleGenerativeAI: class { constructor() { geminiConstructed = true; } },
+  });
+  stubFile('../db', {
+    findOne: async (table, filter) => {
+      if (table === 'projects') return { ...PROJECT };
+      if (table === 'sessions' && filter.id === 'handed-off-session') return { id: 'handed-off-session', handoffStatus: 'active' };
+      return null;
+    },
+    findAll: async () => [],
+    insert: async (table, row) => row,
+    insertMany: async () => [],
+    update: async () => null,
+    remove: async () => 0,
+    query: async () => [],
+    queryOne: async () => null,
+    pool: { end: async () => {} },
+  });
+
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/embed', require('./embed'));
+
+  const res = await require('supertest')(app)
+    .post('/embed/test-public-id/ask')
+    .send({ question: 'are you there?', sessionId: 'handed-off-session' });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.answer, "You're currently connected with a team member — please continue the conversation here.");
+  assert.equal(res.body.sessionId, 'handed-off-session');
+  assert.equal(geminiConstructed, false, 'Gemini must not be called once a session is handed off');
+});
+
+// ── Case F: an active handoff pauses /study instead of calling Gemini ───
+test('/study short-circuits without calling Gemini when the session has an active handoff', async () => {
+  process.env.GEMINI_API_KEY = SERVER_KEY;
+  delete process.env.PUBLIC_GEMINI_API_KEY;
+  delete require.cache[require.resolve('./embed')];
+
+  // Distinct publicId (not just a distinct db stub) — routes/embed.js caches
+  // project lookups in the shared, module-level projectCache (see cache.js)
+  // for 60s, so reusing 'test-public-id' here would silently serve the stale
+  // PROJECT object cached by the earlier cases above. Also needs a non-basic
+  // capabilityTier since /study 403s 'basic' projects before reaching the
+  // handoff check.
+  const STUDY_PROJECT = { ...PROJECT, publicId: 'test-public-id-study', capabilityTier: 'medium' };
+
+  let geminiConstructed = false;
+  stubFile('@google/generative-ai', {
+    GoogleGenerativeAI: class { constructor() { geminiConstructed = true; } },
+  });
+  stubFile('../db', {
+    findOne: async (table, filter) => {
+      if (table === 'projects') return { ...STUDY_PROJECT };
+      if (table === 'sessions' && filter.id === 'handed-off-session-study') return { id: 'handed-off-session-study', handoffStatus: 'active' };
+      return null;
+    },
+    findAll: async () => [],
+    insert: async (table, row) => row,
+    insertMany: async () => [],
+    update: async () => null,
+    remove: async () => 0,
+    query: async () => [],
+    queryOne: async () => null,
+    pool: { end: async () => {} },
+  });
+
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/embed', require('./embed'));
+
+  const res = await require('supertest')(app)
+    .post('/embed/test-public-id-study/study')
+    .send({ message: 'are you there?', sessionId: 'handed-off-session-study' });
+
+  assert.equal(res.status, 200);
+  assert.equal(res.body.answer, "You're currently connected with a team member — please continue the conversation here.");
+  assert.equal(res.body.sessionId, 'handed-off-session-study');
+  assert.deepEqual(res.body.toolCalls, []);
+  assert.deepEqual(res.body.sources, []);
+  assert.deepEqual(res.body.figures, []);
+  assert.equal(geminiConstructed, false, 'Gemini must not be called once a session is handed off');
+});
+
+// ── Case G: /lead always persists name/email, even with no captureFields ─
+test('POST /lead persists name/email when the project has no matching captureFields configured', async () => {
+  process.env.GEMINI_API_KEY = SERVER_KEY;
+  delete process.env.PUBLIC_GEMINI_API_KEY;
+  delete require.cache[require.resolve('./embed')];
+
+  const LEAD_PROJECT = { ...PROJECT, publicId: 'test-public-id-lead' };
+  const leadInserts = [];
+  stubFile('../db', {
+    findOne: async (table, filter) => {
+      if (table === 'projects') return { ...LEAD_PROJECT };
+      if (table === 'sessions' && filter.id === 'lead-session') return { id: 'lead-session', projectId: LEAD_PROJECT.id };
+      if (table === 'leads') return null; // no existing lead for this session
+      return null;
+    },
+    // No captureFields configured for this project at all — the common
+    // case, since capture fields are an opt-in AI-conversational feature.
+    findAll: async (table) => (table === 'captureFields' ? [] : []),
+    insert: async (table, row) => { if (table === 'leads') leadInserts.push(row); return row; },
+    insertMany: async () => [],
+    update: async () => null,
+    remove: async () => 0,
+    query: async () => [],
+    queryOne: async () => null,
+    pool: { end: async () => {} },
+  });
+  // /lead calls backfillLearnerKey(project.id, sessionId) best-effort after
+  // insert; it isn't stubbed elsewhere in this file, so let it hit the real
+  // (stubbed) db above and fail harmlessly if it queries something unstubbed
+  // — it's wrapped in .catch() in the route and does not affect res.json().
+
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/embed', require('./embed'));
+
+  const res = await require('supertest')(app)
+    .post('/embed/test-public-id-lead/lead')
+    .send({ sessionId: 'lead-session', data: { name: 'Ada Lovelace', email: 'ada@example.com' }, complete: true });
+
+  assert.equal(res.status, 200);
+  assert.equal(leadInserts.length, 1, 'a lead row must be inserted');
+  assert.deepEqual(leadInserts[0].data, { name: 'Ada Lovelace', email: 'ada@example.com' },
+    'name/email must be persisted even though no captureFields row exists for either key');
+  assert.equal(res.body.lead.complete, true);
 });
 
 test('config exposes showCharacterFullscreen', async (t) => {

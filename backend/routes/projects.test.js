@@ -28,11 +28,23 @@ const PROJECT_ROWS = [
 
 let queryCalls = [];
 let currentUser = USER;
+let leadRows = [];
 stubFile('../db', {
-  findOne: async (table, filter) => (table === 'users' && filter.id === USER.id ? currentUser : null),
-  findAll: async () => [],
-  query: async (sql, params) => { queryCalls.push({ sql, params }); return PROJECT_ROWS; },
-  queryOne: async () => null,
+  findOne: async (table, filter) => {
+    if (table === 'users' && filter.id === USER.id) return currentUser;
+    if (table === 'projects' && filter.id === PROJECT_ROWS[0].id && filter.userId === USER.id) return PROJECT_ROWS[0];
+    return null;
+  },
+  findAll: async () => [], // no captureFields configured, for any project
+  query: async (sql, params) => {
+    queryCalls.push({ sql, params });
+    if (/FROM leads l\b/.test(sql)) return leadRows;
+    return PROJECT_ROWS;
+  },
+  queryOne: async (sql) => {
+    if (/COUNT\(\*\) AS total FROM leads/.test(sql)) return { total: leadRows.length };
+    return null;
+  },
   insert: async () => null,
   update: async () => null,
   remove: async () => 0,
@@ -122,4 +134,38 @@ test('POST /api/projects: email-verification gate is time-based, not an outright
   currentUser = { ...USER, emailVerifiedAt: Date.now() - 1000, createdAt: Date.now() - 100 * 3600000 };
   const verified = await post();
   assert.notEqual(verified.status, 403);
+});
+
+test('GET /api/projects/:id/leads: fieldLabels always includes name/email, even with no captureFields configured', async (t) => {
+  delete require.cache[require.resolve('./projects')];
+  const { router } = require('./projects');
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/api/projects', router);
+  app.use((err, req, res, _next) => res.status(500).json({ error: err.message }));
+
+  const server = app.listen(0);
+  leadRows = [{
+    id: 'lead1', projectId: PROJECT_ROWS[0].id, sessionId: 's1',
+    // A lead captured via the "no one available" fallback form only has
+    // name/email — no configured captureFields for this project.
+    data: { name: 'Jane Doe', email: 'jane@example.com' },
+    complete: true, createdAt: Date.now(),
+  }];
+  t.after(() => { server.close(); leadRows = []; });
+  const port = server.address().port;
+
+  const token = jwt.sign({ uid: USER.id }, process.env.JWT_SECRET, { algorithm: 'HS256' });
+  const body = await new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${port}/api/projects/${PROJECT_ROWS[0].id}/leads`, { headers: { Authorization: `Bearer ${token}` } }, (res) => {
+      let data = '';
+      res.on('data', (c) => (data += c));
+      res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(data) }); } catch (e) { reject(e); } });
+    }).on('error', reject);
+  });
+
+  assert.equal(body.status, 200);
+  assert.equal(body.json.leads.length, 1);
+  assert.deepEqual(body.json.leads[0].fieldLabels, { name: 'Name', email: 'Email' });
 });

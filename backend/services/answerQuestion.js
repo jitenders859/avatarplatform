@@ -14,6 +14,7 @@ const { searchProject } = require('./vector');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const settings = require('./settings');
 const { searchWebForProject } = require('./searchWeb');
+const { HANDOFF_INSTRUCTION, extractHandoffTag } = require('./handoffTag');
 const logger = require('../logger').child({ module: 'answer-question' });
 
 // Web search fallback trigger (see docs/superpowers/specs/2026-09-05-web-search-grounding-design.md
@@ -35,7 +36,7 @@ async function filesForHits(hits) {
  * their own quota checks (checkLimit) before calling this — this function
  * always persists and tracks usage.
  */
-async function answerQuestion(project, question, incomingSessionId, { ip = 'unknown', pageContext = null } = {}) {
+async function answerQuestion(project, question, incomingSessionId, { ip = 'unknown', pageContext = null, handoffEnabled = false } = {}) {
   const queryEmbedding = await embedOne(String(question).slice(0, 1500), 'RETRIEVAL_QUERY');
   const hits = await searchProject(project.id, queryEmbedding, 5);
 
@@ -89,11 +90,13 @@ async function answerQuestion(project, question, incomingSessionId, { ip = 'unkn
   // truly no grounding context at all — a successful web-search fallback
   // above still gets a real, generated answer.
   let answer;
+  let offerHandoff = false;
   if (hits.length === 0 && !usedWebFallback && project.fallbackMessage) {
     answer = project.fallbackMessage;
   } else {
-    const systemPrompt = project.systemPrompt ||
-      'You are a helpful AI assistant. Answer the user\'s question using the provided knowledge base context. Be concise and accurate.';
+    const systemPrompt = (project.systemPrompt ||
+      'You are a helpful AI assistant. Answer the user\'s question using the provided knowledge base context. Be concise and accurate.')
+      + (handoffEnabled ? HANDOFF_INSTRUCTION : '');
     const contextText = contextParts.length
       ? `Knowledge base context:\n\n${contextParts.join('\n\n---\n\n')}`
       : 'No relevant context found in the knowledge base.';
@@ -102,7 +105,9 @@ async function answerQuestion(project, question, incomingSessionId, { ip = 'unkn
     const genai = new GoogleGenerativeAI(await settings.getSetting('GEMINI_API_KEY'));
     const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
     const result = await model.generateContent(prompt);
-    answer = result.response.text();
+    const extracted = extractHandoffTag(result.response.text());
+    answer = extracted.clean;
+    offerHandoff = extracted.requested;
   }
 
   let sid = incomingSessionId;
@@ -126,7 +131,7 @@ async function answerQuestion(project, question, incomingSessionId, { ip = 'unkn
     logger.error({ err: e.message }, 'answerQuestion persist failed');
   }
 
-  return { answer, sources, sessionId: sid };
+  return { answer, sources, sessionId: sid, offerHandoff };
 }
 
 module.exports = { answerQuestion };
