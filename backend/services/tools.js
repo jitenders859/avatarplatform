@@ -471,7 +471,8 @@ const BOOK_TOUR_DECLARATION = {
   description:
     "Book a confirmed tour slot on the project owner's calendar. Only call this AFTER calling " +
     'check_availability and having the visitor confirm one of the returned slots, and after collecting their ' +
-    'name and email (their email is where the calendar invite goes — ask for it explicitly if they haven\'t given it).',
+    'name and email (their email is where the calendar invite goes — ask for it explicitly if they haven\'t given it). ' +
+    "If the result includes a meetLink, read it back to the visitor as their video call link.",
   parameters: {
     type: 'object',
     properties: {
@@ -560,7 +561,7 @@ async function handleBookTour(args, project, tourSettings, connection) {
     const busy = await freeBusy(accessToken, startUTC.toISOString(), endUTC.toISOString());
     if (busy.length) return { error: 'That slot was just booked by someone else — please check availability again.' };
 
-    const calendarEventId = await insertEvent(accessToken, {
+    const { id: calendarEventId, meetLink } = await insertEvent(accessToken, {
       summary: `Tour: ${project.name} — ${name}`,
       description: `Booked via the ${project.name} chatbot.\nVisitor email: ${email}`,
       location: tourSettings.location || undefined,
@@ -568,7 +569,7 @@ async function handleBookTour(args, project, tourSettings, connection) {
       endISO: endUTC.toISOString(),
       attendeeEmail: email,
     });
-    return { booked: true, startTime: startUTC.toISOString(), calendarEventId };
+    return { booked: true, startTime: startUTC.toISOString(), calendarEventId, meetLink };
   });
 }
 

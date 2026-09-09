@@ -38,7 +38,7 @@ stubFile('../db', {
 });
 
 let freeBusyImpl = async () => [];
-let insertEventImpl = async () => 'event-123';
+let insertEventImpl = async () => ({ id: 'event-123', meetLink: null });
 class StubGoogleAuthRevokedError extends Error {}
 stubFile('../services/googleCalendar', {
   getValidAccessToken: async (connection) => {
@@ -222,14 +222,28 @@ test('book_tour rejects an unparseable startTime', async () => {
   assert.ok(result.error);
 });
 
-test('book_tour books when the slot is free', async () => {
+test('book_tour books when the slot is free and returns the Google Meet link', async () => {
   resetTourBookingStubs();
   freeBusyImpl = async () => [];
-  insertEventImpl = async (token, evt) => { assert.equal(evt.attendeeEmail, 'jane@example.com'); return 'event-abc'; };
+  insertEventImpl = async (token, evt) => {
+    assert.equal(evt.attendeeEmail, 'jane@example.com');
+    return { id: 'event-abc', meetLink: 'https://meet.google.com/abc-defg-hij' };
+  };
   const { dispatch } = await tourBookingTools(ADVANCED_PROJECT);
   const result = await dispatch.book_tour({ name: 'Jane', email: 'jane@example.com', startTime: '2026-09-14T13:00:00.000Z' });
   assert.equal(result.booked, true);
   assert.equal(result.calendarEventId, 'event-abc');
+  assert.equal(result.meetLink, 'https://meet.google.com/abc-defg-hij');
+});
+
+test('book_tour still succeeds with meetLink: null when Google does not return a conference link', async () => {
+  resetTourBookingStubs();
+  freeBusyImpl = async () => [];
+  insertEventImpl = async () => ({ id: 'event-def', meetLink: null });
+  const { dispatch } = await tourBookingTools(ADVANCED_PROJECT);
+  const result = await dispatch.book_tour({ name: 'Jane', email: 'jane@example.com', startTime: '2026-09-14T13:00:00.000Z' });
+  assert.equal(result.booked, true);
+  assert.equal(result.meetLink, null);
 });
 
 test('book_tour refuses to double-book a slot Google now reports as busy', async () => {
