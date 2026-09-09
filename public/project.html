@@ -80,6 +80,7 @@
       <button class="tab" data-tab="embed">Embed</button>
       <button class="tab" data-tab="conversations">Conversations</button>
       <button class="tab" data-tab="leads" id="leads-tab">Leads</button>
+      <button class="tab" data-tab="tours" id="tours-tab">Tours</button>
     </div>
 
     <!-- ── Settings tab ───────────────────────────────────── -->
@@ -934,6 +935,63 @@
         </div>
       </div>
     </section>
+
+    <section class="tab-panel" id="panel-tours" hidden>
+      <div class="card">
+        <h2 class="card-title mb-md">Google Calendar</h2>
+        <div class="col gap-md">
+          <div id="tours-calendar-disconnected" class="row" style="align-items:center;gap:12px">
+            <span class="help">Connect a Google Calendar so the AI can check your real availability and book tours directly onto it.</span>
+            <button class="btn btn-primary" id="tours-connect-btn" type="button">Connect Google Calendar</button>
+          </div>
+          <div id="tours-calendar-connected" class="row" style="align-items:center;gap:12px;display:none">
+            <span class="help">Connected as <strong id="tours-connected-email"></strong></span>
+            <button class="btn btn-ghost" id="tours-disconnect-btn" type="button">Disconnect</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card mt-md">
+        <h2 class="card-title mb-md">Tour settings</h2>
+        <div class="col gap-md">
+          <div class="field">
+            <label>Tour booking</label>
+            <select class="select" id="f-tour-enabled">
+              <option value="false">Disabled (default)</option>
+              <option value="true">Enabled — the AI can offer and book tours</option>
+            </select>
+          </div>
+          <div id="tours-settings-detail" style="display:none" class="col gap-md">
+            <div class="grid grid-3">
+              <div class="field">
+                <label>Duration (minutes)</label>
+                <input class="input" type="number" id="f-tour-duration" value="30" min="5" max="240" />
+              </div>
+              <div class="field">
+                <label>Buffer between tours (minutes)</label>
+                <input class="input" type="number" id="f-tour-buffer" value="15" min="0" max="120" />
+              </div>
+              <div class="field">
+                <label>Timezone</label>
+                <select class="select" id="f-tour-tz"></select>
+              </div>
+            </div>
+            <div class="field">
+              <label>Location</label>
+              <input class="input" id="f-tour-location" placeholder="123 Main St, or a video call link" />
+            </div>
+            <div class="field">
+              <label>Working hours</label>
+              <div class="col gap-sm" id="f-tour-hours"></div>
+            </div>
+          </div>
+          <div class="row">
+            <button class="btn btn-primary" id="tours-save-btn" type="button">Save tour settings</button>
+            <span id="tours-save-error" class="error-text" style="display:none"></span>
+          </div>
+        </div>
+      </div>
+    </section>
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
@@ -988,6 +1046,7 @@
     if (t.dataset.tab === 'flashcards') loadFlashcards();
     if (t.dataset.tab === 'videos') loadVideos();
     if (t.dataset.tab === 'leads') loadLeads();
+    if (t.dataset.tab === 'tours') loadTourSettings();
   }
 
   allTabs.forEach(t => t.addEventListener('click', () => activateTab(t)));
@@ -1015,9 +1074,11 @@
     const quizTab = document.querySelector('.tab[data-tab="quiz"]');
     const flashcardsTab = document.querySelector('.tab[data-tab="flashcards"]');
     const videosTab = document.querySelector('.tab[data-tab="videos"]');
+    const toursTab = document.querySelector('.tab[data-tab="tours"]');
     quizTab.hidden = tier !== 'advanced';
     flashcardsTab.hidden = tier !== 'advanced';
     videosTab.hidden = tier === 'basic';
+    toursTab.hidden = tier !== 'advanced';
 
     const activeTab = document.querySelector('.tab.active');
     if (activeTab && activeTab.hidden) {
@@ -2490,6 +2551,155 @@
   window.switchTab = (name) => {
     document.querySelector(`.tab[data-tab="${name}"]`)?.click();
   };
+
+  // ── Tours (Google Calendar booking) ─────────────────────────────
+  const TOUR_WEEKDAYS = [['mon','Mon'],['tue','Tue'],['wed','Wed'],['thu','Thu'],['fri','Fri'],['sat','Sat'],['sun','Sun']];
+  let tourWorkingHours = { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] };
+
+  function populateTourTimezones(selected) {
+    const sel = document.getElementById('f-tour-tz');
+    let zones;
+    try { zones = Intl.supportedValuesOf('timeZone'); } catch (_) { zones = null; }
+    if (!zones || !zones.length) {
+      zones = ['UTC', 'America/New_York', 'America/Chicago', 'America/Denver', 'America/Los_Angeles', 'Europe/London', 'Europe/Berlin', 'Asia/Kolkata', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney'];
+    }
+    const guess = selected || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    if (!zones.includes(guess)) zones = [guess, ...zones];
+    sel.innerHTML = zones.map(z => `<option value="${z}" ${z === guess ? 'selected' : ''}>${z}</option>`).join('');
+  }
+
+  function renderTourHours() {
+    const wrap = document.getElementById('f-tour-hours');
+    wrap.innerHTML = TOUR_WEEKDAYS.map(([code, label]) => {
+      const windows = tourWorkingHours[code] || [];
+      const rows = windows.map((w, i) => `
+        <div class="row" style="gap:8px;align-items:center" data-day="${code}" data-idx="${i}">
+          <input class="input" type="time" value="${w.start}" data-role="start" style="width:120px" />
+          <span>to</span>
+          <input class="input" type="time" value="${w.end}" data-role="end" style="width:120px" />
+          <button class="btn btn-sm btn-ghost" type="button" data-action="remove-window" data-day="${code}" data-idx="${i}">Remove</button>
+        </div>
+      `).join('');
+      return `
+        <div class="row" style="gap:10px;align-items:flex-start">
+          <div style="width:40px;padding-top:8px;font-weight:600">${label}</div>
+          <div class="col gap-xs" style="flex:1">
+            ${rows || '<span class="help">No hours set</span>'}
+            <button class="btn btn-sm btn-ghost" type="button" data-action="add-window" data-day="${code}">+ Add hours</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  document.getElementById('f-tour-hours').addEventListener('click', (e) => {
+    const addBtn = e.target.closest('[data-action="add-window"]');
+    if (addBtn) {
+      tourWorkingHours[addBtn.dataset.day].push({ start: '09:00', end: '17:00' });
+      renderTourHours();
+      return;
+    }
+    const removeBtn = e.target.closest('[data-action="remove-window"]');
+    if (removeBtn) {
+      tourWorkingHours[removeBtn.dataset.day].splice(Number(removeBtn.dataset.idx), 1);
+      renderTourHours();
+    }
+  });
+
+  document.getElementById('f-tour-hours').addEventListener('change', (e) => {
+    const row = e.target.closest('[data-day]');
+    if (!row || !e.target.dataset.role) return;
+    tourWorkingHours[row.dataset.day][Number(row.dataset.idx)][e.target.dataset.role] = e.target.value;
+  });
+
+  document.getElementById('f-tour-enabled').addEventListener('change', (e) => {
+    document.getElementById('tours-settings-detail').style.display = e.target.value === 'true' ? '' : 'none';
+  });
+
+  async function refreshCalendarStatus() {
+    const status = await API.getCalendarStatus(projectId);
+    document.getElementById('tours-calendar-disconnected').style.display = status.connected ? 'none' : '';
+    document.getElementById('tours-calendar-connected').style.display = status.connected ? '' : 'none';
+    if (status.connected) document.getElementById('tours-connected-email').textContent = status.googleEmail || '';
+  }
+
+  document.getElementById('tours-connect-btn').addEventListener('click', async () => {
+    try {
+      const { url } = await API.connectGoogleCalendar(projectId);
+      location.href = url;
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  });
+
+  document.getElementById('tours-disconnect-btn').addEventListener('click', async () => {
+    if (!confirm('Disconnect Google Calendar? The AI will no longer be able to check availability or book tours.')) return;
+    try {
+      await API.disconnectGoogleCalendar(projectId);
+      await refreshCalendarStatus();
+      showToast('Google Calendar disconnected');
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  });
+
+  async function loadTourSettings() {
+    const ts = project.tourSettings || {};
+    document.getElementById('f-tour-enabled').value = String(ts.enabled === true);
+    document.getElementById('tours-settings-detail').style.display = ts.enabled === true ? '' : 'none';
+    document.getElementById('f-tour-duration').value = ts.durationMinutes || 30;
+    document.getElementById('f-tour-buffer').value = ts.bufferMinutes ?? 15;
+    document.getElementById('f-tour-location').value = ts.location || '';
+    populateTourTimezones(ts.timezone);
+    tourWorkingHours = {
+      mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [],
+      ...(ts.workingHours || {}),
+    };
+    renderTourHours();
+    await refreshCalendarStatus();
+  }
+
+  document.getElementById('tours-save-btn').addEventListener('click', async () => {
+    const errEl = document.getElementById('tours-save-error');
+    errEl.style.display = 'none';
+    const tourSettings = {
+      enabled: document.getElementById('f-tour-enabled').value === 'true',
+      durationMinutes: Number(document.getElementById('f-tour-duration').value),
+      bufferMinutes: Number(document.getElementById('f-tour-buffer').value),
+      timezone: document.getElementById('f-tour-tz').value,
+      location: document.getElementById('f-tour-location').value.trim(),
+      workingHours: tourWorkingHours,
+    };
+    try {
+      const { project: updated } = await API.updateProject(projectId, { tourSettings });
+      project = updated;
+      showToast('Tour settings saved');
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.style.display = 'block';
+    }
+  });
+
+  // Landed here from the Google OAuth callback redirect (see
+  // backend/routes/googleCalendarAuth.js#callbackHandler) — surface the
+  // result and clean the query string so a refresh doesn't re-show the toast.
+  (function handleCalendarOAuthReturn() {
+    const calendarResult = params.get('calendar');
+    if (!calendarResult) return;
+    if (params.get('tab') === 'tours') {
+      // Deferred: the Tours tab (and its tier-gated visibility) isn't
+      // built yet at this point in the script — applyTierVisibility runs
+      // after project data loads, later below. Queue the switch for then.
+      window.addEventListener('load', () => switchTab('tours'));
+    }
+    window.addEventListener('load', () => {
+      showToast(calendarResult === 'connected' ? 'Google Calendar connected' : 'Could not connect Google Calendar', calendarResult === 'connected' ? '' : 'error');
+    });
+    const url = new URL(location.href);
+    url.searchParams.delete('calendar');
+    url.searchParams.delete('tab');
+    history.replaceState(null, '', url.toString());
+  })();
 
   // ── CSV import (shared by Quiz and Flashcards tabs) ───────────
   const CSV_TEMPLATES = {
