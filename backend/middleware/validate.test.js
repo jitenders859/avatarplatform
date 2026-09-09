@@ -269,6 +269,67 @@ test('patchProject: accepts a tourSettings.timezone that is a real IANA name', (
   assert.equal(result.success, true);
 });
 
+test('patchProject: accepts tourSettings with a valid calendly config', () => {
+  const result = schemas.patchProject.safeParse({
+    tourSettings: {
+      enabled: false, durationMinutes: 30, timezone: 'UTC', bufferMinutes: 0, location: '',
+      workingHours: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+      calendly: {
+        enabled: true,
+        eventTypes: [
+          { label: '15 min intro', url: 'https://calendly.com/acme/intro' },
+          { label: 'Demo', url: 'https://calendly.com/acme/demo' },
+        ],
+      },
+    },
+  });
+  assert.equal(result.success, true);
+});
+
+test('patchProject: tourSettings.calendly is optional (omitting it is still valid)', () => {
+  const result = schemas.patchProject.safeParse({
+    tourSettings: {
+      enabled: false, durationMinutes: 30, timezone: 'UTC', bufferMinutes: 0, location: '',
+      workingHours: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+    },
+  });
+  assert.equal(result.success, true);
+});
+
+test('patchProject: rejects a calendly event type url that is not calendly.com', () => {
+  const result = schemas.patchProject.safeParse({
+    tourSettings: {
+      enabled: false, durationMinutes: 30, timezone: 'UTC', bufferMinutes: 0, location: '',
+      workingHours: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+      calendly: { enabled: true, eventTypes: [{ label: 'Demo', url: 'https://evil.example.com/demo' }] },
+    },
+  });
+  assert.equal(result.success, false);
+});
+
+test('patchProject: rejects a calendly event type with an empty label', () => {
+  const result = schemas.patchProject.safeParse({
+    tourSettings: {
+      enabled: false, durationMinutes: 30, timezone: 'UTC', bufferMinutes: 0, location: '',
+      workingHours: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+      calendly: { enabled: true, eventTypes: [{ label: '', url: 'https://calendly.com/acme/demo' }] },
+    },
+  });
+  assert.equal(result.success, false);
+});
+
+test('patchProject: rejects more than 10 calendly event types', () => {
+  const eventTypes = Array.from({ length: 11 }, (_, i) => ({ label: `Type ${i}`, url: 'https://calendly.com/acme/x' }));
+  const result = schemas.patchProject.safeParse({
+    tourSettings: {
+      enabled: false, durationMinutes: 30, timezone: 'UTC', bufferMinutes: 0, location: '',
+      workingHours: { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] },
+      calendly: { enabled: true, eventTypes },
+    },
+  });
+  assert.equal(result.success, false);
+});
+
 // ── filesInit ─────────────────────────────────────────────────
 
 test('filesInit rejects an empty files array', () => {
@@ -545,6 +606,13 @@ test('projectActionCreate accepts a non-colliding snake_case name', () => {
     name: 'check_order_status', description: 'Looks up an order', webhookUrl: 'https://example.com/hook',
   });
   assert.equal(result.success, true);
+});
+
+test('projectActionCreate rejects a name that collides with a built-in tool (open_calendly_scheduler)', () => {
+  const result = schemas.projectActionCreate.safeParse({
+    name: 'open_calendly_scheduler', description: 'desc', webhookUrl: 'https://example.com/hook',
+  });
+  assert.equal(result.success, false);
 });
 
 test('projectActionPatch rejects renaming an action to a reserved built-in tool name', () => {

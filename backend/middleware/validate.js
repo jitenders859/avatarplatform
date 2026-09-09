@@ -98,6 +98,19 @@ const ianaTimezone = z.string().trim().min(1, 'timezone is required').max(100)
     try { new Intl.DateTimeFormat('en-US', { timeZone: v }); return true; } catch { return false; }
   }, { message: 'timezone must be a valid IANA time zone name, e.g. America/New_York' });
 
+const calendlyEventType = z.object({
+  label: z.string().trim().min(1, 'label is required').max(60, 'label too long'),
+  url: z.string().trim().url('url must be a valid URL')
+    .refine(v => {
+      try { return new URL(v).hostname === 'calendly.com'; } catch { return false; }
+    }, { message: 'url must be a calendly.com scheduling link' }),
+});
+
+const calendlySettings = z.object({
+  enabled: z.boolean(),
+  eventTypes: z.array(calendlyEventType).max(10, 'Up to 10 event types'),
+}).optional();
+
 const tourSettings = z.object({
   enabled: z.boolean(),
   durationMinutes: z.number().int().min(5).max(240),
@@ -105,6 +118,7 @@ const tourSettings = z.object({
   bufferMinutes: z.number().int().min(0).max(120),
   location: z.string().trim().max(300).optional(),
   workingHours: tourWorkingHours,
+  calendly: calendlySettings,
 }).nullable().optional();
 
 const awayMessage = z.string().trim().max(500, 'awayMessage too long').nullable().optional();
@@ -124,7 +138,7 @@ const conversationStarters = z.array(z.string().trim().min(1).max(200)).max(6, '
 // owner expected to be their own webhook call.
 const RESERVED_ACTION_NAMES = new Set([
   'get_project_topics', 'generate_quiz', 'generate_flashcards', 'recommend_video', 'explain_visually',
-  'check_availability', 'book_tour',
+  'check_availability', 'book_tour', 'open_calendly_scheduler',
 ]);
 const notReservedActionName = (name) => !RESERVED_ACTION_NAMES.has(name);
 const RESERVED_ACTION_NAME_MESSAGE = `name must not be one of the built-in tool names: ${[...RESERVED_ACTION_NAMES].join(', ')}`;
