@@ -3222,6 +3222,11 @@
           <h3 style="font-size:15px;font-weight:600;margin:0">${new Date(lead.createdAt).toLocaleString()}</h3>
           <span class="pill ${lead.complete ? 'pill-success' : 'pill-warn'}">${lead.complete ? '✓ Complete' : 'Partial'}</span>
         </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+          <label class="muted text-sm" style="flex:0 0 auto">Follow-up status:</label>
+          <select class="select" style="font-size:13px;padding:6px 8px;flex:1" onchange="handleLeadStatusChange('${lead.id}', this, 'detail')">${leadStatusOptionsHtml(lead.status)}</select>
+          <input type="date" class="input" id="lead-followup-date-detail-${lead.id}" style="font-size:13px;padding:5px 8px;flex:1" value="${lead.followUpDate || ''}" ${lead.status === 'follow_up_later' ? '' : 'hidden'} onchange="handleLeadFollowUpDateChange('${lead.id}', this)" />
+        </div>
         <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px">
           ${entries.length === 0
             ? '<div class="muted text-sm" style="padding:12px 16px">No data captured</div>'
