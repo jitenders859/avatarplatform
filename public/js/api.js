@@ -181,6 +181,7 @@ const API = {
     return apiCall(`/api/projects/${pid}/leads${q ? '?' + q : ''}`);
   },
   getLead: (pid, lid) => apiCall(`/api/projects/${pid}/leads/${lid}`),
+  patchLead: (pid, lid, patch) => apiCall(`/api/projects/${pid}/leads/${lid}`, { method: 'PATCH', body: patch }),
 
   // Chunks
   listChunks:  (pid, fid, search) => apiCall(`/api/projects/${pid}/files/${fid}/chunks${search ? '?search=' + encodeURIComponent(search) : ''}`),
