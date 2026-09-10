@@ -1,10 +1,15 @@
+-- ═══════════════════════════════════════════════════════════════════
+-- Migration: Lead status tracking — see
+-- docs/superpowers/specs/2026-09-09-lead-status-tracking-design.md.
+--
 -- This project has no migration runner — supabase/schema.sql is the single
 -- idempotent source of truth, re-run in full against an existing database
 -- to apply new changes. The statements below are already appended to
 -- schema.sql; this file is a standalone, dated record of *why* they were
 -- added, and can also be run directly:
 --   psql $DATABASE_URL -f supabase/migrations/2026-09-09_add_lead_status.sql
---
+-- ═══════════════════════════════════════════════════════════════════
+
 -- Adds a staff-editable follow-up pipeline status to leads (separate from
 -- the existing auto-computed `complete` boolean, which tracks whether all
 -- required capture fields were filled in during chat — this tracks where

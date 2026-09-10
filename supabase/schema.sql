@@ -406,7 +406,7 @@ CREATE INDEX IF NOT EXISTS idx_leads_session       ON leads(session_id);
 CREATE INDEX IF NOT EXISTS idx_messages_project_created ON messages(project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_sessions_project_created ON sessions(project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_leads_project_created     ON leads(project_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_leads_project_status       ON leads(project_id, status);
+CREATE INDEX IF NOT EXISTS idx_leads_project_status      ON leads(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_quiz_questions_project    ON quiz_questions(project_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_attempts_project     ON quiz_attempts(project_id);
 CREATE INDEX IF NOT EXISTS idx_quiz_attempts_session     ON quiz_attempts(session_id);
