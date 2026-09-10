@@ -3312,12 +3312,14 @@
     if (allLeadsData.length === 0) return toast('No leads to export', 'error');
     const fieldLabels = allLeadsData[0]?.fieldLabels || {};
     const keys = Object.keys(fieldLabels);
-    const headers = ['id', 'date', ...keys.map(k => fieldLabels[k]), 'complete'];
+    const headers = ['id', 'date', ...keys.map(k => fieldLabels[k]), 'complete', 'status', 'follow_up_date'];
     const rows = [headers, ...allLeadsData.map(l => [
       l.id,
       new Date(l.createdAt).toISOString(),
       ...keys.map(k => l.data?.[k] || ''),
       l.complete ? 'yes' : 'no',
+      LEAD_STATUS_LABELS[l.status] || l.status || 'New',
+      l.followUpDate || '',
     ])];
     const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
