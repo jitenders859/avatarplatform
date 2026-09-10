@@ -3186,7 +3186,7 @@
                 ${keys.map(k => `<td style="padding:9px 6px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(l.data?.[k] || '—')}</td>`).join('')}
                 <td style="padding:9px 6px"><span class="pill ${l.complete ? 'pill-success' : 'pill-warn'}">${l.complete ? '✓ Complete' : 'Partial'}</span></td>
                 <td style="padding:9px 6px" onclick="event.stopPropagation()">
-                  <select class="select" style="font-size:12px;padding:4px 6px;min-width:150px" onchange="handleLeadStatusChange('${l.id}', this, 'row')">${leadStatusOptionsHtml(l.status)}</select>
+                  <select class="select" id="lead-status-select-row-${l.id}" style="font-size:12px;padding:4px 6px;min-width:150px" onchange="handleLeadStatusChange('${l.id}', this, 'row')">${leadStatusOptionsHtml(l.status)}</select>
                   <input type="date" class="input" id="lead-followup-date-row-${l.id}" style="font-size:12px;padding:3px 6px;margin-top:4px;min-width:150px" value="${l.followUpDate || ''}" ${l.status === 'follow_up_later' ? '' : 'hidden'} onchange="handleLeadFollowUpDateChange('${l.id}', this)" onclick="event.stopPropagation()" />
                 </td>
               </tr>`).join('')}
@@ -3222,10 +3222,10 @@
           <h3 style="font-size:15px;font-weight:600;margin:0">${new Date(lead.createdAt).toLocaleString()}</h3>
           <span class="pill ${lead.complete ? 'pill-success' : 'pill-warn'}">${lead.complete ? '✓ Complete' : 'Partial'}</span>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
-          <label class="muted text-sm" style="flex:0 0 auto">Follow-up status:</label>
-          <select class="select" style="font-size:13px;padding:6px 8px;flex:1" onchange="handleLeadStatusChange('${lead.id}', this, 'detail')">${leadStatusOptionsHtml(lead.status)}</select>
-          <input type="date" class="input" id="lead-followup-date-detail-${lead.id}" style="font-size:13px;padding:5px 8px;flex:1" value="${lead.followUpDate || ''}" ${lead.status === 'follow_up_later' ? '' : 'hidden'} onchange="handleLeadFollowUpDateChange('${lead.id}', this)" />
+        <div style="margin-bottom:16px">
+          <label class="muted text-sm" style="display:block;margin-bottom:4px">Follow-up status:</label>
+          <select class="select" id="lead-status-select-detail-${lead.id}" style="font-size:13px;padding:6px 8px;width:100%" onchange="handleLeadStatusChange('${lead.id}', this, 'detail')">${leadStatusOptionsHtml(lead.status)}</select>
+          <input type="date" class="input" id="lead-followup-date-detail-${lead.id}" style="font-size:13px;padding:5px 8px;margin-top:6px;width:100%" value="${lead.followUpDate || ''}" ${lead.status === 'follow_up_later' ? '' : 'hidden'} onchange="handleLeadFollowUpDateChange('${lead.id}', this)" />
         </div>
         <div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:16px">
           ${entries.length === 0
@@ -3249,6 +3249,19 @@
     } catch (e) { toast(e.message, 'error'); }
   };
 
+  function syncLeadStatusControls(leadId, status, followUpDate) {
+    ['row', 'detail'].forEach(src => {
+      const select = document.getElementById(`lead-status-select-${src}-${leadId}`);
+      if (select && select.value !== status) select.value = status;
+      const dateInput = document.getElementById(`lead-followup-date-${src}-${leadId}`);
+      if (dateInput) {
+        dateInput.hidden = status !== 'follow_up_later';
+        if (status !== 'follow_up_later') dateInput.value = '';
+        else if (followUpDate != null && dateInput.value !== followUpDate) dateInput.value = followUpDate;
+      }
+    });
+  }
+
   window.handleLeadStatusChange = async (leadId, selectEl, source) => {
     const status = selectEl.value;
     const row = allLeadsData.find(l => l.id === leadId);
@@ -3256,11 +3269,7 @@
     try {
       await API.patchLead(projectId, leadId, { status });
       if (row) { row.status = status; if (status !== 'follow_up_later') row.followUpDate = null; }
-      const dateInput = document.getElementById(`lead-followup-date-${source}-${leadId}`);
-      if (dateInput) {
-        dateInput.hidden = status !== 'follow_up_later';
-        if (status !== 'follow_up_later') dateInput.value = '';
-      }
+      syncLeadStatusControls(leadId, status, row ? row.followUpDate : null);
       toast('Status updated', 'success');
     } catch (e) {
       selectEl.value = prev;
@@ -3275,6 +3284,10 @@
     try {
       await API.patchLead(projectId, leadId, { followUpDate });
       if (row) row.followUpDate = followUpDate;
+      ['row', 'detail'].forEach(src => {
+        const dateInput = document.getElementById(`lead-followup-date-${src}-${leadId}`);
+        if (dateInput && dateInput !== inputEl) dateInput.value = followUpDate || '';
+      });
       toast('Follow-up date updated', 'success');
     } catch (e) {
       inputEl.value = prev || '';
