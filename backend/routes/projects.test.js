@@ -262,3 +262,44 @@ test('PATCH /api/projects/:id/leads/:leadId clears follow_up_date when status mo
   assert.equal(res.json.status, 'rejected');
   assert.equal(res.json.followUpDate, null);
 });
+
+test('PATCH /api/projects/:id/leads/:leadId clears follow_up_date using the lead\'s persisted status when the request body omits status', async (t) => {
+  delete require.cache[require.resolve('./projects')];
+  const { router } = require('./projects');
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/api/projects', router);
+  app.use((err, req, res, _next) => res.status(500).json({ error: err.message }));
+
+  const server = app.listen(0);
+  leadRows = [{
+    id: 'lead3', projectId: PROJECT_ROWS[0].id, sessionId: 's1',
+    data: {}, complete: false, status: 'new', followUpDate: null, createdAt: Date.now(),
+  }];
+  t.after(() => { server.close(); leadRows = []; });
+  const port = server.address().port;
+  const token = jwt.sign({ uid: USER.id }, process.env.JWT_SECRET, { algorithm: 'HS256' });
+
+  const patch = (body) => new Promise((resolve, reject) => {
+    const data = JSON.stringify(body);
+    const req = http.request(
+      { host: '127.0.0.1', port, path: `/api/projects/${PROJECT_ROWS[0].id}/leads/lead3`, method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } },
+      (res) => {
+        let body = ''; res.on('data', c => body += c);
+        res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(body) }); } catch (e) { reject(e); } });
+      }
+    );
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+
+  // No `status` field in the body at all — the lead's persisted status
+  // ('new') is what should determine whether followUpDate gets cleared.
+  const res = await patch({ followUpDate: '2026-05-01' });
+  assert.equal(res.status, 200);
+  assert.equal(res.json.status, 'new');
+  assert.equal(res.json.followUpDate, null);
+});

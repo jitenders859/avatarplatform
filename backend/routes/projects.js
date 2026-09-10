@@ -427,9 +427,12 @@ router.patch('/:id/leads/:leadId', authRequired, validate(schemas.leadPatch), as
   if (!lead) return res.status(404).json({ error: 'Lead not found' });
 
   const patch = { ...req.body };
-  if (patch.status && patch.status !== 'follow_up_later') {
+  const nextStatus = patch.status ?? lead.status;
+  if (nextStatus !== 'follow_up_later') {
     // Enforced server-side, not just hidden client-side, so a stale date
-    // can't linger through a client bug or a direct API call.
+    // can't linger through a client bug or a direct API call — checks the
+    // lead's actual persisted status when the request doesn't touch status
+    // at all, not just what happens to be in this particular request body.
     patch.followUpDate = null;
   }
 
