@@ -303,3 +303,40 @@ test('PATCH /api/projects/:id/leads/:leadId clears follow_up_date using the lead
   assert.equal(res.json.status, 'new');
   assert.equal(res.json.followUpDate, null);
 });
+
+test('GET /api/projects/:id/leads?status= filters by status via a bound parameter', async (t) => {
+  delete require.cache[require.resolve('./projects')];
+  const { router } = require('./projects');
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/api/projects', router);
+  app.use((err, req, res, _next) => res.status(500).json({ error: err.message }));
+
+  const server = app.listen(0);
+  leadRows = [];
+  t.after(() => { server.close(); leadRows = []; queryCalls = []; });
+  const port = server.address().port;
+  const token = jwt.sign({ uid: USER.id }, process.env.JWT_SECRET, { algorithm: 'HS256' });
+
+  const get = (path) => new Promise((resolve, reject) => {
+    http.get(`http://127.0.0.1:${port}${path}`, { headers: { Authorization: `Bearer ${token}` } }, (res) => {
+      let data = ''; res.on('data', c => data += c);
+      res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(data) }); } catch (e) { reject(e); } });
+    }).on('error', reject);
+  });
+
+  queryCalls = [];
+  const res = await get(`/api/projects/${PROJECT_ROWS[0].id}/leads?status=contacted`);
+  assert.equal(res.status, 200);
+  const rowQuery = queryCalls.find(c => /FROM leads l\b/.test(c.sql));
+  assert.match(rowQuery.sql, /l\.status = \$2/);
+  assert.deepEqual(rowQuery.params.slice(0, 2), [PROJECT_ROWS[0].id, 'contacted']);
+
+  // An unknown status value is ignored (falls back to unfiltered), same as
+  // the existing complete=all default — never passed through to SQL.
+  queryCalls = [];
+  await get(`/api/projects/${PROJECT_ROWS[0].id}/leads?status=bogus`);
+  const unfiltered = queryCalls.find(c => /FROM leads l\b/.test(c.sql));
+  assert.equal(unfiltered.params.length, 3); // [project.id, pageSize, offset] only
+});

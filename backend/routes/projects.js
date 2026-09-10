@@ -364,11 +364,13 @@ router.get('/:id/sessions/:sessionId', authRequired, async (req, res) => {
   });
 });
 
+const LEAD_STATUSES = ['new', 'contacted', 'replied', 'meeting_scheduled', 'google_meet_scheduled', 'follow_up_later', 'rejected', 'enrolled'];
+
 router.get('/:id/leads', authRequired, async (req, res) => {
   const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
-  const { complete = 'all', page = 1, limit = 50 } = req.query;
+  const { complete = 'all', status = 'all', page = 1, limit = 50 } = req.query;
   const pageNum  = Math.max(1, parseInt(page)  || 1);
   const pageSize = Math.min(200, Math.max(1, parseInt(limit) || 50));
   const offset   = (pageNum - 1) * pageSize;
@@ -376,24 +378,24 @@ router.get('/:id/leads', authRequired, async (req, res) => {
   const fields = await db.findAll('captureFields', { projectId: project.id });
   const fieldMap = { name: 'Name', email: 'Email', ...Object.fromEntries(fields.map(f => [f.key, f.label])) };
 
-  // Build WHERE clause for complete filter
-  let completeClause = '';
-  if (complete === 'true')  completeClause = 'AND l.complete = true';
-  if (complete === 'false') completeClause = 'AND l.complete = false';
+  // Build WHERE clause for complete/status filters
+  const clauses = ['l.project_id = $1'];
+  const params = [project.id];
+  if (complete === 'true')  clauses.push('l.complete = true');
+  if (complete === 'false') clauses.push('l.complete = false');
+  if (LEAD_STATUSES.includes(status)) { params.push(status); clauses.push(`l.status = $${params.length}`); }
+  const where = clauses.join(' AND ');
 
   const [totalRow, leads] = await Promise.all([
-    db.queryOne(
-      `SELECT COUNT(*) AS total FROM leads WHERE project_id = $1 ${completeClause}`,
-      [project.id]
-    ),
+    db.queryOne(`SELECT COUNT(*) AS total FROM leads l WHERE ${where}`, params),
     db.query(
       `SELECT l.*, s.created_at AS session_created_at
        FROM leads l
        LEFT JOIN sessions s ON s.id = l.session_id
-       WHERE l.project_id = $1 ${completeClause}
+       WHERE ${where}
        ORDER BY l.created_at DESC
-       LIMIT $2 OFFSET $3`,
-      [project.id, pageSize, offset]
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, pageSize, offset]
     ),
   ]);
 
