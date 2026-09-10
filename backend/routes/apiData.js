@@ -130,9 +130,15 @@ router.get('/urls', authRequired, async (req, res) => {
 });
 
 // GET /api/data/leads — every lead across every chatbot. ?complete=true|false
-// filters the same way GET /api/projects/:id/leads does.
+// and ?status=new|contacted|... filter the same way GET /api/projects/:id/leads does.
+// Kept in sync with the same list in routes/projects.js, middleware/validate.js's
+// leadPatch schema, and public/project.html's LEAD_STATUSES — no shared constants
+// module in this codebase (see VOICES for the established precedent of duplicating
+// small fixed enums instead).
+const LEAD_STATUSES = ['new', 'contacted', 'replied', 'meeting_scheduled', 'google_meet_scheduled', 'follow_up_later', 'rejected', 'enrolled'];
+
 router.get('/leads', authRequired, async (req, res) => {
-  const { projectId, categoryId, complete } = req.query;
+  const { projectId, categoryId, complete, status } = req.query;
   const { page, limit, offset } = pagination(req);
   const clauses = ['p.user_id = $1'];
   const params = [req.user.id];
@@ -140,6 +146,7 @@ router.get('/leads', authRequired, async (req, res) => {
   if (categoryId) { params.push(categoryId); clauses.push(`p.category_id = $${params.length}`); }
   if (complete === 'true') clauses.push('l.complete = true');
   if (complete === 'false') clauses.push('l.complete = false');
+  if (LEAD_STATUSES.includes(status)) { params.push(status); clauses.push(`l.status = $${params.length}`); }
   const where = clauses.join(' AND ');
 
   const [totalRow, leads] = await Promise.all([
@@ -149,7 +156,7 @@ router.get('/leads', authRequired, async (req, res) => {
     ),
     db.query(
       `SELECT l.id, l.project_id, p.name AS chatbot_name, p.category_id, cc.name AS category_name,
-              l.session_id, l.data, l.complete, l.created_at, l.updated_at
+              l.session_id, l.data, l.complete, l.status, l.follow_up_date, l.created_at, l.updated_at
          FROM leads l
          JOIN projects p ON p.id = l.project_id
          LEFT JOIN chatbot_categories cc ON cc.id = p.category_id

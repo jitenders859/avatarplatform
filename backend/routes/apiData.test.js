@@ -137,4 +137,10 @@ test('export API: every resource is scoped to the caller and returns the documen
   queryCalls = []; queryOneCalls = [];
   const leadsDefault = await request(port, '/api/data/leads', ownerToken);
   assert.deepEqual(leadsDefault.json, { leads: [], total: 0, page: 1, limit: 50 });
+
+  // ?status= appends a second bound param, same shape as ?complete=.
+  queryCalls = []; queryOneCalls = [];
+  await request(port, '/api/data/leads?status=replied', ownerToken);
+  assert.match(queryOneCalls[0].sql, /l\.status = \$2/);
+  assert.deepEqual(queryOneCalls[0].params, [OWNER.id, 'replied']);
 });
