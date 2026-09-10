@@ -937,6 +937,9 @@
           <button class="btn btn-sm btn-primary" id="leads-filter-all" onclick="setLeadsFilter('all')">All</button>
           <button class="btn btn-sm btn-ghost" id="leads-filter-complete" onclick="setLeadsFilter('complete')">Complete</button>
           <button class="btn btn-sm btn-ghost" id="leads-filter-incomplete" onclick="setLeadsFilter('incomplete')">Incomplete</button>
+          <select class="select" id="leads-status-filter" style="width:auto;font-size:13px;padding:6px 8px;margin-left:8px" onchange="setLeadsStatusFilter(this.value)">
+            <option value="all">Any follow-up status</option>
+          </select>
           <span style="flex:1"></span>
           <span class="muted text-sm" id="leads-count"></span>
           <button class="btn btn-sm btn-ghost" id="leads-export-btn" onclick="exportLeadsCsv()">↓ Export CSV</button>
@@ -3128,6 +3131,16 @@
     return LEAD_STATUSES.map(s => `<option value="${s.value}" ${s.value === (current || 'new') ? 'selected' : ''}>${s.label}</option>`).join('');
   }
 
+  document.getElementById('leads-status-filter').insertAdjacentHTML('beforeend', LEAD_STATUSES.map(s => `<option value="${s.value}">${s.label}</option>`).join(''));
+
+  let leadsStatusFilter = 'all';
+  function setLeadsStatusFilter(v) {
+    leadsStatusFilter = v;
+    leadsPage = 1;
+    loadLeads();
+  }
+  window.setLeadsStatusFilter = setLeadsStatusFilter;
+
   let leadsFilter = 'all';
   let leadsPage = 1;
   let leadsTotal = 0;
@@ -3149,7 +3162,7 @@
     wrap.innerHTML = '<div class="muted text-sm" style="padding:12px 0">Loading…</div>';
     try {
       const complete = leadsFilter === 'all' ? 'all' : leadsFilter === 'complete' ? 'true' : 'false';
-      const { leads, total } = await API.listLeads(projectId, { complete, page: leadsPage, limit: LEADS_PAGE_SIZE });
+      const { leads, total } = await API.listLeads(projectId, { complete, status: leadsStatusFilter, page: leadsPage, limit: LEADS_PAGE_SIZE });
       allLeadsData = leads;
       leadsTotal = total;
 
