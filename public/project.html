@@ -3112,6 +3112,22 @@
   };
 
   // ── Leads tab ────────────────────────────────────────────────
+  const LEAD_STATUSES = [
+    { value: 'new', label: 'New' },
+    { value: 'contacted', label: 'Contacted' },
+    { value: 'replied', label: 'Replied' },
+    { value: 'meeting_scheduled', label: 'Meeting Scheduled' },
+    { value: 'google_meet_scheduled', label: 'Google Meet Scheduled' },
+    { value: 'follow_up_later', label: 'Follow-Up Later' },
+    { value: 'rejected', label: 'Rejected' },
+    { value: 'enrolled', label: 'Enrolled' },
+  ];
+  const LEAD_STATUS_LABELS = Object.fromEntries(LEAD_STATUSES.map(s => [s.value, s.label]));
+
+  function leadStatusOptionsHtml(current) {
+    return LEAD_STATUSES.map(s => `<option value="${s.value}" ${s.value === (current || 'new') ? 'selected' : ''}>${s.label}</option>`).join('');
+  }
+
   let leadsFilter = 'all';
   let leadsPage = 1;
   let leadsTotal = 0;
@@ -3160,6 +3176,7 @@
               <th style="text-align:left;padding:8px 6px;font-weight:600;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em">Date</th>
               ${keys.map(k => `<th style="text-align:left;padding:8px 6px;font-weight:600;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em">${escape(fieldLabels[k])}</th>`).join('')}
               <th style="text-align:left;padding:8px 6px;font-weight:600;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em">Status</th>
+              <th style="text-align:left;padding:8px 6px;font-weight:600;color:var(--text-dim);font-size:11px;text-transform:uppercase;letter-spacing:.04em">Follow-up</th>
             </tr>
           </thead>
           <tbody>
@@ -3168,6 +3185,10 @@
                 <td style="padding:9px 6px;color:var(--text-dim)">${new Date(l.createdAt).toLocaleDateString()}</td>
                 ${keys.map(k => `<td style="padding:9px 6px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escape(l.data?.[k] || '—')}</td>`).join('')}
                 <td style="padding:9px 6px"><span class="pill ${l.complete ? 'pill-success' : 'pill-warn'}">${l.complete ? '✓ Complete' : 'Partial'}</span></td>
+                <td style="padding:9px 6px" onclick="event.stopPropagation()">
+                  <select class="select" style="font-size:12px;padding:4px 6px;min-width:150px" onchange="handleLeadStatusChange('${l.id}', this, 'row')">${leadStatusOptionsHtml(l.status)}</select>
+                  <input type="date" class="input" id="lead-followup-date-row-${l.id}" style="font-size:12px;padding:3px 6px;margin-top:4px;min-width:150px" value="${l.followUpDate || ''}" ${l.status === 'follow_up_later' ? '' : 'hidden'} onchange="handleLeadFollowUpDateChange('${l.id}', this)" onclick="event.stopPropagation()" />
+                </td>
               </tr>`).join('')}
           </tbody>
         </table>`;
@@ -3221,6 +3242,39 @@
                 </div>`).join('')}
         </div>`;
     } catch (e) { toast(e.message, 'error'); }
+  };
+
+  window.handleLeadStatusChange = async (leadId, selectEl, source) => {
+    const status = selectEl.value;
+    const row = allLeadsData.find(l => l.id === leadId);
+    const prev = row ? row.status : 'new';
+    try {
+      await API.patchLead(projectId, leadId, { status });
+      if (row) { row.status = status; if (status !== 'follow_up_later') row.followUpDate = null; }
+      const dateInput = document.getElementById(`lead-followup-date-${source}-${leadId}`);
+      if (dateInput) {
+        dateInput.hidden = status !== 'follow_up_later';
+        if (status !== 'follow_up_later') dateInput.value = '';
+      }
+      toast('Status updated', 'success');
+    } catch (e) {
+      selectEl.value = prev;
+      toast(e.message, 'error');
+    }
+  };
+
+  window.handleLeadFollowUpDateChange = async (leadId, inputEl) => {
+    const followUpDate = inputEl.value || null;
+    const row = allLeadsData.find(l => l.id === leadId);
+    const prev = row ? row.followUpDate : null;
+    try {
+      await API.patchLead(projectId, leadId, { followUpDate });
+      if (row) row.followUpDate = followUpDate;
+      toast('Follow-up date updated', 'success');
+    } catch (e) {
+      inputEl.value = prev || '';
+      toast(e.message, 'error');
+    }
   };
 
   window.exportLeadsCsv = async () => {
