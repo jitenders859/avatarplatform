@@ -3168,7 +3168,7 @@
 
       // Update tab badge
       const tabBtn = document.getElementById('leads-tab');
-      if (leadsFilter === 'all' && tabBtn) tabBtn.textContent = `Leads${total > 0 ? ' · ' + total : ''}`;
+      if (leadsFilter === 'all' && leadsStatusFilter === 'all' && tabBtn) tabBtn.textContent = `Leads${total > 0 ? ' · ' + total : ''}`;
 
       document.getElementById('leads-count').textContent = `${total} total`;
 
