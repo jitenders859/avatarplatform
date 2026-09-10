@@ -22,6 +22,12 @@ const logger = require('../logger').child({ module: 'answer-question' });
 // point the way the Live path has; this heuristic gate stands in for it.
 const TIME_SENSITIVE_RE = /\b(latest|current(ly)?|today|this week|this year|right now|price|cost|version|release|schedule|news)\b/i;
 
+// The SDK has no default request timeout, and neither this route nor the
+// widget's fetch() bounds the wait — a stalled Gemini call previously hung
+// the visitor's "Thinking…" state indefinitely instead of failing into the
+// existing 502 handler below.
+const GEMINI_TIMEOUT_MS = parseInt(process.env.GEMINI_TIMEOUT_MS || '20000', 10);
+
 /** Fetch files for a set of chunk hits in one round trip instead of one query per hit. */
 async function filesForHits(hits) {
   const ids = [...new Set(hits.map(h => h.chunk.fileId))];
@@ -104,7 +110,7 @@ async function answerQuestion(project, question, incomingSessionId, { ip = 'unkn
 
     const genai = new GoogleGenerativeAI(await settings.getSetting('GEMINI_API_KEY'));
     const model = genai.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const result = await model.generateContent(prompt);
+    const result = await model.generateContent(prompt, { timeout: GEMINI_TIMEOUT_MS });
     const extracted = extractHandoffTag(result.response.text());
     answer = extracted.clean;
     offerHandoff = extracted.requested;

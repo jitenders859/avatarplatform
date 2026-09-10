@@ -1485,7 +1485,8 @@
 
   async function loadTeam(sub) {
     const isBusiness = !!sub && sub.plan.id === 'business';
-    document.getElementById('livechat-tab').hidden = !isBusiness;
+    const livechatTabEl = document.getElementById('livechat-tab');
+    if (livechatTabEl) livechatTabEl.hidden = !isBusiness;
     document.getElementById('team-upgrade-note').style.display = isBusiness ? 'none' : 'block';
     document.getElementById('team-body').style.display = isBusiness ? '' : 'none';
     // Deep link from a handoff notification (dashboard websocket, mobile

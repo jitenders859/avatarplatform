@@ -27,6 +27,12 @@ const logger = require('../logger').child({ module: 'services/tools' });
 const QUIZ_MODEL = process.env.QUIZ_MODEL || 'gemini-3.5-flash';
 const FLASHCARD_MODEL = process.env.FLASHCARD_MODEL || 'gemini-3.5-flash';
 
+// These handlers run synchronously inside /study's live tool-calling loop
+// (see backend/routes/embed.js) — the SDK has no default timeout, so a
+// stalled call here previously hung the visitor's whole turn instead of
+// falling through to the existing catch below.
+const GEMINI_TIMEOUT_MS = parseInt(process.env.GEMINI_TIMEOUT_MS || '20000', 10);
+
 const QUIZ_QUESTION_SCHEMA = {
   type: 'object',
   properties: {
@@ -106,7 +112,7 @@ async function handleGenerateQuiz(args, ctx) {
         "doesn't fully support a question, write a narrower one that it does support. Don't " +
         `repeat the same concept across questions.\n\nContext:\n${contextText}`;
 
-      const result = await model.generateContent(prompt);
+      const result = await model.generateContent(prompt, { timeout: GEMINI_TIMEOUT_MS });
       const generated = JSON.parse(result.response.text());
       for (const g of generated.slice(0, remaining)) {
         questions.push({ question: g.question, options: g.options, correctIndex: g.correctIndex, sourceChunkIds, origin: 'ai' });
@@ -174,7 +180,7 @@ async function handleGenerateFlashcards(args, ctx) {
         "the answer or definition). Do not use any information beyond what's given below. " +
         `Don't repeat the same concept across cards.\n\nContext:\n${contextText}`;
 
-      const result = await model.generateContent(prompt);
+      const result = await model.generateContent(prompt, { timeout: GEMINI_TIMEOUT_MS });
       const generated = JSON.parse(result.response.text());
       for (const g of generated.slice(0, remaining)) {
         cards.push({ front: g.front, back: g.back, sourceChunkId: primarySourceChunkId, origin: 'ai' });

@@ -143,6 +143,25 @@
 
   const urlMode = new URLSearchParams(location.search).get('mode');
 
+  // None of the /ask, /speak, or /study fetches below carried a timeout, so
+  // a stalled network path (dropped connection, proxy black hole — anything
+  // short of the server itself replying) left "Thinking…" and a disabled
+  // send button stuck forever with no way for the visitor to recover short
+  // of reloading the widget. FETCH_TIMEOUT_MS is kept above the server's own
+  // GEMINI_TIMEOUT_MS (20s, see backend/services/answerQuestion.js) so a
+  // normal slow-but-alive request still gets to finish server-side first.
+  const FETCH_TIMEOUT_MS = 30000;
+  // /study can chain up to 5 sequential model calls server-side (see
+  // MAX_TOOL_ITERATIONS in backend/routes/embed.js) — each is individually
+  // bounded, but the request as a whole legitimately needs more headroom
+  // than a single /ask call.
+  const STUDY_FETCH_TIMEOUT_MS = 90000;
+  function fetchWithTimeout(url, options = {}, timeoutMs = FETCH_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+  }
+
   let avatar = null;
   let config = null;
   let pageContext = null; // { url, title, text } from the host page, once fetched — see requestPageContext()
@@ -522,7 +541,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     statusText.textContent = 'Thinking…';
 
     try {
-      const res = await fetch(`/embed/${publicId}/ask`, {
+      const res = await fetchWithTimeout(`/embed/${publicId}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -564,7 +583,9 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       // The ap:message/ap:response host events above are independent of
       // that persistence, so they still fire on this path.
     } catch (e) {
-      addMessage('bot', 'Something went wrong — please try again in a moment.');
+      addMessage('bot', e.name === 'AbortError'
+        ? 'That took too long to answer — please try again.'
+        : 'Something went wrong — please try again in a moment.');
     } finally {
       sendBtn.disabled = false;
       statusText.textContent = 'Text mode';
@@ -626,7 +647,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
   async function speakReply(text) {
     if (!text) return;
     try {
-      const res = await fetch(`/embed/${publicId}/speak`, {
+      const res = await fetchWithTimeout(`/embed/${publicId}/speak`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
@@ -650,7 +671,7 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     statusText.textContent = 'Thinking…';
 
     try {
-      const res = await fetch(`/embed/${publicId}/ask`, {
+      const res = await fetchWithTimeout(`/embed/${publicId}/ask`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: text, sessionId }),
@@ -697,7 +718,9 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
       // The ap:message/ap:response host events above are independent of
       // that persistence, so they still fire on this path.
     } catch (e) {
-      addMessage('bot', 'Something went wrong — please try again in a moment.');
+      addMessage('bot', e.name === 'AbortError'
+        ? 'That took too long to answer — please try again.'
+        : 'Something went wrong — please try again in a moment.');
     } finally {
       sendBtn.disabled = false;
       statusText.textContent = `${engineLabel(config.project.voiceEngine)} voice`;
@@ -1486,11 +1509,11 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     sendBtn.disabled = true;
     statusText.textContent = 'Thinking…';
     try {
-      const res = await fetch(`/embed/${publicId}/study`, {
+      const res = await fetchWithTimeout(`/embed/${publicId}/study`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, sessionId }),
-      });
+      }, STUDY_FETCH_TIMEOUT_MS);
       const data = await res.json();
       if (!res.ok) {
         addMessage('bot', data.limitMessage || data.error || 'Study tools are unavailable right now.');
@@ -1521,7 +1544,9 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
         }
       }
     } catch (e) {
-      addMessage('bot', 'Something went wrong loading your study material.');
+      addMessage('bot', e.name === 'AbortError'
+        ? 'That took too long to load — please try again.'
+        : 'Something went wrong loading your study material.');
     } finally {
       quizBtn.disabled = false;
       whiteboardBtn.disabled = false;
@@ -2144,7 +2169,7 @@ ${pageContext.text.slice(0, 4000)}
       },
       handler: async ({ query }) => {
         try {
-          const res = await fetch(`/embed/${publicId}/retrieve`, {
+          const res = await fetchWithTimeout(`/embed/${publicId}/retrieve`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ query: String(query || '').slice(0, 500), k: 5 }),
@@ -2185,7 +2210,7 @@ ${pageContext.text.slice(0, 4000)}
       },
       handler: async ({ query }) => {
         try {
-          const res = await fetch(`/embed/${publicId}/search-web`, {
+          const res = await fetchWithTimeout(`/embed/${publicId}/search-web`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

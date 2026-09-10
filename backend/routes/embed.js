@@ -78,6 +78,12 @@ const webSearchLimiter = rateLimit({
 
 const MAX_TOOL_ITERATIONS = 5;
 
+// Same rationale as answerQuestion.js's GEMINI_TIMEOUT_MS: the SDK has no
+// default request timeout, and /study can chain up to MAX_TOOL_ITERATIONS
+// sequential calls, so one stalled call previously hung the whole turn
+// indefinitely instead of failing into the 502 handler below.
+const GEMINI_TIMEOUT_MS = parseInt(process.env.GEMINI_TIMEOUT_MS || '20000', 10);
+
 // Browser-facing key for the Gemini Live WebSocket (browser → Gemini direct,
 // see lipsync-sdk.js). This is PUBLIC by construction — it leaves to any
 // visitor via /config — and must be a SEPARATE, quota-restricted key.
@@ -604,7 +610,7 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
       const chat = model.startChat();
       const ctx = { project };
 
-      let result = await chat.sendMessage(String(message).slice(0, 1000));
+      let result = await chat.sendMessage(String(message).slice(0, 1000), { timeout: GEMINI_TIMEOUT_MS });
       let calls = result.response.functionCalls();
       let iterations = 0;
 
@@ -621,7 +627,7 @@ router.post('/:publicId/study', validate(schemas.study), aiCostLimiter, async (r
           toolCalls.push({ name: call.name, args: call.args, result: output });
           responseParts.push({ functionResponse: { name: call.name, response: output } });
         }
-        result = await chat.sendMessage(responseParts);
+        result = await chat.sendMessage(responseParts, { timeout: GEMINI_TIMEOUT_MS });
         calls = result.response.functionCalls();
         iterations++;
       }

@@ -17,6 +17,15 @@ const MODEL      = process.env.EMBEDDING_MODEL      || 'gemini-embedding-2-previ
 const OUTPUT_DIM = parseInt(process.env.EMBEDDING_DIMENSIONS || '768', 10);
 const BASE       = 'https://generativelanguage.googleapis.com/v1beta';
 
+// embedOne() sits in front of every single /ask, /study, and /retrieve call
+// (RAG needs the query embedding before anything else can happen), and this
+// raw node-fetch call carried no timeout at all — a stalled embedding
+// request hung the entire chat turn indefinitely, before the model call
+// (see GEMINI_TIMEOUT_MS in answerQuestion.js/embed.js/tools.js) ever even
+// started. node-fetch v2's `timeout` option aborts and rejects the request
+// itself, no AbortController needed.
+const EMBED_TIMEOUT_MS = parseInt(process.env.GEMINI_TIMEOUT_MS || '20000', 10);
+
 if (!process.env.GEMINI_API_KEY) {
   logger.warn('GEMINI_API_KEY not set — embedding calls will fail until you set it (in .env or the admin panel)');
 }
@@ -42,6 +51,7 @@ async function embedOne(text, taskType = 'RETRIEVAL_DOCUMENT') {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    timeout: EMBED_TIMEOUT_MS,
   });
   if (!res.ok) {
     const txt = await res.text();
@@ -77,6 +87,7 @@ async function embedBatch(slice, taskType, apiKey) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      timeout: EMBED_TIMEOUT_MS,
     });
     if (res.ok) {
       const json = await res.json();
