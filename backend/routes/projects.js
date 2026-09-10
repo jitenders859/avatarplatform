@@ -364,6 +364,10 @@ router.get('/:id/sessions/:sessionId', authRequired, async (req, res) => {
   });
 });
 
+// Kept in sync with the same list in middleware/validate.js's leadPatch
+// schema, routes/apiData.js's GET /leads, and public/project.html's
+// LEAD_STATUSES — no shared constants module in this codebase (see VOICES
+// for the established precedent of duplicating small fixed enums instead).
 const LEAD_STATUSES = ['new', 'contacted', 'replied', 'meeting_scheduled', 'google_meet_scheduled', 'follow_up_later', 'rejected', 'enrolled'];
 
 router.get('/:id/leads', authRequired, async (req, res) => {
