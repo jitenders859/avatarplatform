@@ -619,3 +619,31 @@ test('projectActionPatch rejects renaming an action to a reserved built-in tool 
   const result = schemas.projectActionPatch.safeParse({ name: 'book_tour' });
   assert.equal(result.success, false);
 });
+
+test('leadPatch accepts a valid status-only patch', () => {
+  const result = schemas.leadPatch.safeParse({ status: 'contacted' });
+  assert.equal(result.success, true);
+});
+
+test('leadPatch rejects a status outside the 8 fixed values (no free text)', () => {
+  const result = schemas.leadPatch.safeParse({ status: 'interested' });
+  assert.equal(result.success, false);
+});
+
+test('leadPatch rejects an empty patch', () => {
+  const result = schemas.leadPatch.safeParse({});
+  assert.equal(result.success, false);
+});
+
+test('leadPatch accepts a valid ISO followUpDate and rejects a malformed one', () => {
+  const valid = schemas.leadPatch.safeParse({ followUpDate: '2026-10-01' });
+  assert.equal(valid.success, true);
+
+  const invalid = schemas.leadPatch.safeParse({ followUpDate: '10/01/2026' });
+  assert.equal(invalid.success, false);
+});
+
+test('leadPatch allows followUpDate to be explicitly cleared with null', () => {
+  const result = schemas.leadPatch.safeParse({ status: 'contacted', followUpDate: null });
+  assert.equal(result.success, true);
+});

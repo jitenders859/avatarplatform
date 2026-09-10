@@ -534,6 +534,15 @@ const schemas = {
     visibility: z.enum(['global', 'restricted'], { error: 'Invalid visibility' }).optional(),
   }).refine(d => Object.keys(d).length > 0, { message: 'Nothing to update' }),
 
+  leadPatch: z.object({
+    status: z.enum(
+      ['new', 'contacted', 'replied', 'meeting_scheduled', 'google_meet_scheduled',
+       'follow_up_later', 'rejected', 'enrolled'],
+      { error: 'Invalid status' }
+    ).optional(),
+    followUpDate: z.string().date('Invalid followUpDate').nullable().optional(),
+  }).refine(d => Object.keys(d).length > 0, { message: 'Nothing to update' }),
+
   characterAccessGrant: z.object({
     userId: z.string().min(1, 'userId is required'),
   }),
