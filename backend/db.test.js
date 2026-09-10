@@ -19,8 +19,10 @@ const stubFile = (rel, exports) => {
 };
 
 let queryCalls;
+let registeredTypeParsers;
 function stubPg() {
   queryCalls = [];
+  registeredTypeParsers = {};
   class FakePool {
     query(sql, params) {
       queryCalls.push({ sql, params });
@@ -29,7 +31,10 @@ function stubPg() {
     }
     on() {}
   }
-  stubFile('pg', { Pool: FakePool, types: { setTypeParser: () => {} } });
+  stubFile('pg', {
+    Pool: FakePool,
+    types: { setTypeParser: (oid, fn) => { registeredTypeParsers[oid] = fn; } },
+  });
 }
 
 function reloadDb() {
@@ -38,6 +43,13 @@ function reloadDb() {
   delete require.cache[require.resolve('./db')];
   return require('./db');
 }
+
+test('DATE columns (OID 1082) are registered to pass the raw YYYY-MM-DD text through, not parsed into a Date object', () => {
+  reloadDb();
+  const parseDate = registeredTypeParsers[1082];
+  assert.equal(typeof parseDate, 'function');
+  assert.equal(parseDate('2026-01-01'), '2026-01-01');
+});
 
 test('insert() serializes a number array as a pgvector literal string', async () => {
   const db = reloadDb();

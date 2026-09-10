@@ -23,6 +23,14 @@ const logger = require('./logger').child({ module: 'db' });
 // without this they come back as strings, breaking arithmetic comparisons.
 types.setTypeParser(20, val => parseInt(val, 10));
 
+// DATE (OID 1082) → pass the raw 'YYYY-MM-DD' text straight through instead
+// of pg's default `new Date(...)` parsing. A Date object round-trips through
+// JSON.stringify as a full timestamp ("2026-01-01T00:00:00.000Z"), which
+// breaks <input type="date">'s value attribute (must be exactly YYYY-MM-DD)
+// and adds needless timezone interpretation. leads.follow_up_date is this
+// schema's only DATE column; every consumer wants the plain date string.
+types.setTypeParser(1082, val => val);
+
 const ssl = process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false };
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
