@@ -420,6 +420,23 @@ router.get('/:id/leads/:leadId', authRequired, async (req, res) => {
   res.json({ lead: { ...lead, fieldLabels: fieldMap }, messages });
 });
 
+router.patch('/:id/leads/:leadId', authRequired, validate(schemas.leadPatch), async (req, res) => {
+  const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+  const lead = await db.findOne('leads', { id: req.params.leadId, projectId: project.id });
+  if (!lead) return res.status(404).json({ error: 'Lead not found' });
+
+  const patch = { ...req.body };
+  if (patch.status && patch.status !== 'follow_up_later') {
+    // Enforced server-side, not just hidden client-side, so a stale date
+    // can't linger through a client bug or a direct API call.
+    patch.followUpDate = null;
+  }
+
+  const updated = await db.update('leads', lead.id, patch);
+  res.json(updated);
+});
+
 router.post('/:id/webhook/test', authRequired, async (req, res) => {
   const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
   if (!project) return res.status(404).json({ error: 'Project not found' });

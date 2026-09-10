@@ -33,6 +33,7 @@ stubFile('../db', {
   findOne: async (table, filter) => {
     if (table === 'users' && filter.id === USER.id) return currentUser;
     if (table === 'projects' && filter.id === PROJECT_ROWS[0].id && filter.userId === USER.id) return PROJECT_ROWS[0];
+    if (table === 'leads') return leadRows.find(l => l.id === filter.id && l.projectId === filter.projectId) || null;
     return null;
   },
   findAll: async () => [], // no captureFields configured, for any project
@@ -46,7 +47,13 @@ stubFile('../db', {
     return null;
   },
   insert: async () => null,
-  update: async () => null,
+  update: async (table, id, patch) => {
+    if (table !== 'leads') return null;
+    const row = leadRows.find(l => l.id === id);
+    if (!row) return null;
+    Object.assign(row, patch, { updatedAt: Date.now() });
+    return row;
+  },
   remove: async () => 0,
   pool: { end: async () => {} },
 });
@@ -168,4 +175,90 @@ test('GET /api/projects/:id/leads: fieldLabels always includes name/email, even 
   assert.equal(body.status, 200);
   assert.equal(body.json.leads.length, 1);
   assert.deepEqual(body.json.leads[0].fieldLabels, { name: 'Name', email: 'Email' });
+});
+
+test('PATCH /api/projects/:id/leads/:leadId updates status and rejects an invalid one', async (t) => {
+  delete require.cache[require.resolve('./projects')];
+  const { router } = require('./projects');
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/api/projects', router);
+  app.use((err, req, res, _next) => res.status(500).json({ error: err.message }));
+
+  const server = app.listen(0);
+  leadRows = [{
+    id: 'lead1', projectId: PROJECT_ROWS[0].id, sessionId: 's1',
+    data: {}, complete: false, status: 'new', followUpDate: null, createdAt: Date.now(),
+  }];
+  t.after(() => { server.close(); leadRows = []; });
+  const port = server.address().port;
+  const token = jwt.sign({ uid: USER.id }, process.env.JWT_SECRET, { algorithm: 'HS256' });
+
+  const patch = (leadId, body) => new Promise((resolve, reject) => {
+    const data = JSON.stringify(body);
+    const req = http.request(
+      { host: '127.0.0.1', port, path: `/api/projects/${PROJECT_ROWS[0].id}/leads/${leadId}`, method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } },
+      (res) => {
+        let body = ''; res.on('data', c => body += c);
+        res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(body) }); } catch (e) { reject(e); } });
+      }
+    );
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+
+  const ok = await patch('lead1', { status: 'contacted' });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.json.status, 'contacted');
+
+  const bad = await patch('lead1', { status: 'interested' });
+  assert.equal(bad.status, 400);
+
+  const empty = await patch('lead1', {});
+  assert.equal(empty.status, 400);
+
+  const missing = await patch('does-not-exist', { status: 'contacted' });
+  assert.equal(missing.status, 404);
+});
+
+test('PATCH /api/projects/:id/leads/:leadId clears follow_up_date when status moves away from follow_up_later', async (t) => {
+  delete require.cache[require.resolve('./projects')];
+  const { router } = require('./projects');
+  const express = require('express');
+  const app = express();
+  app.use(express.json());
+  app.use('/api/projects', router);
+  app.use((err, req, res, _next) => res.status(500).json({ error: err.message }));
+
+  const server = app.listen(0);
+  leadRows = [{
+    id: 'lead2', projectId: PROJECT_ROWS[0].id, sessionId: 's1',
+    data: {}, complete: false, status: 'follow_up_later', followUpDate: '2026-01-01', createdAt: Date.now(),
+  }];
+  t.after(() => { server.close(); leadRows = []; });
+  const port = server.address().port;
+  const token = jwt.sign({ uid: USER.id }, process.env.JWT_SECRET, { algorithm: 'HS256' });
+
+  const patch = (body) => new Promise((resolve, reject) => {
+    const data = JSON.stringify(body);
+    const req = http.request(
+      { host: '127.0.0.1', port, path: `/api/projects/${PROJECT_ROWS[0].id}/leads/lead2`, method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } },
+      (res) => {
+        let body = ''; res.on('data', c => body += c);
+        res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(body) }); } catch (e) { reject(e); } });
+      }
+    );
+    req.on('error', reject);
+    req.write(data);
+    req.end();
+  });
+
+  const res = await patch({ status: 'rejected', followUpDate: '2026-03-01' });
+  assert.equal(res.status, 200);
+  assert.equal(res.json.status, 'rejected');
+  assert.equal(res.json.followUpDate, null);
 });
