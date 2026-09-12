@@ -76,32 +76,50 @@ avatar-platform/
 │   ├── scripts/
 │   │   ├── create-admin.js        # One-off: create an admin_users row
 │   │   └── migrate-legacy-characters.js
+│   ├── ws/
+│   │   ├── handoff.js             # Real-time AI→human live-chat handoff (WebSocket)
+│   │   ├── notify.js              # Owner desktop-notification push (handoff/leads)
+│   │   └── presence.js            # Dashboard team-member online/offline presence
 │   ├── routes/
-│   │   ├── auth.js                # Signup, login, reset password, /me
+│   │   ├── auth.js                # Signup, login, reset password, email verification, /me
+│   │   ├── ssoAuth.js             # SSO (OIDC) login
 │   │   ├── projects.js            # Project CRUD, sessions, leads
 │   │   ├── files.js               # File upload, URL ingest, chunks viewer
-│   │   ├── embed.js               # Public embed: config, retrieve, log, lead
+│   │   ├── embed.js               # Public embed: config, retrieve, log, lead, ask/study
 │   │   ├── captureFields.js       # Lead capture field management
 │   │   ├── categories.js          # Chatbot categories: create + assign chatbots
 │   │   ├── apiData.js             # Read-only export API: categories/chatbots/messages/urls/leads across the account
 │   │   ├── quizQuestions.js       # Owner-authored quiz question bank
 │   │   ├── flashcards.js          # Owner-authored flashcard bank
 │   │   ├── videoResources.js      # Owner-curated video recommendations
-│   │   ├── analytics.js           # SQL-aggregate analytics
+│   │   ├── projectActions.js      # Owner-defined custom AI actions (project_actions)
+│   │   ├── voiceClone.js          # ElevenLabs voice cloning (Pro/Business)
+│   │   ├── googleCalendarAuth.js  # Google Calendar OAuth for tour booking
+│   │   ├── whatsapp.js            # WhatsApp Business Cloud API channel adapter
+│   │   ├── analytics.js           # SQL-aggregate analytics (funnel, session duration)
 │   │   ├── billing.js             # Stripe checkout, portal, webhook
 │   │   ├── contact.js             # Public contact-form submission
 │   │   ├── admin.js               # Admin: users, tiers, audit log
 │   │   ├── adminCharacters.js     # Admin: character library upload/versions
-│   │   └── adminCoupons.js        # Admin: coupon CRUD + redemptions
+│   │   ├── adminCoupons.js        # Admin: coupon CRUD + redemptions
+│   │   ├── adminSettings.js       # Admin: runtime model API keys/names (no redeploy)
+│   │   ├── adminFeatureFlags.js   # Admin: boolean feature-flag CRUD
+│   │   ├── adminEmailTemplates.js # Admin: editable transactional email templates
+│   │   ├── adminAnalytics.js      # Admin: platform-wide analytics rollup (all tenants)
+│   │   ├── adminUsage.js          # Admin: aggregate usage/cost dashboard (all users)
+│   │   ├── adminSessions.js       # Admin: chat session/transcript access (all tenants)
+│   │   ├── adminWebhooks.js       # Admin: webhook delivery visibility (all tenants)
+│   │   └── adminHealth.js         # Admin: DB/rate-limit-store/webhook health snapshot
 │   └── services/
 │       ├── chunk.js               # Semantic paragraph-aware chunking
 │       ├── embed.js               # Gemini embedding API (single + batch, concurrency-limited)
 │       ├── extract.js             # Text extraction (PDF, DOCX, TXT, images…)
 │       ├── process.js             # extract → chunk → embed → persist pipeline
 │       ├── processMode.js         # inline vs. Inngest background-processing mode
+│       ├── answerQuestion.js      # Core RAG Q&A logic shared by /ask and voice tool-calling
 │       ├── stripe.js              # Stripe client factory
 │       ├── url.js                 # URL fetcher + HTML cleaner
-│       ├── safeFetch.js           # SSRF-safe fetch (webhooks, URL ingestion)
+│       ├── safeFetch.js           # SSRF-safe fetch (webhooks, URL ingestion, web search)
 │       ├── rateLimitStore.js      # Shared Redis-backed express-rate-limit store
 │       ├── usage.js               # Plan-limit checks + usage tracking
 │       ├── vector.js              # pgvector cosine search
@@ -109,13 +127,31 @@ avatar-platform/
 │       ├── tools.js               # Gemini function-calling tool definitions
 │       ├── storage.js             # Supabase Storage signed URLs
 │       ├── email.js               # SMTP transactional email (password reset, contact)
+│       ├── emailTemplates.js      # DB-backed, admin-editable email template rendering
 │       ├── csvImport.js           # Quiz/flashcard CSV import parsing
 │       ├── coupons.js             # Coupon validation + Stripe integration
 │       ├── auditLog.js            # Admin action audit trail
 │       ├── accountDelete.js       # Full account + data deletion
 │       ├── learner.js             # Anonymous learner-key resolution (quiz/flashcard progress)
 │       ├── figures.js             # Figure/page-image resolution for RAG answers
-│       └── pageImages.js          # PDF page-image rendering (@napi-rs/canvas)
+│       ├── pageImages.js          # PDF page-image rendering (@napi-rs/canvas)
+│       ├── analytics.js           # Shared analytics aggregates (funnel, session duration)
+│       ├── tts.js                 # TTS-only voice engines (Fish Audio, Cartesia, …)
+│       ├── inworldTts.js          # Inworld Realtime TTS-2 (admin-test route only)
+│       ├── elevenlabsVoice.js     # ElevenLabs voice cloning
+│       ├── searchWeb.js           # Serper.dev-backed web search tool
+│       ├── googleCalendar.js      # Google Calendar tour-booking integration
+│       ├── tourSlots.js           # Pure tour-booking slot computation
+│       ├── hours.js               # Business-hours check for "away message"
+│       ├── sentiment.js           # Conversation sentiment tagging
+│       ├── handoffTag.js          # Shared [[REQUEST_HUMAN]] AI auto-escalation sentinel
+│       ├── ownerAlerts.js         # Owner notifications (handoff, leads, usage limits)
+│       ├── webhookDelivery.js     # Webhook delivery with retry-with-backoff (Inngest)
+│       ├── featureFlags.js        # Admin-defined boolean feature flags
+│       ├── settings.js            # Admin-configurable runtime model settings
+│       ├── oidc.js                # OIDC Authorization Code + PKCE client (SSO)
+│       ├── sms.js                 # Twilio SMS wrapper (usage-limit alerts)
+│       └── riveValidation.js      # Server-side sanity check for uploaded .riv files
 ├── public/
 │   ├── lipsync-sdk.js             # Client SDK: Gemini Live + Rive lip-sync
 │   ├── embed-loader.js            # (in js/) host-page widget loader — see below
@@ -126,7 +162,11 @@ avatar-platform/
 │   ├── billing.html                # Plan + subscription management
 │   ├── account.html               # Profile settings
 │   ├── admin.html                 # Admin panel shell
-│   ├── docs/                      # Docs site (Introduction, SDK pages, integration guides)
+│   ├── terms.html                 # Terms of Service
+│   ├── privacy.html               # Privacy Policy
+│   ├── contact.html               # Contact form + optional cal.com booking
+│   ├── docs/                      # Docs site — Introduction, 4 SDK pages, 6 voice-engine/
+│   │                               #   integration guides, prefetching, troubleshooting
 │   ├── css/
 │   │   ├── app.css                # Marketing/app theme (light + dark)
 │   │   ├── embed.css              # Embed widget styles
@@ -134,11 +174,13 @@ avatar-platform/
 │   │   └── admin.css              # Admin panel density/table overrides
 │   ├── js/
 │   │   ├── api.js                 # Frontend API helpers + Auth + topnav
-│   │   ├── toast.js               # Shared toast implementation (app + admin)
-│   │   ├── theme.js               # Light/dark theme toggle
-│   │   ├── i18n.js / i18n/*.js    # Client-side i18n (en/es/fr/ar/hi)
-│   │   ├── embed-loader.js        # `<script data-bot>` host-page loader
-│   │   └── admin/                 # Admin panel tab modules (users, characters, coupons, tiers, audit)
+│   │   ├── toast.js                # Shared toast implementation (app + admin)
+│   │   ├── theme.js                # Light/dark theme toggle
+│   │   ├── i18n.js / i18n/*.js     # Client-side i18n (en/es/fr/ar/hi)
+│   │   ├── embed-loader.js         # `<script data-bot>` host-page loader
+│   │   └── admin/                  # Admin panel tab modules: users, characters, coupons,
+│   │                                # tiers, audit, settings, feature flags, email templates,
+│   │                                # webhooks, health, sessions, analytics, usage, billing
 │   └── assets/
 │       └── characters/            # *.riv character files (not included)
 ├── packages/                      # Published npm SDKs — see "SDK packages" below

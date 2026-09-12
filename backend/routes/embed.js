@@ -15,7 +15,7 @@ const { answerQuestion } = require('../services/answerQuestion');
 const { resolveFigures } = require('../services/figures');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-const { projectCache, invalidateProjectCache } = require('../cache');
+const { projectCache } = require('../cache');
 const { validate, schemas } = require('../middleware/validate');
 const { toolsForTier, projectActionTools, tourBookingTools } = require('../services/tools');
 const { synthesizeSpeech, TtsError } = require('../services/tts');
@@ -129,8 +129,6 @@ async function pageImagesForHits(hits) {
   }
   return map;
 }
-
-module.exports.invalidateProjectCache = invalidateProjectCache;
 
 // Admin kill switch (projects.admin_suspended — see backend/routes/admin.js
 // PATCH /projects/:id) for one specific chatbot, short of suspending the
