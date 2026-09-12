@@ -19,6 +19,22 @@
  */
 require('dotenv').config();
 
+// Error monitoring — optional. Without SENTRY_DSN this stays a no-op
+// (Sentry === null below), matching every other optional integration in
+// this file (Stripe, SMTP, Twilio): the app runs fine without it, but
+// production errors are otherwise visible only in logs you happen to be
+// tailing. Initialized before every other require so it can instrument
+// them (Sentry's Node SDK patches http/pg/etc. at require time).
+let Sentry = null;
+if (process.env.SENTRY_DSN) {
+  Sentry = require('@sentry/node');
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: 0.1,
+  });
+}
+
 const fs = require('fs');
 const express = require('express');
 // Patches Express to forward rejected promises from async route handlers to
@@ -252,7 +268,7 @@ app.use(express.static(PUBLIC_DIR, {
   },
 }));
 
-const PAGES = ['login', 'signup', 'dashboard', 'project', 'embed', 'billing', 'analytics', 'pricing', 'characters', 'account', 'forgot-password', 'reset-password', 'verify-email', 'terms', 'contact', 'admin'];
+const PAGES = ['login', 'signup', 'dashboard', 'project', 'embed', 'billing', 'analytics', 'pricing', 'characters', 'account', 'forgot-password', 'reset-password', 'verify-email', 'terms', 'privacy', 'contact', 'admin'];
 for (const page of PAGES) {
   app.get(`/${page}`, (_req, res) => res.sendFile(path.join(PUBLIC_DIR, `${page}.html`)));
 }
@@ -309,6 +325,7 @@ app.use((err, req, res, _next) => {
     return res.status(err.status || 400).json({ error: err.message });
   }
   req.log.error({ err }, 'unhandled error');
+  if (Sentry) Sentry.captureException(err);
   res.status(500).json({ error: 'Internal server error', requestId: req.id });
 });
 
@@ -343,6 +360,11 @@ if (!process.env.VERCEL) {
     } else {
       logger.info('Stripe configured');
     }
+    if (!Sentry) {
+      logger.warn('SENTRY_DSN not set — unhandled errors are only visible in logs, not reported anywhere');
+    } else {
+      logger.info('Sentry error monitoring configured');
+    }
   });
 
   const handoffWss = attachHandoffWs(server);
@@ -366,12 +388,14 @@ if (!process.env.VERCEL) {
   // (or a transient DB blip) doesn't take down every tenant's chatbot.
   process.on('unhandledRejection', err => {
     logger.error({ err }, 'unhandled rejection');
+    if (Sentry) Sentry.captureException(err);
   });
   // An uncaught exception means something threw outside any promise/async
   // context — state may be inconsistent, so exit and let the process manager
   // restart rather than keep serving from a possibly-corrupted process.
   process.on('uncaughtException', err => {
     logger.error({ err }, 'uncaught exception — exiting');
+    if (Sentry) Sentry.captureException(err);
     process.exit(1);
   });
 }
