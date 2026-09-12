@@ -320,6 +320,15 @@ router.delete('/:id', authRequired, async (req, res) => {
   const project = await db.findOne('projects', { id: req.params.id, userId: req.user.id });
   if (!project) return res.status(404).json({ error: 'Project not found' });
   // FK CASCADE handles files, chunks, sessions, messages, capture_fields, leads
+  // DB rows, but Supabase Storage objects have no FK to cascade from — read
+  // the file list BEFORE the cascade wipes it and clean up the same two
+  // paths the single-file delete route (files.js DELETE /:fileId) does, or
+  // every deleted project permanently orphans its uploads/crops in Storage.
+  const files = await db.findAll('files', { projectId: project.id });
+  await Promise.all(files.map(async (file) => {
+    if (file.storageKey) await storage.removeObject(file.storageKey).catch(() => {});
+    await storage.removePrefix(`${project.id}/pages/${file.id}`).catch(() => {});
+  }));
   await db.remove('projects', { id: project.id });
   invalidateProjectCache(project.publicId);
   res.json({ ok: true });

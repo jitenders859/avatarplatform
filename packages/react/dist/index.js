@@ -1,9 +1,10 @@
 // src/AvatarWidget.tsx
 import { useEffect } from "react";
-import { mountAvatarWidget } from "@avatar-platform/js";
+import { mountAvatarWidget, unmountAvatarWidget } from "@avatar-platform/js";
 function AvatarWidget({ serverUrl, botId }) {
   useEffect(() => {
     mountAvatarWidget({ serverUrl, botId });
+    return () => unmountAvatarWidget(botId);
   }, [serverUrl, botId]);
   return null;
 }

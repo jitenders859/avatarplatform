@@ -21,7 +21,8 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 var index_exports = {};
 __export(index_exports, {
   askAvatar: () => askAvatar,
-  mountAvatarWidget: () => mountAvatarWidget
+  mountAvatarWidget: () => mountAvatarWidget,
+  unmountAvatarWidget: () => unmountAvatarWidget
 });
 module.exports = __toCommonJS(index_exports);
 
@@ -34,6 +35,11 @@ function mountAvatarWidget({ serverUrl, botId }) {
   script.dataset.bot = botId;
   script.defer = true;
   document.body.appendChild(script);
+}
+function unmountAvatarWidget(botId) {
+  if (typeof document === "undefined") return;
+  window.AvatarPlatform?.unmount?.(botId);
+  document.querySelector(`script[data-bot="${botId}"]`)?.remove();
 }
 
 // src/ask.ts
@@ -52,6 +58,7 @@ async function askAvatar({ serverUrl, botId, question, sessionId }) {
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   askAvatar,
-  mountAvatarWidget
+  mountAvatarWidget,
+  unmountAvatarWidget
 });
 //# sourceMappingURL=index.cjs.map

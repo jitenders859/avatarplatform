@@ -20,7 +20,7 @@ const { fetchUrl } = require('./url');
 const { chunkText, chunkPages } = require('./chunk');
 const { embedMany, MODEL: EMBED_MODEL, OUTPUT_DIM: EMBED_DIM } = require('./embed');
 const { processPdfPageImages } = require('./pageImages');
-const { checkLimit, trackEmbeddingChars } = require('./usage');
+const { checkLimit } = require('./usage');
 const logger = require('../logger').child({ module: 'services/process' });
 
 function setStage(fileId, stage, pct) {
@@ -34,7 +34,25 @@ async function processFile(fileRecord) {
   await setStage(fileId, 'extracting', 10);
 
   try {
-    await db.update('files', fileId, { status: 'processing', error: null });
+    // Atomic claim, not a blind update: /reindex and /reprocess (and a
+    // second click of either) can both flip a file to 'pending' and queue
+    // a job for it before the first job's own transition below lands,
+    // leaving two processFile() runs racing on the same file — the loser's
+    // `db.remove('chunks', {fileId})` + insertMany can interleave with the
+    // winner's and double the file's chunks (and usage). The row lock on
+    // this UPDATE serializes concurrent claims the same way the sessions
+    // handoff 'claim' in backend/ws/handoff.js does: only the run that
+    // actually flips status away from its pre-claim value gets a row back.
+    const claimed = await db.query(
+      `UPDATE files SET status = 'processing', error = NULL, updated_at = $1
+         WHERE id = $2 AND status != 'processing'
+       RETURNING id`,
+      [Date.now(), fileId]
+    );
+    if (!claimed.length) {
+      logger.warn({ fileId }, 'processFile skipped — another run is already processing this file');
+      return;
+    }
 
     // 1. Extract or fetch content
     let extractedText;
@@ -107,11 +125,6 @@ async function processFile(fileRecord) {
     }));
     await db.insertMany('chunks', chunkRows);
 
-    // Track usage
-    try {
-      await trackEmbeddingChars(fileRecord.userId, cleaned.length);
-    } catch (_) { /* best effort */ }
-
     await db.update('files', fileId, {
       status: 'ready',
       chunkCount: chunkObjs.length,
@@ -135,6 +148,13 @@ async function processFile(fileRecord) {
         logger.warn({ fileId, err: e.message }, 'page image processing failed, file remains ready without it');
       }
     }
+
+    // Caller tracks usage, not this function — see backend/inngest/functions.js,
+    // which records it as its own memoized step so a step-level retry that
+    // re-runs this whole pipeline (e.g. the process crashing right after
+    // this function returns, before Inngest can record the step as done)
+    // can't double-count the same characters twice.
+    return cleaned.length;
   } catch (err) {
     logger.error({ fileId, err: err.message }, 'processing failed');
     await setStage(fileId, 'failed', 0);
@@ -142,6 +162,7 @@ async function processFile(fileRecord) {
       status: 'failed',
       error: err.message || String(err),
     });
+    return null;
   }
 }
 

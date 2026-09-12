@@ -6,7 +6,7 @@ const storage = require('../services/storage');
 const inngest = require('../inngest/client');
 const { authRequired } = require('../middleware/auth');
 const { classify } = require('../services/extract');
-const { checkLimit } = require('../services/usage');
+const { checkLimit, trackEmbeddingChars } = require('../services/usage');
 const { validate, schemas } = require('../middleware/validate');
 const { processFile } = require('../services/process');
 const { resolveProcessMode } = require('../services/processMode');
@@ -23,7 +23,13 @@ function queueProcessing(fileId) {
     setImmediate(async () => {
       const fileRecord = await db.findOne('files', { id: fileId });
       if (!fileRecord) return;
-      await processFile(fileRecord);
+      // processFile() no longer tracks usage itself (see its own comment
+      // and backend/inngest/functions.js) — this inline path runs exactly
+      // once per call with no retry, so tracking it right here is safe.
+      const charsProcessed = await processFile(fileRecord);
+      if (charsProcessed) {
+        try { await trackEmbeddingChars(fileRecord.userId, charsProcessed); } catch (_) { /* best effort */ }
+      }
     });
     return Promise.resolve();
   }

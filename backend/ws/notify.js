@@ -42,8 +42,21 @@ async function fire(sessionId, project) {
     );
     await sendHandoffRequestEmail({ project, previewText: firstMessage?.text || '', recipients });
     lastSentByProject.set(project.id, Date.now());
+    pruneLastSent();
   } catch (e) {
     logger.error({ err: e.message, sessionId }, 'handoff request email failed');
+  }
+}
+
+// lastSentByProject otherwise grows one entry per distinct project for
+// the life of the process. Entries older than the rate-limit window are
+// dead weight (a fresh request past that point doesn't consult them
+// meaningfully differently than an absent entry), so sweep them out
+// whenever we add a new one.
+function pruneLastSent() {
+  const cutoff = Date.now() - RATE_LIMIT_MS;
+  for (const [projectId, ts] of lastSentByProject) {
+    if (ts < cutoff) lastSentByProject.delete(projectId);
   }
 }
 

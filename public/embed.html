@@ -2024,6 +2024,12 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
     return new Promise((resolve) => {
       let settled = false;
       function onMessage(e) {
+        // e.source (not just e.data.source, which any script can spoof)
+        // must be our actual immediate parent — otherwise a sibling
+        // iframe on the same host page (e.g. one that obtained a
+        // reference via window.parent.frames) could feed forged page
+        // content straight into the AI's system prompt below.
+        if (e.source !== parent) return;
         const data = e.data;
         if (!data || data.source !== 'avatar-platform-host' || data.type !== 'page-content') return;
         if (settled) return;
@@ -2102,6 +2108,9 @@ GREETING INSTRUCTION: When (and only when) you receive the exact message "${GREE
 
   // ── Commands from embed-loader.js ──────────────────────────────
   window.addEventListener('message', (e) => {
+    // Same rationale as requestPageContext's onMessage above — only trust
+    // commands that actually came from the immediate parent frame.
+    if (e.source !== parent) return;
     if (!e.data || e.data.source !== 'avatar-platform-host') return;
     if (e.data.type === 'open' && !panelOpen) openPanel();
     if (e.data.type === 'close' && panelOpen) closePanel();

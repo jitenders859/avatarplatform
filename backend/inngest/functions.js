@@ -12,7 +12,7 @@ const db = require('../db');
 const { processFile } = require('../services/process');
 const { attemptDelivery } = require('../services/webhookDelivery');
 const { tagRecentSessions } = require('../services/sentiment');
-const { runUsageAlertSweep } = require('../services/usage');
+const { runUsageAlertSweep, trackEmbeddingChars } = require('../services/usage');
 const logger = require('../logger').child({ module: 'inngest' });
 
 // The whole extract→chunk→embed→save pipeline runs as one step rather than
@@ -21,19 +21,38 @@ const logger = require('../logger').child({ module: 'inngest' });
 // Inngest step retries would just retry a pipeline that already handled its
 // own failure — one step keeps Inngest's retry semantics (on top-level
 // throw) meaningful instead of overlapping with that internal handling.
+//
+// Usage tracking is deliberately its OWN step, run after 'process' rather
+// than inside it. Steps are Inngest's unit of memoization: if the process
+// crashes right after 'process' finishes but before Inngest durably records
+// that success, a retry re-invokes 'process' from scratch — fine for
+// extraction/chunking/embedding (all idempotent, see process.js's own
+// chunk-replace and atomic status claim), but trackEmbeddingChars is a pure
+// additive counter, so re-running it would double-charge the user's usage
+// for the same characters. Keeping it in its own memoized step means a
+// retry either replays 'process'`s cached result (no re-tracking) or, if
+// 'process' itself is genuinely re-run, still only tracks usage once this
+// step's own memoized outcome is recorded.
 const processFileJob = inngest.createFunction(
   { id: 'process-file', retries: 3, triggers: { event: 'file/process' } },
   async ({ event, step }) => {
     const { fileId } = event.data;
-    await step.run('process', async () => {
+    const result = await step.run('process', async () => {
       const fileRecord = await db.findOne('files', { id: fileId });
       if (!fileRecord) {
         logger.warn({ fileId }, 'file record not found, skipping job');
         return { skipped: true };
       }
-      await processFile(fileRecord);
-      return { fileId };
+      const charsProcessed = await processFile(fileRecord);
+      return { fileId, charsProcessed };
     });
+
+    if (result.charsProcessed) {
+      await step.run('track-usage', async () => {
+        const fileRecord = await db.findOne('files', { id: fileId });
+        if (fileRecord) await trackEmbeddingChars(fileRecord.userId, result.charsProcessed);
+      });
+    }
   }
 );
 

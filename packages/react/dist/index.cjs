@@ -32,6 +32,7 @@ var import_js = require("@avatar-platform/js");
 function AvatarWidget({ serverUrl, botId }) {
   (0, import_react.useEffect)(() => {
     (0, import_js.mountAvatarWidget)({ serverUrl, botId });
+    return () => (0, import_js.unmountAvatarWidget)(botId);
   }, [serverUrl, botId]);
   return null;
 }

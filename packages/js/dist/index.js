@@ -8,6 +8,11 @@ function mountAvatarWidget({ serverUrl, botId }) {
   script.defer = true;
   document.body.appendChild(script);
 }
+function unmountAvatarWidget(botId) {
+  if (typeof document === "undefined") return;
+  window.AvatarPlatform?.unmount?.(botId);
+  document.querySelector(`script[data-bot="${botId}"]`)?.remove();
+}
 
 // src/ask.ts
 async function askAvatar({ serverUrl, botId, question, sessionId }) {
@@ -24,6 +29,7 @@ async function askAvatar({ serverUrl, botId, question, sessionId }) {
 }
 export {
   askAvatar,
-  mountAvatarWidget
+  mountAvatarWidget,
+  unmountAvatarWidget
 };
 //# sourceMappingURL=index.js.map

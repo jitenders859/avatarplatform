@@ -9,8 +9,10 @@ interface AvatarWidgetProps {
 /**
  * Renders nothing itself — mounts the AvatarPlatform embed widget as a
  * side effect. Place once near your app root so it persists across route
- * changes; unmounting this component does not remove the widget (see
- * @avatar-platform/js's mountAvatarWidget for why).
+ * changes. The effect cleanup unmounts the widget on unmount AND before
+ * every re-run (including a botId change) — without it, switching botId
+ * left the previous bot's iframe (and the AudioContext/Gemini Live socket
+ * running inside it) mounted forever alongside the new one.
  */
 declare function AvatarWidget({ serverUrl, botId }: AvatarWidgetProps): null;
 

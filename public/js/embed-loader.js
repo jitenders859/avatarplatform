@@ -384,10 +384,19 @@
   function matchesThisBot(e) {
     return !e.detail || e.detail.botId == null || e.detail.botId === publicId;
   }
-  document.addEventListener('ap:open',  (e) => { if (matchesThisBot(e)) requestOpen(); });
-  document.addEventListener('ap:close', (e) => { if (matchesThisBot(e)) requestClose(); });
-  document.addEventListener('ap:hide',  (e) => { if (matchesThisBot(e)) setWidgetVisible(false); });
-  document.addEventListener('ap:show',  (e) => { if (matchesThisBot(e)) setWidgetVisible(true); });
+  // Named (not inline arrows) so destroy() below can remove exactly these
+  // listeners — without that, a host app that mounts/unmounts this widget
+  // repeatedly (see packages/react and packages/vue's AvatarWidget, which
+  // remount on every botId change) would accumulate one full set of these
+  // per mount for the life of the page.
+  const onApOpen  = (e) => { if (matchesThisBot(e)) requestOpen(); };
+  const onApClose = (e) => { if (matchesThisBot(e)) requestClose(); };
+  const onApHide  = (e) => { if (matchesThisBot(e)) setWidgetVisible(false); };
+  const onApShow  = (e) => { if (matchesThisBot(e)) setWidgetVisible(true); };
+  document.addEventListener('ap:open',  onApOpen);
+  document.addEventListener('ap:close', onApClose);
+  document.addEventListener('ap:hide',  onApHide);
+  document.addEventListener('ap:show',  onApShow);
 
   // Saved shape: { hAnchor: 'left'|'right', hOffset, vAnchor: 'top'|'bottom', vOffset }.
   // Keyed off hAnchor only (not the full configured position) — if the owner
@@ -410,7 +419,14 @@
   }
 
   // ── Message bus ────────────────────────────────────────────────
-  window.addEventListener('message', (e) => {
+  const onWindowMessage = (e) => {
+    // ORIGIN is derived from this very script's own src, i.e. the same
+    // host embed.html is served from — and iframe.contentWindow pins it
+    // to this specific bot's iframe. Without both checks, any other
+    // script on the host page could forge messages (e.g. fake ap:message/
+    // ap:response events dispatched into the page's own DOM below) just
+    // by matching the data.source/publicId string fields.
+    if (e.origin !== ORIGIN || !iframe || e.source !== iframe.contentWindow) return;
     const data = e.data;
     if (!data || data.source !== 'avatar-platform' || data.publicId !== publicId) return;
     if (!iframe) return;
@@ -500,17 +516,49 @@
       iframe.style.width  = CLOSED_W + 'px';
       iframe.style.height = CLOSED_H + 'px';
     }
-  });
+  };
+  window.addEventListener('message', onWindowMessage);
+
+  // ── Teardown ─────────────────────────────────────────────────
+  // Removes everything this script instance created: the iframe (removing
+  // it lets the browser tear down its whole document itself — any live
+  // AudioContext/Gemini Live WebSocket embed.html opened goes with it, no
+  // explicit in-iframe cleanup needed), the placeholder FAB, and every
+  // listener registered above. Exposed via window.AvatarPlatform.unmount()
+  // so host frameworks can actually clean up on remount — see
+  // packages/react and packages/vue's AvatarWidget, which previously
+  // called mount() again on every botId change with no way to remove the
+  // PREVIOUS bot's iframe/AudioContext/socket first.
+  function destroy() {
+    window.removeEventListener('message', onWindowMessage);
+    document.removeEventListener('ap:open',  onApOpen);
+    document.removeEventListener('ap:close', onApClose);
+    document.removeEventListener('ap:hide',  onApHide);
+    document.removeEventListener('ap:show',  onApShow);
+    if (iframe && iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    if (placeholder && placeholder.parentNode) placeholder.parentNode.removeChild(placeholder);
+    if (SCRIPT.parentNode) SCRIPT.parentNode.removeChild(SCRIPT);
+    iframe = null;
+    placeholder = null;
+  }
+  window.__avatarPlatformWidgets = window.__avatarPlatformWidgets || new Map();
+  window.__avatarPlatformWidgets.set(publicId, destroy);
 
   // ── window.AvatarPlatform (public/docs/prefetching.html) ───────────
   // A page-level namespace, not scoped to this one <script data-bot> tag,
   // so it's guarded against redefinition if more than one embed-loader
   // script tag is present (multiple bots on one page). Whichever tag loads
   // first wins — ORIGIN is the same for all of them on a real deployment,
-  // since they all point at the same AvatarPlatform host.
+  // since they all point at the same AvatarPlatform host. unmount() itself
+  // just reads the shared __avatarPlatformWidgets map above, so it works
+  // for any botId regardless of which tag's copy of this code defines it.
   if (!window.AvatarPlatform) {
     const preloadCache = new Map();
     window.AvatarPlatform = {
+      unmount(botId) {
+        const fn = window.__avatarPlatformWidgets && window.__avatarPlatformWidgets.get(botId);
+        if (fn) { fn(); window.__avatarPlatformWidgets.delete(botId); }
+      },
       preload(botId) {
         if (!preloadCache.has(botId)) {
           preloadCache.set(botId, fetch(`${ORIGIN}/embed/${encodeURIComponent(botId)}/config`)

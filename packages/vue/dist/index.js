@@ -1,6 +1,6 @@
 // src/AvatarWidget.ts
-import { defineComponent, onMounted } from "vue";
-import { mountAvatarWidget } from "@avatar-platform/js";
+import { defineComponent, onMounted, onBeforeUnmount, watch } from "vue";
+import { mountAvatarWidget, unmountAvatarWidget } from "@avatar-platform/js";
 var AvatarWidget = defineComponent({
   name: "AvatarWidget",
   props: {
@@ -13,6 +13,14 @@ var AvatarWidget = defineComponent({
     onMounted(() => {
       mountAvatarWidget({ serverUrl: props.serverUrl, botId: props.botId });
     });
+    watch(
+      () => [props.serverUrl, props.botId],
+      ([newServerUrl, newBotId], [, oldBotId]) => {
+        if (oldBotId) unmountAvatarWidget(oldBotId);
+        mountAvatarWidget({ serverUrl: newServerUrl, botId: newBotId });
+      }
+    );
+    onBeforeUnmount(() => unmountAvatarWidget(props.botId));
     return () => null;
   }
 });

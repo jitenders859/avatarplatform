@@ -40,6 +40,14 @@ var AvatarWidget = (0, import_vue.defineComponent)({
     (0, import_vue.onMounted)(() => {
       (0, import_js.mountAvatarWidget)({ serverUrl: props.serverUrl, botId: props.botId });
     });
+    (0, import_vue.watch)(
+      () => [props.serverUrl, props.botId],
+      ([newServerUrl, newBotId], [, oldBotId]) => {
+        if (oldBotId) (0, import_js.unmountAvatarWidget)(oldBotId);
+        (0, import_js.mountAvatarWidget)({ serverUrl: newServerUrl, botId: newBotId });
+      }
+    );
+    (0, import_vue.onBeforeUnmount)(() => (0, import_js.unmountAvatarWidget)(props.botId));
     return () => null;
   }
 });

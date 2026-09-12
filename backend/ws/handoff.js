@@ -16,6 +16,8 @@ const presence = require('./presence');
 const { scheduleHandoffEmail, cancelHandoffEmail } = require('./notify');
 
 const JWT_SECRET = process.env.JWT_SECRET;
+const APP_ORIGIN = process.env.APP_URL || 'http://localhost:8080';
+const HEARTBEAT_MS = 30_000;
 
 async function findProjectByPublicId(publicId) {
   if (projectCache.has(publicId)) return projectCache.get(publicId);
@@ -33,6 +35,28 @@ function attach(server) {
   // anonymous visitor could send arbitrarily large frames repeatedly.
   // 8KB comfortably covers a 2000-char chat message plus JSON overhead.
   const wss = new WebSocketServer({ noServer: true, maxPayload: 8 * 1024 });
+
+  // Liveness sweep: a socket that disappears without a clean TCP close
+  // (sleep, NAT/proxy dropping an idle connection) never fires 'close',
+  // so visitorSockets/presence entries for it would otherwise linger
+  // indefinitely. ws's own connection tracking (wss.clients) covers every
+  // socket from both upgrade paths since they share this one server.
+  wss.on('connection', (ws) => {
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+  });
+  const heartbeat = setInterval(() => {
+    for (const ws of wss.clients) {
+      if (ws.isAlive === false) { ws.terminate(); continue; }
+      ws.isAlive = false;
+      try { ws.ping(); } catch { /* socket already going away */ }
+    }
+  }, HEARTBEAT_MS);
+  // unref so this timer alone never keeps the process (or, in tests, the
+  // `node --test` runner) alive — it should only run for as long as
+  // something else is already keeping the event loop open.
+  heartbeat.unref();
+  wss.on('close', () => clearInterval(heartbeat));
 
   server.on('upgrade', (req, socket, head) => {
     let url;
@@ -102,10 +126,27 @@ async function handleVisitorUpgrade(wss, req, socket, head, publicId, sessionIdP
       if (visitorSockets.get(session.id) === ws) visitorSockets.delete(session.id);
       cancelHandoffEmail(session.id);
     });
+    // Without this, an unhandled 'error' on an EventEmitter is a thrown
+    // exception — and server.js's uncaughtException handler exits the
+    // whole process, taking down every tenant's sessions over one
+    // visitor's dropped connection. 'close' still fires after 'error' and
+    // does the actual cleanup above.
+    ws.on('error', (err) => {
+      logger.error({ err: err.message, sessionId: session.id }, 'visitor socket error');
+    });
   });
 }
 
 async function handleDashboardUpgrade(wss, req, socket, head, projectId, token) {
+  // Unlike /ws/embed (deliberately embedded on arbitrary third-party
+  // pages), the dashboard socket is only ever opened from our own
+  // frontend or the companion Chrome extension (extension/background.js,
+  // which presents a chrome-extension:// origin that ordinary web content
+  // cannot spoof) — reject anything else.
+  const origin = req.headers.origin;
+  if (origin && origin !== APP_ORIGIN && !origin.startsWith('chrome-extension://')) {
+    return reject(socket, 403, 'Forbidden');
+  }
   if (!token) return reject(socket, 401, 'Unauthorized');
 
   let payload;
@@ -142,6 +183,9 @@ async function handleDashboardUpgrade(wss, req, socket, head, projectId, token) 
         logger.error({ err: e.message, projectId }, 'dashboard message handling failed'));
     });
     ws.on('close', () => presence.removeDashboardSocket(projectId, entry));
+    ws.on('error', (err) => {
+      logger.error({ err: err.message, projectId, userId: user.id }, 'dashboard socket error');
+    });
   });
 }
 

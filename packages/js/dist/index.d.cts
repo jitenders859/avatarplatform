@@ -27,14 +27,20 @@ interface AskAvatarResult {
  * embed-loader.js script tag (same mechanism as the plain HTML snippet
  * from the dashboard's Embed tab). Idempotent per botId — calling this
  * twice with the same botId (e.g. React StrictMode's double-invoke) is a
- * safe no-op, since embed-loader.js provides no unmount hook itself
- * (it appends the iframe/launcher directly to document.body with no
- * identifiable wrapper to remove later). Meant to be mounted once for
- * the lifetime of the page, typically near your app root.
+ * safe no-op.
  */
 declare function mountAvatarWidget({ serverUrl, botId }: MountAvatarWidgetOptions): void;
+/**
+ * Tears down a widget previously mounted with mountAvatarWidget: removes
+ * its iframe/placeholder, listeners, and script tag (see embed-loader.js's
+ * own destroy()/window.AvatarPlatform.unmount). Call this before mounting
+ * a different botId in the same spot — e.g. in a React effect's cleanup
+ * function — or the previous bot's iframe (and the AudioContext/Gemini
+ * Live socket inside it) is simply left running alongside the new one.
+ */
+declare function unmountAvatarWidget(botId: string): void;
 
 /** Calls POST /embed/:publicId/ask directly — no widget UI required. */
 declare function askAvatar({ serverUrl, botId, question, sessionId }: AskAvatarOptions): Promise<AskAvatarResult>;
 
-export { type AskAvatarOptions, type AskAvatarResult, type AskAvatarSource, type MountAvatarWidgetOptions, askAvatar, mountAvatarWidget };
+export { type AskAvatarOptions, type AskAvatarResult, type AskAvatarSource, type MountAvatarWidgetOptions, askAvatar, mountAvatarWidget, unmountAvatarWidget };

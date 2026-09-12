@@ -1530,6 +1530,13 @@
       if (this._schedRaf) { cancelAnimationFrame(this._schedRaf); this._schedRaf = null; }
       if (this._behaviorCtrl) { this._behaviorCtrl.stop(); this._behaviorCtrl = null; }
       if (this._riveInst) { try { this._riveInst.cleanup(); } catch(_) {} }
+      // _stopSession() deliberately leaves _audioCtx open (disconnect() ->
+      // connect() resumes the same context via _ensureAudioCtx rather than
+      // recreating it) — destroy() is the actual teardown, so this is the
+      // one place it must be closed. Without it, every widget instance a
+      // host page creates and discards (e.g. switching botId in the React/
+      // Vue SDK wrappers) leaks a live AudioContext forever.
+      if (this._audioCtx) { try { this._audioCtx.close(); } catch(_) {} this._audioCtx = null; }
       if (this._root && this._root.parentNode) this._root.parentNode.removeChild(this._root);
     }
 

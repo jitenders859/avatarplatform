@@ -32,7 +32,20 @@ stubFile('../db', {
     return null;
   },
   findAll: async () => [],
-  query: async () => [],
+  // attemptDelivery() claims its attempt via a conditional UPDATE ...
+  // RETURNING before calling fetch — simulate that against the same
+  // in-memory `deliveries` map the other stubs share, rather than the
+  // real Postgres client this test suite doesn't run against.
+  query: async (sql, params) => {
+    if (/^UPDATE webhook_deliveries/.test(sql)) {
+      const [nextAttempt, id, expectedAttempt] = params;
+      const row = deliveries.get(id);
+      if (!row || row.status !== 'pending' || row.attempt !== expectedAttempt) return [];
+      row.attempt = nextAttempt;
+      return [{ id: row.id }];
+    }
+    return [];
+  },
   queryOne: async () => null,
   insert: async (table, row) => { if (table === 'webhookDeliveries') deliveries.set(row.id, row); return row; },
   update: async (table, id, patch) => {

@@ -169,7 +169,13 @@ async function handleCallback(code, state) {
   if (claims.nonce !== pending.nonce) throw new Error('ID token nonce mismatch');
   if (!claims.sub) throw new Error('ID token missing sub claim');
   if (!claims.email) throw new Error('ID token missing email claim — request the email scope');
-  if (claims.email_verified === false) throw new Error('IdP reports this email as unverified');
+  // ssoAuth.js's callback auto-links this identity to any EXISTING
+  // password account with a matching email — so an IdP that lets someone
+  // self-register an unverified address (or simply omits the claim,
+  // which used to slip past a `=== false` check) would hand that person
+  // a session for the victim's existing account. Require an explicit
+  // `true`, not just "not explicitly false".
+  if (claims.email_verified !== true) throw new Error('IdP did not report this email as verified');
 
   return {
     issuer: doc.issuer || process.env.OIDC_ISSUER,

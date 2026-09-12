@@ -37,6 +37,19 @@ async function attemptDelivery(deliveryId) {
     return;
   }
 
+  // Claim this attempt atomically before the network call. This can't close
+  // the fundamental gap (the process can still crash between the fetch
+  // landing on the customer's server and this claim's own commit — no
+  // sender-side check can ever rule that out), but it does stop two
+  // concurrent invocations for the same row (e.g. a stray double-enqueue of
+  // the retry job) from both firing the POST, same class of guard as
+  // process.js's file-processing claim.
+  const claimed = await db.query(
+    `UPDATE webhook_deliveries SET attempt = $1 WHERE id = $2 AND status = 'pending' AND attempt = $3 RETURNING id`,
+    [attempt, delivery.id, delivery.attempt]
+  );
+  if (!claimed.length) return;
+
   const payloadStr = JSON.stringify(delivery.payload);
   const sig = 'sha256=' + crypto.createHmac('sha256', project.webhookSecret || '').update(payloadStr).digest('hex');
 
@@ -44,7 +57,16 @@ async function attemptDelivery(deliveryId) {
   try {
     response = await safeFetch(project.webhookUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Avatar-Signature': sig },
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Avatar-Signature': sig,
+        // Stable across every retry of this same logical delivery, unlike
+        // attempt (which increments) — lets a receiver that cares about
+        // exactly-once processing dedupe on repeat sends we can't fully
+        // rule out (see the claim comment above; this is the standard
+        // mitigation for that class of gap, not a fix for it).
+        'X-Avatar-Delivery-Id': delivery.id,
+      },
       body: payloadStr,
       timeout: 5000,
     });
