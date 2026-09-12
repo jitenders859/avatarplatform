@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title data-i18n="privacy.pageTitle">Privacy Policy — AvatarPlatform</title>
+  <meta name="description" content="How AvatarPlatform collects, stores, and uses account, chatbot, and visitor data." />
+  <link rel="canonical" href="https://avatarplatform.ai/privacy" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="AvatarPlatform" />
+  <meta property="og:title" content="Privacy Policy — AvatarPlatform" />
+  <meta property="og:description" content="How AvatarPlatform collects, stores, and uses account, chatbot, and visitor data." />
+  <meta property="og:url" content="https://avatarplatform.ai/privacy" />
+  <meta property="og:image" content="https://avatarplatform.ai/og-image.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Privacy Policy — AvatarPlatform" />
+  <meta name="twitter:description" content="How AvatarPlatform collects, stores, and uses account, chatbot, and visitor data." />
+  <meta name="twitter:image" content="https://avatarplatform.ai/og-image.png" />
+  <script>
+    document.documentElement.dataset.theme = localStorage.getItem('apTheme') === 'dark' ? 'dark' : 'light';
+    (function () {
+      var RTL_LANGS = { ar: 1 };
+      var KNOWN = ['en', 'es', 'fr', 'ar', 'hi'];
+      var saved = localStorage.getItem('apLang');
+      var lang = KNOWN.indexOf(saved) !== -1 ? saved : 'en';
+      document.documentElement.lang = lang;
+      document.documentElement.dir = RTL_LANGS[lang] ? 'rtl' : 'ltr';
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/app.css" />
+  <style>
+    .terms-body {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 60px 24px 100px;
+    }
+    .terms-eyebrow {
+      font-size: 12px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    .terms-title {
+      font-size: 38px; font-weight: 800;
+      letter-spacing: -0.03em; line-height: 1.1;
+      margin: 0 0 12px;
+    }
+    .terms-updated {
+      font-size: 13px; color: var(--text-dim);
+      margin-bottom: 48px;
+      padding-bottom: 32px;
+      border-bottom: 1px solid var(--border);
+    }
+    .terms-section { margin-bottom: 40px; }
+    .terms-section h2 {
+      display: flex; align-items: baseline; gap: 12px;
+      font-size: 18px; font-weight: 700;
+      letter-spacing: -0.01em; line-height: 1.3;
+      margin: 0 0 14px;
+    }
+    .terms-num {
+      font-size: 11px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.08em;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+    .terms-section p {
+      font-size: 14.5px; color: var(--text-2);
+      line-height: 1.75; margin: 0 0 12px;
+    }
+    .terms-section ul { padding-left: 22px; margin: 0 0 12px; }
+    .terms-section li {
+      font-size: 14.5px; color: var(--text-2);
+      line-height: 1.75; margin-bottom: 6px;
+    }
+    .terms-divider { height: 1px; background: var(--border); margin: 40px 0; }
+    .terms-table {
+      width: 100%; border-collapse: collapse; font-size: 14px; margin: 12px 0 16px;
+    }
+    .terms-table th, .terms-table td {
+      text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    .terms-table th { color: var(--text-dim); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .terms-table td { color: var(--text-2); }
+  </style>
+</head>
+<body>
+  <!-- NAVBAR -->
+  <nav class="topnav">
+    <div class="topnav-inner">
+      <a class="brand" href="/">
+        <span class="brand-mark">AP</span>
+        <span>AvatarPlatform</span>
+      </a>
+      <div class="spacer"></div>
+      <div class="nav-links">
+        <a class="nav-link" href="/docs" data-i18n="common.nav.docs">Docs</a>
+        <a class="nav-link" href="/pricing" data-i18n="common.nav.pricing">Pricing</a>
+        <a class="nav-link" href="/characters" data-i18n="common.nav.characters">Characters</a>
+        <a class="nav-link" href="/contact" data-i18n="common.footer.contact">Contact</a>
+        <a class="nav-link" href="/login" data-i18n="common.nav.login">Log in</a>
+      </div>
+      <div id="lang-switch-slot"></div>
+      <div id="theme-toggle-slot"></div>
+      <a class="btn btn-primary btn-sm" href="/signup" data-i18n="common.nav.getStarted">Get started free</a>
+    </div>
+  </nav>
+
+  <div class="terms-body">
+    <p class="terms-eyebrow">Legal</p>
+    <h1 class="terms-title">Privacy Policy</h1>
+    <p class="terms-updated">Last updated: September 12, 2026</p>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">01</span> Overview</h2>
+      <p>This policy explains what AvatarPlatform ("we," "us") collects when you create an account, build a chatbot, or interact with a chatbot embedded on someone else's website, and what we do with it. It covers the same service described in our <a href="/terms">Terms of Service</a> — if the two ever conflict on a factual point, this page governs how your data is handled.</p>
+      <p>We are a small team; we don't have a dedicated legal department, and this policy is written in plain language rather than boilerplate. If anything here is unclear, email <a href="mailto:privacy@avatarplatform.ai">privacy@avatarplatform.ai</a> and we'll clarify or fix it.</p>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">02</span> Who this applies to</h2>
+      <ul>
+        <li><strong>Account holders</strong> — people who sign up to build and host a chatbot ("projects").</li>
+        <li><strong>Visitors</strong> — anonymous people who talk to a chatbot embedded on an account holder's website. We process visitor data on the account holder's behalf; the account holder controls what their chatbot collects (see Section 5, Lead capture).</li>
+      </ul>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">03</span> What we collect</h2>
+      <table class="terms-table">
+        <tr><th>Category</th><th>Examples</th><th>From</th></tr>
+        <tr><td>Account data</td><td>Name, email, bcrypt-hashed password</td><td>You, at signup</td></tr>
+        <tr><td>Billing data</td><td>Plan tier, subscription status. Card numbers are never stored by us — Stripe handles payment details directly.</td><td>Stripe</td></tr>
+        <tr><td>Knowledge base content</td><td>Uploaded files (PDF, DOCX, images, etc.) and URLs you add to a chatbot, plus their extracted text and vector embeddings</td><td>You</td></tr>
+        <tr><td>Conversation data</td><td>Chat transcripts (text), session identifiers, timestamps</td><td>Visitors, via the embedded widget</td></tr>
+        <tr><td>Lead capture data</td><td>Whatever fields the account holder configures for their chatbot — commonly name, email, phone</td><td>Visitors, only if the account holder enables lead capture</td></tr>
+        <tr><td>Technical data</td><td>IP address (used for rate-limiting and abuse prevention), browser user agent, language preference</td><td>Automatically, from requests</td></tr>
+      </table>
+      <p>We do <strong>not</strong> store audio recordings from voice conversations — only text transcripts. We do not use your uploaded knowledge base content or conversation data to train AI models, ours or anyone else's.</p>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">04</span> How we use it</h2>
+      <ul>
+        <li>To operate the service: authenticate you, run your chatbots, answer visitor questions grounded in your knowledge base, and enforce plan limits.</li>
+        <li>To bill you, via Stripe, for paid plans.</li>
+        <li>To send transactional email: password resets, email verification, and — only if you opt in — usage-limit alerts.</li>
+        <li>To respond to support requests submitted through the <a href="/contact">contact form</a>.</li>
+        <li>To keep the service secure: rate limiting, fraud/abuse detection, and audit logging of admin actions.</li>
+      </ul>
+      <p>We do not sell personal data to third parties, and we do not use it for advertising.</p>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">05</span> Lead capture — a note for visitors and account holders</h2>
+      <p>Account holders can turn on "lead capture" for a chatbot, which prompts visitors to share contact details (typically name, email, phone) during a conversation. That data belongs to the account holder, not to us — we store it on their behalf so it appears in their dashboard, and it's covered by whatever privacy commitments the account holder makes on their own website. If you're a visitor and want data you shared with a specific chatbot deleted, contact the website you spoke with directly, or email us at <a href="mailto:privacy@avatarplatform.ai">privacy@avatarplatform.ai</a> and we'll route the request to the account holder.</p>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">06</span> Who we share data with</h2>
+      <p>We use a small number of subprocessors to run the service. None of them receive more than what's needed to provide their function, and none are permitted to use your data for their own purposes:</p>
+      <ul>
+        <li><strong>Supabase</strong> — hosts our Postgres database and file storage.</li>
+        <li><strong>Google Gemini API</strong> — generates embeddings for knowledge-base search and powers AI chat/voice responses. Queries sent to Gemini are subject to Google's API terms; see <a href="/terms">Terms</a> Section 6.</li>
+        <li><strong>Stripe</strong> — processes payments and stores payment methods. We never see or store full card numbers.</li>
+        <li>Optional, only if an account holder configures them for their own chatbot: <strong>ElevenLabs</strong> or <strong>OpenAI</strong> (alternate voice engines), <strong>Twilio</strong> (usage-limit SMS alerts), <strong>Serper</strong> (web-search grounding), <strong>Google Calendar</strong> (tour-booking tool).</li>
+      </ul>
+      <p>We disclose data if legally required to (subpoena, court order) or to protect the rights, property, or safety of AvatarPlatform, our users, or the public.</p>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">07</span> Cookies and local storage</h2>
+      <p>We don't use advertising or third-party tracking cookies. The marketing and app pages use <code>localStorage</code> (not cookies) purely for functional preferences — your chosen theme (light/dark) and display language — which never leaves your browser and isn't read by us. The embedded chat widget uses a session identifier to keep a conversation's context; it's not used to track you across other sites.</p>
+      <p>If that changes — for example, if we ever add product analytics — we'll update this section and, where required by law, ask for consent first.</p>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">08</span> Data retention</h2>
+      <ul>
+        <li>Account data, projects, files, and conversation history are kept for as long as your account is active.</li>
+        <li>Deleting your account (Settings → Account → Delete account) permanently deletes all associated data — projects, files, embeddings, conversations, and leads — immediately. There is no 30-day recovery window, so export anything you need first.</li>
+        <li>Password-reset and email-verification tokens expire automatically (reset: 1 hour; verification: 24 hours) and are not reusable after use or expiry.</li>
+      </ul>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">09</span> Your rights</h2>
+      <p>Depending on where you live (for example, under the GDPR in the EU/UK or the CCPA in California), you may have the right to access, correct, export, or delete your personal data, and to object to or restrict certain processing. For account holders, most of this is self-serve today:</p>
+      <ul>
+        <li><strong>Access / export:</strong> your dashboard shows everything tied to your account. A dedicated data-export button is on our roadmap; until then, email us and we'll send a copy.</li>
+        <li><strong>Correction:</strong> update your name/email anytime in Settings → Account.</li>
+        <li><strong>Deletion:</strong> Settings → Account → Delete account, or email <a href="mailto:privacy@avatarplatform.ai">privacy@avatarplatform.ai</a>.</li>
+      </ul>
+      <p>For anything not self-serve, email <a href="mailto:privacy@avatarplatform.ai">privacy@avatarplatform.ai</a> — we'll respond within 30 days.</p>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">10</span> Children's privacy</h2>
+      <p>The service is not directed at children, and account holders must be at least 18 (see <a href="/terms">Terms</a> Section 3). We do not knowingly collect personal data from children under 13 (or the equivalent minimum age in your jurisdiction). If you believe a child has provided us data, contact us and we'll delete it.</p>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">11</span> International transfers</h2>
+      <p>Our infrastructure runs on US-based cloud providers (Supabase, Google Cloud, Stripe). If you're accessing the service from outside the US, your data will be transferred to and processed in the US.</p>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">12</span> Changes to this policy</h2>
+      <p>We'll update the "last updated" date above whenever this policy changes, and for material changes we'll email account holders in advance.</p>
+    </div>
+
+    <div class="terms-divider"></div>
+
+    <div class="terms-section">
+      <h2><span class="terms-num">13</span> Contact</h2>
+      <ul>
+        <li>Email: <a href="mailto:privacy@avatarplatform.ai">privacy@avatarplatform.ai</a></li>
+        <li>General support: <a href="mailto:support@avatarplatform.ai">support@avatarplatform.ai</a></li>
+        <li>Contact form: <a href="/contact">/contact</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- FOOTER -->
+  <footer style="border-top:1px solid var(--border);padding:32px 24px;text-align:center">
+    <p style="font-size:12px;color:var(--text-dim);margin:0">
+      <a href="/" style="color:var(--text-dim)">AvatarPlatform</a> ·
+      <a href="/terms" style="color:var(--text-dim)" data-i18n="common.footer.terms">Terms</a> ·
+      <a href="/privacy" style="color:var(--text-dim)">Privacy</a> ·
+      <a href="/contact" style="color:var(--text-dim)" data-i18n="common.footer.contact">Contact</a> ·
+      <a href="/docs" style="color:var(--text-dim)" data-i18n="common.nav.docs">Docs</a>
+    </p>
+  </footer>
+
+  <script src="/js/theme.js"></script>
+  <script src="/js/i18n.js"></script>
+  <script src="/js/i18n/en.js"></script>
+  <script src="/js/i18n/es.js"></script>
+  <script src="/js/i18n/fr.js"></script>
+  <script src="/js/i18n/ar.js"></script>
+  <script src="/js/i18n/hi.js"></script>
+  <script>
+    mountThemeToggle(document.getElementById('theme-toggle-slot'));
+    I18N.init(document.getElementById('lang-switch-slot'));
+  </script>
+</body>
+</html>
