@@ -1017,3 +1017,47 @@ ALTER TABLE projects ADD COLUMN IF NOT EXISTS tour_settings JSONB NOT NULL DEFAU
   "location": "",
   "workingHours": {"mon":[],"tue":[],"wed":[],"thu":[],"fri":[],"sat":[],"sun":[]}
 }'::jsonb;
+
+-- ── Row Level Security ────────────────────────────────────────────────
+-- This app never queries Postgres through Supabase's PostgREST/anon-key
+-- surface — the backend connects via `pg.Pool` using DATABASE_URL (see
+-- backend/db.js), whose role has BYPASSRLS. Enabling RLS with no
+-- policies below is therefore a pure lockout of the anon/authenticated
+-- roles (default-deny), with no effect on the app itself. Without this,
+-- every table here is directly readable/writable via Supabase's REST API
+-- using the public SUPABASE_PUBLISHABLE_KEY that ships to every browser
+-- — see supabase/migrations/2026-09-12_enable_rls_all_tables.sql for the
+-- full incident note.
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE projects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chunks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE page_images ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE subscriptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE usage ENABLE ROW LEVEL SECURITY;
+ALTER TABLE capture_fields ENABLE ROW LEVEL SECURITY;
+ALTER TABLE leads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quiz_questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quiz_attempts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE flashcards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE flashcard_reviews ENABLE ROW LEVEL SECURITY;
+ALTER TABLE video_resources ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE plan_tiers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_audit_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE characters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE character_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE character_access ENABLE ROW LEVEL SECURITY;
+ALTER TABLE character_triggers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE coupons ENABLE ROW LEVEL SECURITY;
+ALTER TABLE coupon_redemptions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_members ENABLE ROW LEVEL SECURITY;
+ALTER TABLE webhook_deliveries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE email_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE feature_flags ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_actions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE chatbot_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE calendar_connections ENABLE ROW LEVEL SECURITY;

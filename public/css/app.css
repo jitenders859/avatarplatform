@@ -313,23 +313,31 @@ h1, h2, h3, .page-title, .card-title, .brand, .hero-title {
 .tab.active { color: var(--text); border-color: var(--accent); }
 
 /* ── Toast ────────────────────────────────────────────────── */
+/* Anchored to the top of the viewport (not the bottom) so it's visible the
+   instant it appears, regardless of scroll position — a bottom-anchored
+   toast on a long form page could land below the fold. z-index is above
+   .topnav (50) and .modal-backdrop (see below) so it's never obscured. */
 .toast {
-  position: fixed; bottom: 24px; left: 50%;
-  transform: translateX(-50%) translateY(40px);
+  position: fixed; top: 24px; left: 50%;
+  transform: translateX(-50%) translateY(-40px);
   padding: 12px 18px;
-  background: var(--bg-3);
+  background: var(--bg-2);
+  color: var(--text);
   border: 1px solid var(--border-strong);
   border-radius: 10px;
   box-shadow: var(--shadow-lg);
   font-size: 13px;
-  z-index: 100;
+  font-weight: 500;
+  z-index: 1000;
   opacity: 0;
   transition: opacity .2s, transform .2s;
   max-width: 90vw;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-.toast-success { border-color: rgba(34,197,94,.4); }
-.toast-error   { border-color: rgba(239,68,68,.4); }
+/* Explicit background + text color (not just a tinted border) so success/
+   error state is legible at a glance, in both light and dark themes. */
+.toast-success { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+.toast-error   { background: var(--danger-bg);  color: var(--danger);  border-color: var(--danger-border); }
 
 /* ── Modals ───────────────────────────────────────────────── */
 .modal-backdrop {
